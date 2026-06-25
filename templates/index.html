@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>股票分析系统</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
+.header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:16px 32px;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:22px;font-weight:600}
+.header .stats{font-size:13px;opacity:.85}
+
+.toolbar{display:flex;align-items:center;gap:12px;padding:16px 32px;background:#fff;border-bottom:1px solid #e8e8e8;flex-wrap:wrap}
+.toolbar input,.toolbar select{padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none;transition:border-color .2s}
+.toolbar input:focus,.toolbar select:focus{border-color:#4a6cf7}
+.toolbar input{width:240px}
+.btn{padding:8px 18px;border:none;border-radius:6px;font-size:13px;cursor:pointer;transition:all .2s;font-weight:500}
+.btn-primary{background:#4a6cf7;color:#fff}
+.btn-primary:hover{background:#3b5de7}
+.btn-success{background:#52c41a;color:#fff}
+.btn-success:hover{background:#45b016}
+.btn-danger{background:#ff4d4f;color:#fff}
+.btn-danger:hover{background:#e04345}
+.btn-outline{background:#fff;color:#4a6cf7;border:1px solid #4a6cf7}
+.btn-outline:hover{background:#f0f5ff}
+.btn-sm{padding:4px 12px;font-size:12px}
+
+.content{padding:24px 32px}
+.table-wrap{background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+table{width:100%;border-collapse:collapse}
+th{background:#fafafa;padding:12px 16px;text-align:left;font-weight:600;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:12px 16px;font-size:13px;border-bottom:1px solid #f5f5f5}
+tr:hover td{background:#fafbff}
+.code{font-family:'Courier New',monospace;font-weight:600;color:#4a6cf7}
+.market-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.market-SH{background:#ffeaea;color:#cf1322}
+.market-SZ{background:#e6f7ff;color:#096dd9}
+.market-BJ{background:#f6ffed;color:#389e0d}
+.status-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
+.status-正常{background:#f6ffed;color:#52c41a}
+.status-ST{background:#fff7e6;color:#fa8c16}
+.status-\*ST{background:#fff1f0;color:#ff4d4f}
+
+.pagination{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px}
+.pagination button{padding:6px 14px;border:1px solid #d9d9d9;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;transition:all .2s}
+.pagination button:hover:not(:disabled){border-color:#4a6cf7;color:#4a6cf7}
+.pagination button:disabled{opacity:.4;cursor:default}
+.pagination .current{background:#4a6cf7;color:#fff;border-color:#4a6cf7}
+.pagination .info{font-size:13px;color:#999}
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:#fff;border-radius:12px;width:480px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,.15);overflow:hidden}
+.modal-header{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+.modal-header h3{font-size:16px;font-weight:600}
+.modal-close{cursor:pointer;font-size:20px;color:#999;line-height:1;background:none;border:none}
+.modal-close:hover{color:#333}
+.modal-body{padding:24px}
+.modal-body label{display:block;margin-bottom:6px;font-size:13px;font-weight:500;color:#555}
+.modal-body input,.modal-body select{width:100%;padding:10px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none;margin-bottom:16px;transition:border-color .2s}
+.modal-body input:focus,.modal-body select:focus{border-color:#4a6cf7}
+.modal-body .row{display:flex;gap:16px}
+.modal-body .row>*{flex:1}
+.modal-footer{padding:16px 24px;display:flex;justify-content:flex-end;gap:12px;border-top:1px solid #f0f0f0}
+.empty{text-align:center;padding:60px 20px;color:#999;font-size:14px}
+
+.toast{position:fixed;top:24px;right:24px;padding:12px 24px;border-radius:8px;color:#fff;font-size:13px;z-index:200;transition:all .3s;opacity:0;transform:translateY(-10px)}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast-success{background:#52c41a}
+.toast-error{background:#ff4d4f}
+
+#keyword{width:240px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>股票分析系统</h1>
+  <div class="stats" id="statsInfo">加载中...</div>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="keyword" placeholder="搜索代码或名称..." onkeyup="debounceSearch()">
+  <select id="filterMarket" onchange="loadStocks()">
+    <option value="">全部市场</option>
+    <option value="SH">上海 (SH)</option>
+    <option value="SZ">深圳 (SZ)</option>
+    <option value="BJ">北京 (BJ)</option>
+  </select>
+  <select id="filterStatus" onchange="loadStocks()">
+    <option value="">全部状态</option>
+    <option value="正常">正常</option>
+    <option value="ST">ST</option>
+    <option value="*ST">*ST</option>
+  </select>
+  <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
+</div>
+
+<div class="content">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>代码</th>
+          <th>名称</th>
+          <th>市场</th>
+          <th>行业</th>
+          <th>上市日期</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="stockTableBody"></tbody>
+    </table>
+    <div id="emptyHint" class="empty" style="display:none">暂无数据</div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<!-- 添加/编辑弹窗 -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">添加股票</h3>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editCode">
+      <label>股票代码 *</label>
+      <input type="text" id="inputCode" placeholder="如 600519" maxlength="10">
+      <label>股票名称 *</label>
+      <input type="text" id="inputName" placeholder="如 贵州茅台" maxlength="50">
+      <div class="row">
+        <div>
+          <label>市场 *</label>
+          <select id="inputMarket"><option value="">请选择</option><option value="SH">上海 (SH)</option><option value="SZ">深圳 (SZ)</option><option value="BJ">北京 (BJ)</option></select>
+        </div>
+        <div>
+          <label>状态</label>
+          <select id="inputStatus"><option value="正常">正常</option><option value="ST">ST</option><option value="*ST">*ST</option></select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>行业</label>
+          <input type="text" id="inputIndustry" placeholder="如 白酒">
+        </div>
+        <div>
+          <label>上市日期</label>
+          <input type="date" id="inputListDate">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" id="btnSave" onclick="saveStock()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let currentPage = 1;
+let totalPages = 1;
+let searchTimer = null;
+
+// 页面加载
+document.addEventListener('DOMContentLoaded', () => {
+  loadStocks();
+  loadStats();
+});
+
+// 防抖搜索
+function debounceSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { currentPage = 1; loadStocks(); }, 400);
+}
+
+// 加载股票列表
+async function loadStocks() {
+  const keyword = document.getElementById('keyword').value.trim();
+  const market = document.getElementById('filterMarket').value;
+  const status = document.getElementById('filterStatus').value;
+  const params = new URLSearchParams({ page: currentPage, page_size: 15 });
+  if (market) params.append('market', market);
+  if (status) params.append('status', status);
+  if (keyword) params.append('keyword', keyword);
+
+  try {
+    const res = await fetch('/api/stocks?' + params);
+    const data = await res.json();
+    renderTable(data.data);
+    totalPages = data.total_pages;
+    renderPagination(data);
+    document.getElementById('emptyHint').style.display = data.total === 0 ? 'block' : 'none';
+  } catch (e) {
+    showToast('加载失败', 'error');
+  }
+}
+
+// 渲染表格
+function renderTable(stocks) {
+  const tbody = document.getElementById('stockTableBody');
+  tbody.innerHTML = stocks.map(s => `
+    <tr>
+      <td><span class="code">${esc(s.code)}</span></td>
+      <td>${esc(s.name)}</td>
+      <td><span class="market-tag market-${s.market}">${s.market}</span></td>
+      <td>${esc(s.industry || '-')}</td>
+      <td>${s.list_date || '-'}</td>
+      <td><span class="status-tag status-${s.status}">${s.status}</span></td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="openEditModal('${esc(s.code)}')">编辑</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteStock('${esc(s.code)}','${esc(s.name)}')">删除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// 渲染分页
+function renderPagination(data) {
+  const pg = document.getElementById('pagination');
+  let html = `<span class="info">共 ${data.total} 条 / ${data.total_pages} 页</span>`;
+  html += `<button ${data.page <= 1 ? 'disabled' : ''} onclick="goPage(${data.page - 1})">上一页</button>`;
+  const start = Math.max(1, data.page - 2);
+  const end = Math.min(data.total_pages, data.page + 2);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="${i === data.page ? 'current' : ''}" onclick="goPage(${i})">${i}</button>`;
+  }
+  html += `<button ${data.page >= data.total_pages ? 'disabled' : ''} onclick="goPage(${data.page + 1})">下一页</button>`;
+  pg.innerHTML = html;
+}
+
+function goPage(p) { currentPage = p; loadStocks(); }
+
+// 加载统计
+async function loadStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+    document.getElementById('statsInfo').textContent = `共 ${data.total} 只股票 | SH:${data.markets.SH} SZ:${data.markets.SZ} BJ:${data.markets.BJ}`;
+  } catch (e) {}
+}
+
+// 打开添加弹窗
+function openAddModal() {
+  document.getElementById('modalTitle').textContent = '添加股票';
+  document.getElementById('editCode').value = '';
+  document.getElementById('inputCode').value = '';
+  document.getElementById('inputCode').disabled = false;
+  document.getElementById('inputName').value = '';
+  document.getElementById('inputMarket').value = '';
+  document.getElementById('inputStatus').value = '正常';
+  document.getElementById('inputIndustry').value = '';
+  document.getElementById('inputListDate').value = '';
+  document.getElementById('modal').classList.add('active');
+}
+
+// 打开编辑弹窗
+async function openEditModal(code) {
+  try {
+    const res = await fetch('/api/stock/' + code);
+    const s = await res.json();
+    if (s.error) { showToast(s.error, 'error'); return; }
+    document.getElementById('modalTitle').textContent = '编辑股票';
+    document.getElementById('editCode').value = s.code;
+    document.getElementById('inputCode').value = s.code;
+    document.getElementById('inputCode').disabled = true;
+    document.getElementById('inputName').value = s.name;
+    document.getElementById('inputMarket').value = s.market;
+    document.getElementById('inputStatus').value = s.status;
+    document.getElementById('inputIndustry').value = s.industry || '';
+    document.getElementById('inputListDate').value = s.list_date || '';
+    document.getElementById('modal').classList.add('active');
+  } catch (e) { showToast('获取股票信息失败', 'error'); }
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('active');
+}
+
+// 保存股票
+async function saveStock() {
+  const editCode = document.getElementById('editCode').value;
+  const isEdit = !!editCode;
+
+  const code = document.getElementById('inputCode').value.trim();
+  const name = document.getElementById('inputName').value.trim();
+  const market = document.getElementById('inputMarket').value;
+  const status = document.getElementById('inputStatus').value;
+  const industry = document.getElementById('inputIndustry').value.trim();
+  const listDate = document.getElementById('inputListDate').value;
+
+  if (!code || !name || !market) {
+    showToast('代码、名称、市场为必填项', 'error'); return;
+  }
+
+  const body = { code, name, market, status, industry: industry || null, list_date: listDate || null };
+  const url = isEdit ? '/api/stock/' + editCode : '/api/stock';
+  const method = isEdit ? 'PUT' : 'POST';
+
+  try {
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (data.success) {
+      showToast(isEdit ? '更新成功' : '添加成功', 'success');
+      closeModal();
+      loadStocks();
+      loadStats();
+    } else {
+      showToast(data.error || '操作失败', 'error');
+    }
+  } catch (e) {
+    showToast('请求失败', 'error');
+  }
+}
+
+// 删除股票
+async function deleteStock(code, name) {
+  if (!confirm(`确认删除 ${code} ${name}？`)) return;
+  try {
+    const res = await fetch('/api/stock/' + code, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      showToast('删除成功', 'success');
+      loadStocks();
+      loadStats();
+    } else {
+      showToast(data.error || '删除失败', 'error');
+    }
+  } catch (e) { showToast('请求失败', 'error'); }
+}
+
+// Toast 提示
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast toast-' + type + ' show';
+  setTimeout(() => { t.className = 'toast'; }, 2500);
+}
+
+function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>
