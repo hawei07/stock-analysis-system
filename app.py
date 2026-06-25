@@ -62,6 +62,10 @@ def api_add_stock():
     if data["market"] not in ("SH", "SZ", "BJ"):
         return jsonify({"error": "市场必须是 SH/SZ/BJ"}), 400
 
+    existing = Stock.get_by_code(data["code"])
+    if existing:
+        return jsonify({"error": f"股票代码 {data['code']} 已存在"}), 409
+
     try:
         Stock.add(
             code=data["code"],
