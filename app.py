@@ -52,30 +52,82 @@ def api_stock_detail(code):
     return jsonify({"error": "未找到该股票"}), 404
 
 
+@app.route("/api/stock-info/<code>")
+def api_stock_info(code):
+    """根据股票代码从东方财富获取名称和市场信息"""
+    # 尝试上海和深圳两个市场
+    markets_to_try = []
+    if code.startswith(("6", "5", "9")):
+        markets_to_try = [("1", "SH"), ("0", "SZ")]
+    else:
+        markets_to_try = [("0", "SZ"), ("1", "SH")]
+
+    name = None
+    market = None
+    for sec_market, our_market in markets_to_try:
+        try:
+            url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={sec_market}.{code}&fields=f57,f58,f300"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            data = resp.json()
+            if data.get("data") and data["data"].get("f58"):
+                name = data["data"]["f58"]
+                market = our_market
+                break
+        except Exception:
+            continue
+
+    if not name:
+        return jsonify({"error": f"未找到股票代码 {code} 的信息"}), 404
+
+    return jsonify({"code": code, "name": name, "market": market})
+
+
 @app.route("/api/stock", methods=["POST"])
 def api_add_stock():
     data = request.get_json()
-    required = ["code", "name", "market"]
-    for f in required:
-        if f not in data or not data[f]:
-            return jsonify({"error": f"缺少必填字段: {f}"}), 400
-    if data["market"] not in ("SH", "SZ", "BJ"):
-        return jsonify({"error": "市场必须是 SH/SZ/BJ"}), 400
+    code = data.get("code", "").strip()
+    if not code:
+        return jsonify({"error": "请输入股票代码"}), 400
 
-    existing = Stock.get_by_code(data["code"])
+    existing = Stock.get_by_code(code)
     if existing:
-        return jsonify({"error": f"股票代码 {data['code']} 已存在"}), 409
+        return jsonify({"error": f"股票代码 {code} 已存在"}), 409
+
+    # 如果没传名称或市场，自动从东方财富获取
+    name = data.get("name", "").strip()
+    market = data.get("market", "").strip()
+    if not name or not market:
+        markets_to_try = [("1", "SH"), ("0", "SZ")] if code.startswith(("6", "5", "9")) else [("0", "SZ"), ("1", "SH")]
+        for sec_market, our_market in markets_to_try:
+            try:
+                url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={sec_market}.{code}&fields=f57,f58"
+                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                resp_data = resp.json()
+                if resp_data.get("data") and resp_data["data"].get("f58"):
+                    if not name:
+                        name = resp_data["data"]["f58"]
+                    if not market:
+                        market = our_market
+                    break
+            except Exception:
+                continue
+
+        if not name:
+            return jsonify({"error": f"未找到股票代码 {code} 的信息"}), 404
+
+    if market and market not in ("SH", "SZ", "BJ"):
+        return jsonify({"error": "市场必须是 SH/SZ/BJ"}), 400
 
     try:
         Stock.add(
-            code=data["code"],
-            name=data["name"],
-            market=data["market"],
+            code=code,
+            name=name,
+            market=market or "SH",
             industry=data.get("industry"),
             list_date=data.get("list_date"),
             status=data.get("status", "正常"),
         )
-        return jsonify({"success": True, "message": "添加成功"}), 201
+        return jsonify({"success": True, "message": f"添加成功: {name}({code})"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -147,17 +199,34 @@ def api_stock_dividends(code):
 
 @app.route("/api/update-dividends", methods=["POST"])
 def api_update_dividends():
-    """从东方财富和新浪财经更新所有股票的分红和净利润数据"""
+    """从东方财富和新浪财经更新股票的分红和净利润数据
+    mode: full=全量更新, incremental=增量更新(仅更新有缺失的年份)
+    """
+    mode = request.get_json(silent=True).get("mode", "full") if request.is_json else "full"
+    if request.args.get("mode"):
+        mode = request.args["mode"]
+
     try:
         stocks = execute_query("SELECT code, name FROM stocks WHERE status='正常'")
         updated_count = 0
         errors = []
 
+        # 增量模式：找出每只股票已有的分红年份
+        existing_years = {}
+        if mode == "incremental":
+            all_divs = execute_query("SELECT stock_code, fiscal_year FROM dividends")
+            for d in all_divs:
+                key = d["stock_code"]
+                if key not in existing_years:
+                    existing_years[key] = set()
+                existing_years[key].add(d["fiscal_year"])
+
         for s in stocks:
             code = s["code"]
-            # 1. 获取净利润
             net_profits = {}
             total_share = 0
+
+            # 1. 获取净利润
             try:
                 url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
                        "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
@@ -175,6 +244,13 @@ def api_update_dividends():
                             total_share = item["TOTAL_SHARE"]
             except Exception as e:
                 errors.append(f"{code}: 净利润获取失败 - {str(e)}")
+                continue
+
+            # 增量模式：跳过已有数据的年份
+            if mode == "incremental" and code in existing_years:
+                net_profits = {y: v for y, v in net_profits.items() if y not in existing_years[code]}
+
+            if not net_profits:
                 continue
 
             # 2. 获取分红方案
@@ -196,7 +272,7 @@ def api_update_dividends():
             except Exception as e:
                 errors.append(f"{code}: 分红获取失败 - {str(e)}")
 
-            # 3. 更新数据库
+            # 3. 更新数据库（仅更新净利中有的年份）
             for year in net_profits:
                 np_val = net_profits[year]
                 da_val = yearly_dividends.get(year)
@@ -215,6 +291,7 @@ def api_update_dividends():
             "success": True,
             "message": f"已更新 {updated_count} 条分红记录",
             "stocks_processed": len(stocks),
+            "mode": mode,
             "errors": errors[:5] if errors else []
         })
     except Exception as e:

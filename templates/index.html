@@ -138,7 +138,6 @@ tr:hover td{background:#fafbff}
           <tr>
             <th>代码</th>
             <th>名称</th>
-            <th>市场</th>
             <th>行业</th>
             <th>上市日期</th>
             <th>状态</th>
@@ -192,27 +191,22 @@ tr:hover td{background:#fafbff}
     <div class="modal-body">
       <input type="hidden" id="editCode">
       <label>股票代码 *</label>
-      <input type="text" id="inputCode" placeholder="如 600519" maxlength="10">
-      <label>股票名称 *</label>
-      <input type="text" id="inputName" placeholder="如 贵州茅台" maxlength="50">
+      <div style="display:flex;gap:8px">
+        <input type="text" id="inputCode" placeholder="如 600519" maxlength="10" style="flex:1;margin-bottom:0" oninput="onCodeInput()">
+        <button class="btn btn-outline btn-sm" id="btnLookup" onclick="lookupStock()" style="white-space:nowrap">查询</button>
+      </div>
+      <label style="margin-top:16px">股票名称</label>
+      <input type="text" id="inputName" placeholder="自动获取" maxlength="50" readonly style="background:#f5f5f5">
+      <label>市场</label>
+      <input type="text" id="inputMarket" readonly style="background:#f5f5f5">
       <div class="row">
-        <div>
-          <label>市场 *</label>
-          <select id="inputMarket"><option value="">请选择</option><option value="SH">上海 (SH)</option><option value="SZ">深圳 (SZ)</option><option value="BJ">北京 (BJ)</option></select>
-        </div>
         <div>
           <label>状态</label>
           <select id="inputStatus"><option value="正常">正常</option><option value="ST">ST</option><option value="*ST">*ST</option></select>
         </div>
-      </div>
-      <div class="row">
         <div>
           <label>行业</label>
           <input type="text" id="inputIndustry" placeholder="如 白酒">
-        </div>
-        <div>
-          <label>上市日期</label>
-          <input type="date" id="inputListDate">
         </div>
       </div>
     </div>
@@ -428,7 +422,6 @@ function renderTable(stocks) {
     <tr>
       <td><span class="code">${esc(s.code)}</span></td>
       <td><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
-      <td><span class="market-tag market-${s.market}">${s.market}</span></td>
       <td>${esc(s.industry || '-')}</td>
       <td>${s.list_date || '-'}</td>
       <td><span class="status-tag status-${s.status}">${s.status}</span></td>
@@ -474,7 +467,7 @@ function openAddModal() {
   document.getElementById('inputMarket').value = '';
   document.getElementById('inputStatus').value = '正常';
   document.getElementById('inputIndustry').value = '';
-  document.getElementById('inputListDate').value = '';
+  document.getElementById('btnLookup').style.display = 'inline-block';
   document.getElementById('modal').classList.add('active');
 }
 
@@ -491,9 +484,37 @@ async function openEditModal(code) {
     document.getElementById('inputMarket').value = s.market;
     document.getElementById('inputStatus').value = s.status;
     document.getElementById('inputIndustry').value = s.industry || '';
-    document.getElementById('inputListDate').value = s.list_date || '';
+    document.getElementById('btnLookup').style.display = 'none';
     document.getElementById('modal').classList.add('active');
   } catch (e) { showToast('获取股票信息失败', 'error'); }
+}
+
+function onCodeInput() {
+  document.getElementById('inputName').value = '';
+  document.getElementById('inputMarket').value = '';
+}
+
+async function lookupStock() {
+  const code = document.getElementById('inputCode').value.trim();
+  if (!code) { showToast('请输入股票代码', 'error'); return; }
+  const btn = document.getElementById('btnLookup');
+  btn.disabled = true;
+  btn.textContent = '查询中...';
+  try {
+    const res = await fetch('/api/stock-info/' + code);
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+    } else {
+      document.getElementById('inputName').value = data.name;
+      document.getElementById('inputMarket').value = data.market;
+      showToast('已识别: ' + data.name, 'success');
+    }
+  } catch (e) {
+    showToast('查询失败', 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '查询';
 }
 
 function closeModal() {
@@ -506,16 +527,15 @@ async function saveStock() {
 
   const code = document.getElementById('inputCode').value.trim();
   const name = document.getElementById('inputName').value.trim();
-  const market = document.getElementById('inputMarket').value;
+  const market = document.getElementById('inputMarket').value.trim();
   const status = document.getElementById('inputStatus').value;
   const industry = document.getElementById('inputIndustry').value.trim();
-  const listDate = document.getElementById('inputListDate').value;
 
-  if (!code || !name || !market) {
-    showToast('代码、名称、市场为必填项', 'error'); return;
+  if (!code) {
+    showToast('请输入股票代码', 'error'); return;
   }
 
-  const body = { code, name, market, status, industry: industry || null, list_date: listDate || null };
+  const body = { code, name, market, status, industry: industry || null };
   const url = isEdit ? '/api/stock/' + editCode : '/api/stock';
   const method = isEdit ? 'PUT' : 'POST';
 
@@ -561,16 +581,49 @@ function showToast(msg, type) {
 
 // ==================== 数据更新 ====================
 
-async function updateDividends() {
+function updateDividends() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="width:360px">
+      <div class="modal-header">
+        <h3>选择更新模式</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="text-align:center;padding:32px 24px">
+        <p style="margin-bottom:20px;color:#666;font-size:14px">增量更新：仅补全缺失年份的数据（快速）<br>全量更新：重新获取所有历史数据（较慢）</p>
+      </div>
+      <div class="modal-footer" style="justify-content:center;gap:16px">
+        <button class="btn btn-outline" id="btnIncremental">增量更新</button>
+        <button class="btn btn-primary" id="btnFull">全量更新</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.onclick = e => { if (e.target === overlay) close(); };
+
+  overlay.querySelector('#btnIncremental').onclick = () => { close(); doUpdate('incremental'); };
+  overlay.querySelector('#btnFull').onclick = () => { close(); doUpdate('full'); };
+}
+
+async function doUpdate(mode) {
+  const modeLabel = mode === 'incremental' ? '增量更新' : '全量更新';
   const btn = document.getElementById('btnUpdate');
   btn.disabled = true;
   btn.textContent = '⟳ 更新中...';
-  showToast('正在从东方财富和新浪财经获取最新数据，请稍候...', 'success');
+  showToast(`正在${modeLabel}，请稍候...`, 'success');
   try {
-    const res = await fetch('/api/update-dividends', { method: 'POST' });
+    const res = await fetch('/api/update-dividends', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
     const data = await res.json();
     if (data.success) {
-      showToast(data.message + '（' + data.stocks_processed + ' 只股票）', 'success');
+      showToast(`${modeLabel}完成: ${data.message}（${data.stocks_processed} 只股票）`, 'success');
     } else {
       showToast('更新失败: ' + (data.error || '未知错误'), 'error');
     }
