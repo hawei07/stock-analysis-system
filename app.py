@@ -2,6 +2,9 @@
 
 from flask import Flask, jsonify, request, render_template
 import sys
+import re
+import time
+import requests
 sys.path.insert(0, r"D:\stock-analysis-system")
 from models import Stock
 from db import execute_query
@@ -134,6 +137,84 @@ def api_stock_dividends(code):
             "ex_date": str(r["ex_date"]) if r["ex_date"] else None,
         })
     return jsonify(result)
+
+
+# ==================== 数据更新 API ====================
+
+@app.route("/api/update-dividends", methods=["POST"])
+def api_update_dividends():
+    """从东方财富和新浪财经更新所有股票的分红和净利润数据"""
+    try:
+        stocks = execute_query("SELECT code, name FROM stocks WHERE status='正常'")
+        updated_count = 0
+        errors = []
+
+        for s in stocks:
+            code = s["code"]
+            # 1. 获取净利润
+            net_profits = {}
+            total_share = 0
+            try:
+                url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
+                       "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
+                       f"&filter=(SECURITY_CODE=%22{code}%22)&pageSize=20")
+                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                data = resp.json()
+                if data.get("success"):
+                    for item in data["result"]["data"]:
+                        if item.get("REPORT_TYPE") == "年报":
+                            year = int(item["REPORT_DATE"][:4])
+                            profit = item.get("PARENTNETPROFIT")
+                            if profit and year not in net_profits:
+                                net_profits[year] = round(profit / 1e8, 4)
+                        if item.get("TOTAL_SHARE") and not total_share:
+                            total_share = item["TOTAL_SHARE"]
+            except Exception as e:
+                errors.append(f"{code}: 净利润获取失败 - {str(e)}")
+                continue
+
+            # 2. 获取分红方案
+            yearly_dividends = {}
+            try:
+                url2 = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/{code}.phtml"
+                resp2 = requests.get(url2, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                resp2.encoding = 'gbk'
+                text = resp2.text
+                pattern = r'(\d{4}-\d{2}-\d{2})\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*([\d.]+)\s*</td>\s*<[^>]*>\s*<[^>]*>\s*(实施)'
+                matches = re.findall(pattern, text)
+                for m in matches:
+                    year = int(m[0][:4])
+                    dividend_per_10 = float(m[3])
+                    if dividend_per_10 > 0 and total_share > 0:
+                        if year not in yearly_dividends:
+                            yearly_dividends[year] = 0
+                        yearly_dividends[year] += dividend_per_10 * total_share / 10 / 1e8
+            except Exception as e:
+                errors.append(f"{code}: 分红获取失败 - {str(e)}")
+
+            # 3. 更新数据库
+            for year in net_profits:
+                np_val = net_profits[year]
+                da_val = yearly_dividends.get(year)
+                if da_val is not None:
+                    execute_query(
+                        "INSERT INTO dividends (stock_code, fiscal_year, net_profit, dividend_amount) "
+                        "VALUES (%s, %s, %s, %s) "
+                        "ON DUPLICATE KEY UPDATE net_profit=VALUES(net_profit), dividend_amount=VALUES(dividend_amount)",
+                        (code, year, np_val, da_val),
+                        commit=True
+                    )
+                    updated_count += 1
+            time.sleep(0.3)
+
+        return jsonify({
+            "success": True,
+            "message": f"已更新 {updated_count} 条分红记录",
+            "stocks_processed": len(stocks),
+            "errors": errors[:5] if errors else []
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":
