@@ -180,8 +180,8 @@ def api_update_dividends():
                 resp2 = requests.get(url2, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
                 resp2.encoding = 'gbk'
                 text = resp2.text
-                pattern = r'(\d{4}-\d{2}-\d{2})\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*([\d.]+)\s*</td>\s*<[^>]*>\s*<[^>]*>\s*(实施)'
-                matches = re.findall(pattern, text)
+                pattern = r'(\d{4}-\d{2}-\d{2})\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*([\d.]+)\s*</td>.*?实施'
+                matches = re.findall(pattern, text, re.DOTALL)
                 for m in matches:
                     year = int(m[0][:4])
                     dividend_per_10 = float(m[3])
