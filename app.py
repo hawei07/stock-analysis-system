@@ -4,6 +4,7 @@ from flask import Flask, jsonify, request, render_template
 import sys
 sys.path.insert(0, r"D:\stock-analysis-system")
 from models import Stock
+from db import execute_query
 
 app = Flask(__name__)
 
@@ -11,7 +12,8 @@ app = Flask(__name__)
 # ==================== 页面路由 ====================
 
 @app.route("/")
-def index():
+@app.route("/stock/<code>")
+def index(code=None):
     return render_template("index.html")
 
 
@@ -111,6 +113,27 @@ def api_stats():
         "markets": markets,
         "industries": industries,
     })
+
+
+# ==================== 分红 API ====================
+
+@app.route("/api/stock/<code>/dividends")
+def api_stock_dividends(code):
+    rows = execute_query(
+        "SELECT fiscal_year, net_profit, dividend_amount, dividend_per_share, ex_date "
+        "FROM dividends WHERE stock_code = %s ORDER BY fiscal_year",
+        (code,)
+    )
+    result = []
+    for r in rows:
+        result.append({
+            "fiscal_year": r["fiscal_year"],
+            "net_profit": float(r["net_profit"]) if r["net_profit"] else 0,
+            "dividend_amount": float(r["dividend_amount"]) if r["dividend_amount"] else 0,
+            "dividend_per_share": float(r["dividend_per_share"]) if r["dividend_per_share"] else 0,
+            "ex_date": str(r["ex_date"]) if r["ex_date"] else None,
+        })
+    return jsonify(result)
 
 
 if __name__ == "__main__":

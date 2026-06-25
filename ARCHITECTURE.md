@@ -1,3 +1,14 @@
+---
+AIGC:
+    Label: "1"
+    ContentProducer: 001191440300708461136T1XGW3
+    ProduceID: 3f11eb7fa23d664c4b1c1527387f20fd_84d55351704511f1986d525400d9a7a1
+    ReservedCode1: 24yu3eSrwjYxfL/ys2MQrX9sCwzJFdWqnrOQ0GSoA4PyzqyLkJ9pvQ7MlKN9lFSyhnpa5dAYp6SOixVQQUDMW+mHWzlvXJpaHWWx1/BQcMdS+1pgK1jwrz3q2sdzmx26gXQBBcQ1wELR592ImE7+zkdhS3eACkJX+IqbGMtKzUip0ZtUPa0eIa5e4V4=
+    ContentPropagator: 001191440300708461136T1XGW3
+    PropagateID: 3f11eb7fa23d664c4b1c1527387f20fd_84d55351704511f1986d525400d9a7a1
+    ReservedCode2: 24yu3eSrwjYxfL/ys2MQrX9sCwzJFdWqnrOQ0GSoA4PyzqyLkJ9pvQ7MlKN9lFSyhnpa5dAYp6SOixVQQUDMW+mHWzlvXJpaHWWx1/BQcMdS+1pgK1jwrz3q2sdzmx26gXQBBcQ1wELR592ImE7+zkdhS3eACkJX+IqbGMtKzUip0ZtUPa0eIa5e4V4=
+---
+
 # 股票分析系统 — 业务逻辑与技术架构总结
 
 > 版本 v1.0 | 2026-06-25 | Python Flask + MySQL 8.4
@@ -285,3 +296,4 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 | 三期 | 技术分析 | MACD/KDJ/均线等指标计算与可视化 |
 | 四期 | 策略回测 | 自定义策略引擎 + 收益曲线 |
 | 五期 | 选股筛选 | 多条件组合筛选 + 排序 |
+*（内容由AI生成，仅供参考）*

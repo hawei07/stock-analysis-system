@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>股票分析系统</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
@@ -25,7 +26,13 @@ body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;c
 .btn-outline{background:#fff;color:#4a6cf7;border:1px solid #4a6cf7}
 .btn-outline:hover{background:#f0f5ff}
 .btn-sm{padding:4px 12px;font-size:12px}
+.btn-back{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);padding:6px 16px}
+.btn-back:hover{background:rgba(255,255,255,.25)}
 
+.view{display:none}
+.view.active{display:block}
+
+/* 列表页 */
 .content{padding:24px 32px}
 .table-wrap{background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 table{width:100%;border-collapse:collapse}
@@ -33,6 +40,8 @@ th{background:#fafafa;padding:12px 16px;text-align:left;font-weight:600;font-siz
 td{padding:12px 16px;font-size:13px;border-bottom:1px solid #f5f5f5}
 tr:hover td{background:#fafbff}
 .code{font-family:'Courier New',monospace;font-weight:600;color:#4a6cf7}
+.name-link{color:#4a6cf7;cursor:pointer;text-decoration:none;font-weight:500}
+.name-link:hover{text-decoration:underline;color:#3b5de7}
 .market-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
 .market-SH{background:#ffeaea;color:#cf1322}
 .market-SZ{background:#e6f7ff;color:#096dd9}
@@ -49,6 +58,24 @@ tr:hover td{background:#fafbff}
 .pagination .current{background:#4a6cf7;color:#fff;border-color:#4a6cf7}
 .pagination .info{font-size:13px;color:#999}
 
+/* 详情页 */
+.detail-header{background:#fff;padding:20px 32px;border-bottom:1px solid #e8e8e8;display:flex;align-items:center;gap:16px}
+.detail-stock-info{display:flex;align-items:center;gap:12px;flex:1}
+.detail-stock-info .stock-code{font-family:'Courier New',monospace;font-size:20px;font-weight:700;color:#1a1a2e}
+.detail-stock-info .stock-name{font-size:18px;font-weight:600}
+.detail-stock-info .stock-meta{font-size:13px;color:#999}
+.detail-stock-info .stock-meta span{margin-right:16px}
+
+.tabs{display:flex;gap:0;background:#fff;border-bottom:2px solid #e8e8e8;padding:0 32px}
+.tab-btn{padding:14px 24px;font-size:14px;font-weight:500;color:#666;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab-btn:hover{color:#4a6cf7}
+.tab-btn.active{color:#4a6cf7;border-bottom-color:#4a6cf7}
+
+.detail-content{padding:24px 32px}
+.chart-container{background:#fff;border-radius:8px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.chart-box{width:100%;height:420px}
+
+/* 弹窗 */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center}
 .modal-overlay.active{display:flex}
 .modal{background:#fff;border-radius:12px;width:480px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,.15);overflow:hidden}
@@ -75,46 +102,82 @@ tr:hover td{background:#fafbff}
 </head>
 <body>
 
+<!-- 头部：列表和详情共用 -->
 <div class="header">
-  <h1>股票分析系统</h1>
+  <div style="display:flex;align-items:center;gap:16px">
+    <h1 style="cursor:pointer" onclick="goList()">股票分析系统</h1>
+    <button class="btn btn-back" id="btnBack" style="display:none" onclick="goList()">&larr; 返回列表</button>
+  </div>
   <div class="stats" id="statsInfo">加载中...</div>
 </div>
 
-<div class="toolbar">
-  <input type="text" id="keyword" placeholder="搜索代码或名称..." onkeyup="debounceSearch()">
-  <select id="filterMarket" onchange="loadStocks()">
-    <option value="">全部市场</option>
-    <option value="SH">上海 (SH)</option>
-    <option value="SZ">深圳 (SZ)</option>
-    <option value="BJ">北京 (BJ)</option>
-  </select>
-  <select id="filterStatus" onchange="loadStocks()">
-    <option value="">全部状态</option>
-    <option value="正常">正常</option>
-    <option value="ST">ST</option>
-    <option value="*ST">*ST</option>
-  </select>
-  <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
+<!-- 列表页 -->
+<div class="view active" id="view-list">
+  <div class="toolbar">
+    <input type="text" id="keyword" placeholder="搜索代码或名称..." onkeyup="debounceSearch()">
+    <select id="filterMarket" onchange="loadStocks()">
+      <option value="">全部市场</option>
+      <option value="SH">上海 (SH)</option>
+      <option value="SZ">深圳 (SZ)</option>
+      <option value="BJ">北京 (BJ)</option>
+    </select>
+    <select id="filterStatus" onchange="loadStocks()">
+      <option value="">全部状态</option>
+      <option value="正常">正常</option>
+      <option value="ST">ST</option>
+      <option value="*ST">*ST</option>
+    </select>
+    <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
+  </div>
+
+  <div class="content">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>代码</th>
+            <th>名称</th>
+            <th>市场</th>
+            <th>行业</th>
+            <th>上市日期</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="stockTableBody"></tbody>
+      </table>
+      <div id="emptyHint" class="empty" style="display:none">暂无数据</div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
 </div>
 
-<div class="content">
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>代码</th>
-          <th>名称</th>
-          <th>市场</th>
-          <th>行业</th>
-          <th>上市日期</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody id="stockTableBody"></tbody>
-    </table>
-    <div id="emptyHint" class="empty" style="display:none">暂无数据</div>
-    <div class="pagination" id="pagination"></div>
+<!-- 详情页 -->
+<div class="view" id="view-detail">
+  <div class="detail-header">
+    <div class="detail-stock-info">
+      <span class="stock-code" id="detailCode"></span>
+      <span class="stock-name" id="detailName"></span>
+      <span class="market-tag" id="detailMarket"></span>
+      <span class="stock-meta">
+        <span id="detailIndustry"></span>
+        <span id="detailListDate"></span>
+        <span id="detailStatus"></span>
+      </span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
+  </div>
+
+  <div class="detail-content">
+    <div class="tab-panel active" id="panel-dividends">
+      <div class="chart-container">
+        <h3 style="margin-bottom:16px;font-size:16px;font-weight:600">年度净利润与分红金额（亿元）</h3>
+        <div class="chart-box" id="chartDividends"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -165,20 +228,178 @@ tr:hover td{background:#fafbff}
 let currentPage = 1;
 let totalPages = 1;
 let searchTimer = null;
+let chartInstance = null;
 
-// 页面加载
+// ==================== 路由 ====================
+
 document.addEventListener('DOMContentLoaded', () => {
-  loadStocks();
-  loadStats();
+  const path = window.location.pathname;
+  const match = path.match(/^\/stock\/(\d+)$/);
+  if (match) {
+    showDetailView(match[1]);
+  } else {
+    showListView();
+    loadStocks();
+    loadStats();
+  }
+  window.addEventListener('popstate', onPopState);
 });
 
-// 防抖搜索
+function onPopState() {
+  const path = window.location.pathname;
+  const match = path.match(/^\/stock\/(\d+)$/);
+  if (match) {
+    showDetailView(match[1]);
+  } else {
+    showListView();
+    loadStocks();
+    loadStats();
+  }
+}
+
+function navigateTo(url) {
+  history.pushState(null, '', url);
+  const path = new URL(url, location.origin).pathname;
+  const match = path.match(/^\/stock\/(\d+)$/);
+  if (match) {
+    showDetailView(match[1]);
+  } else {
+    showListView();
+    loadStocks();
+    loadStats();
+  }
+}
+
+function goList() {
+  navigateTo('/');
+}
+
+function showDetailView(code) {
+  document.getElementById('view-list').classList.remove('active');
+  document.getElementById('view-detail').classList.add('active');
+  document.getElementById('btnBack').style.display = 'inline-block';
+  loadDetail(code);
+}
+
+function showListView() {
+  document.getElementById('view-detail').classList.remove('active');
+  document.getElementById('view-list').classList.add('active');
+  document.getElementById('btnBack').style.display = 'none';
+}
+
+// ==================== 详情页 ====================
+
+async function loadDetail(code) {
+  try {
+    // 加载股票基本信息
+    const stockRes = await fetch('/api/stock/' + code);
+    const stock = await stockRes.json();
+    if (stock.error) { showToast(stock.error, 'error'); goList(); return; }
+    document.getElementById('detailCode').textContent = stock.code;
+    document.getElementById('detailName').textContent = stock.name;
+    document.getElementById('detailMarket').textContent = stock.market;
+    document.getElementById('detailMarket').className = 'market-tag market-' + stock.market;
+    document.getElementById('detailIndustry').textContent = stock.industry ? '行业: ' + stock.industry : '';
+    document.getElementById('detailListDate').textContent = stock.list_date ? '上市: ' + stock.list_date : '';
+    document.getElementById('detailStatus').innerHTML = '<span class="status-tag status-' + stock.status + '">' + stock.status + '</span>';
+
+    // 加载分红数据并渲染图表
+    loadDividends(code);
+  } catch (e) {
+    showToast('加载详情失败', 'error');
+  }
+}
+
+async function loadDividends(code) {
+  try {
+    const res = await fetch('/api/stock/' + code + '/dividends');
+    const data = await res.json();
+    renderDividendsChart(data);
+  } catch (e) {
+    showToast('加载分红数据失败', 'error');
+  }
+}
+
+function renderDividendsChart(data) {
+  const dom = document.getElementById('chartDividends');
+  if (!dom) return;
+  if (chartInstance) chartInstance.dispose();
+
+  const years = data.map(d => d.fiscal_year + '');
+  const netProfits = data.map(d => d.net_profit);
+  const dividends = data.map(d => d.dividend_amount);
+
+  chartInstance = echarts.init(dom);
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      valueFormatter: v => v !== null ? v.toFixed(2) + ' 亿元' : '-'
+    },
+    legend: {
+      data: ['净利润', '分红金额'],
+      top: 4
+    },
+    grid: {
+      left: 60,
+      right: 60,
+      top: 50,
+      bottom: 40
+    },
+    xAxis: {
+      type: 'category',
+      data: years,
+      name: '财年',
+      axisLabel: { fontSize: 12 }
+    },
+    yAxis: {
+      type: 'value',
+      name: '金额（亿元）',
+      axisLabel: { fontSize: 12 }
+    },
+    series: [
+      {
+        name: '净利润',
+        type: 'bar',
+        data: netProfits,
+        itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] },
+        label: {
+          show: true,
+          position: 'top',
+          fontSize: 11,
+          formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
+        }
+      },
+      {
+        name: '分红金额',
+        type: 'bar',
+        data: dividends,
+        itemStyle: { color: '#52c41a', borderRadius: [4, 4, 0, 0] },
+        label: {
+          show: true,
+          position: 'top',
+          fontSize: 11,
+          formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
+        }
+      }
+    ]
+  };
+  chartInstance.setOption(option);
+  window.addEventListener('resize', () => chartInstance && chartInstance.resize());
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-tab="' + name + '"]').classList.add('active');
+}
+
+// ==================== 列表页 ====================
+
 function debounceSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => { currentPage = 1; loadStocks(); }, 400);
 }
 
-// 加载股票列表
 async function loadStocks() {
   const keyword = document.getElementById('keyword').value.trim();
   const market = document.getElementById('filterMarket').value;
@@ -200,13 +421,12 @@ async function loadStocks() {
   }
 }
 
-// 渲染表格
 function renderTable(stocks) {
   const tbody = document.getElementById('stockTableBody');
   tbody.innerHTML = stocks.map(s => `
     <tr>
       <td><span class="code">${esc(s.code)}</span></td>
-      <td>${esc(s.name)}</td>
+      <td><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
       <td><span class="market-tag market-${s.market}">${s.market}</span></td>
       <td>${esc(s.industry || '-')}</td>
       <td>${s.list_date || '-'}</td>
@@ -219,7 +439,6 @@ function renderTable(stocks) {
   `).join('');
 }
 
-// 渲染分页
 function renderPagination(data) {
   const pg = document.getElementById('pagination');
   let html = `<span class="info">共 ${data.total} 条 / ${data.total_pages} 页</span>`;
@@ -235,7 +454,6 @@ function renderPagination(data) {
 
 function goPage(p) { currentPage = p; loadStocks(); }
 
-// 加载统计
 async function loadStats() {
   try {
     const res = await fetch('/api/stats');
@@ -244,7 +462,8 @@ async function loadStats() {
   } catch (e) {}
 }
 
-// 打开添加弹窗
+// ==================== 弹窗 ====================
+
 function openAddModal() {
   document.getElementById('modalTitle').textContent = '添加股票';
   document.getElementById('editCode').value = '';
@@ -258,7 +477,6 @@ function openAddModal() {
   document.getElementById('modal').classList.add('active');
 }
 
-// 打开编辑弹窗
 async function openEditModal(code) {
   try {
     const res = await fetch('/api/stock/' + code);
@@ -281,7 +499,6 @@ function closeModal() {
   document.getElementById('modal').classList.remove('active');
 }
 
-// 保存股票
 async function saveStock() {
   const editCode = document.getElementById('editCode').value;
   const isEdit = !!editCode;
@@ -317,7 +534,6 @@ async function saveStock() {
   }
 }
 
-// 删除股票
 async function deleteStock(code, name) {
   if (!confirm(`确认删除 ${code} ${name}？`)) return;
   try {
@@ -333,7 +549,8 @@ async function deleteStock(code, name) {
   } catch (e) { showToast('请求失败', 'error'); }
 }
 
-// Toast 提示
+// ==================== 工具函数 ====================
+
 function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
