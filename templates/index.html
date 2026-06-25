@@ -139,8 +139,8 @@ tr:hover td{background:#fafbff}
             <th>代码</th>
             <th>名称</th>
             <th>行业</th>
-            <th>上市日期</th>
-            <th>状态</th>
+            <th>PE(TTM)</th>
+            <th>股息率</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -423,8 +423,8 @@ function renderTable(stocks) {
       <td><span class="code">${esc(s.code)}</span></td>
       <td><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
       <td>${esc(s.industry || '-')}</td>
-      <td>${s.list_date || '-'}</td>
-      <td><span class="status-tag status-${s.status}">${s.status}</span></td>
+      <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
+      <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="openEditModal('${esc(s.code)}')">编辑</button>
         <button class="btn btn-danger btn-sm" onclick="deleteStock('${esc(s.code)}','${esc(s.name)}')">删除</button>

@@ -56,7 +56,7 @@ class Stock:
         """更新股票信息，kwargs 为要更新的字段"""
         if not kwargs:
             return 0
-        allowed = {"name", "market", "industry", "list_date", "status"}
+        allowed = {"name", "market", "industry", "list_date", "status", "pe_ttm", "dividend_yield"}
         sets = [f"{k} = %s" for k in kwargs if k in allowed]
         values = [v for k, v in kwargs.items() if k in allowed]
         if not sets:

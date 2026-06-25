@@ -207,7 +207,7 @@ def api_update_dividends():
         mode = request.args["mode"]
 
     try:
-        stocks = execute_query("SELECT code, name FROM stocks WHERE status='正常'")
+        stocks = execute_query("SELECT code, name, market FROM stocks WHERE status='正常'")
         updated_count = 0
         errors = []
 
@@ -223,6 +223,7 @@ def api_update_dividends():
 
         for s in stocks:
             code = s["code"]
+            market = s.get("market", "SH")
             net_profits = {}
             total_share = 0
 
@@ -250,41 +251,95 @@ def api_update_dividends():
             if mode == "incremental" and code in existing_years:
                 net_profits = {y: v for y, v in net_profits.items() if y not in existing_years[code]}
 
-            if not net_profits:
-                continue
-
-            # 2. 获取分红方案
+            # 2. 获取分红方案（全量模式或增量有缺失数据时）
             yearly_dividends = {}
-            try:
-                url2 = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/{code}.phtml"
-                resp2 = requests.get(url2, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                resp2.encoding = 'gbk'
-                text = resp2.text
-                pattern = r'(\d{4}-\d{2}-\d{2})\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*(\d+)\s*</td>\s*<[^>]*>\s*([\d.]+)\s*</td>.*?实施'
-                matches = re.findall(pattern, text, re.DOTALL)
-                for m in matches:
-                    year = int(m[0][:4])
-                    dividend_per_10 = float(m[3])
-                    if dividend_per_10 > 0 and total_share > 0:
-                        if year not in yearly_dividends:
-                            yearly_dividends[year] = 0
-                        yearly_dividends[year] += dividend_per_10 * total_share / 10 / 1e8
-            except Exception as e:
-                errors.append(f"{code}: 分红获取失败 - {str(e)}")
+            yearly_dps = {}
+            need_dividend_fetch = mode == "full" or len(net_profits) > 0
+            if need_dividend_fetch and total_share > 0:
+                try:
+                    url2 = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/{code}.phtml"
+                    resp2 = requests.get(url2, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                    resp2.encoding = 'gbk'
+                    text = resp2.text
+                    # 先匹配 tr 块，再提取字段（避免 .*?实施 过滤导致漏掉条目）
+                    tr_blocks = re.findall(r'<tr[^>]*>(.*?)</tr>', text, re.DOTALL)
+                    for tr in tr_blocks:
+                        dm = re.search(r'(\d{4}-\d{2}-\d{2})', tr)
+                        if not dm or '实施' not in tr:
+                            continue
+                        date_str = dm.group(1)
+                        nums = re.findall(r'>\s*([\d.]+)\s*<', tr)
+                        if len(nums) < 3:
+                            continue
+                        cal_year = int(date_str[:4])
+                        cal_month = int(date_str[5:7])
+                        # 财年映射：<=7月发放的属于上一财年（年终分红），>=8月属于当年（中期分红）
+                        fiscal_year = cal_year - 1 if cal_month <= 7 else cal_year
+                        dividend_per_10 = float(nums[-1])
+                        if dividend_per_10 > 0:
+                            if fiscal_year not in yearly_dividends:
+                                yearly_dividends[fiscal_year] = 0
+                                yearly_dps[fiscal_year] = 0
+                            yearly_dividends[fiscal_year] += dividend_per_10 * total_share / 10 / 1e8
+                            yearly_dps[fiscal_year] += dividend_per_10 / 10
+                except Exception as e:
+                    errors.append(f"{code}: 分红获取失败 - {str(e)}")
 
-            # 3. 更新数据库（仅更新净利中有的年份）
+            # 3. 更新分红数据库
             for year in net_profits:
                 np_val = net_profits[year]
                 da_val = yearly_dividends.get(year)
                 if da_val is not None:
                     execute_query(
-                        "INSERT INTO dividends (stock_code, fiscal_year, net_profit, dividend_amount) "
-                        "VALUES (%s, %s, %s, %s) "
-                        "ON DUPLICATE KEY UPDATE net_profit=VALUES(net_profit), dividend_amount=VALUES(dividend_amount)",
-                        (code, year, np_val, da_val),
+                        "INSERT INTO dividends (stock_code, fiscal_year, net_profit, dividend_amount, dividend_per_share) "
+                        "VALUES (%s, %s, %s, %s, %s) "
+                        "ON DUPLICATE KEY UPDATE net_profit=VALUES(net_profit), dividend_amount=VALUES(dividend_amount), dividend_per_share=VALUES(dividend_per_share)",
+                        (code, year, np_val, da_val, yearly_dps.get(year)),
                         fetch=False
                     )
                     updated_count += 1
+
+            # 4. 更新 PE TTM 和股息率（腾讯行情接口）
+            try:
+                prefix = "sh" if market == "SH" else "sz"
+                url = f"https://qt.gtimg.cn/q={prefix}{code}"
+                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                resp.encoding = 'gbk'
+                text = resp.text
+                if text.startswith('v_'):
+                    parts = text.split('~')
+                    if len(parts) >= 40:
+                        pe_ttm = None
+                        div_yield = None
+                        pe_str = parts[39].strip()
+                        if pe_str and pe_str != '' and pe_str != '-':
+                            try:
+                                pe_ttm = float(pe_str)
+                            except:
+                                pe_ttm = None
+                        price_str = parts[3].strip()
+                        if price_str and price_str != '' and price_str != '-':
+                            try:
+                                cur_price = float(price_str)
+                                div_rows = execute_query(
+                                    "SELECT dividend_per_share FROM dividends "
+                                    "WHERE stock_code=%s AND dividend_per_share>0 ORDER BY fiscal_year DESC LIMIT 2",
+                                    (code,)
+                                )
+                                if div_rows:
+                                    dps = max(float(r["dividend_per_share"]) for r in div_rows)
+                                    if dps > 0 and cur_price > 0:
+                                        div_yield = round(dps / cur_price * 100, 2)
+                            except:
+                                div_yield = None
+                        execute_query(
+                            "UPDATE stocks SET pe_ttm=%s, dividend_yield=%s WHERE code=%s",
+                            (pe_ttm, div_yield, code),
+                            fetch=False
+                        )
+            except Exception as e:
+                errors.append(f"{code}: PE/股息率更新失败 - {str(e)}")
+
             time.sleep(0.3)
 
         return jsonify({

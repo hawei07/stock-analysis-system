@@ -87,12 +87,28 @@ AIGC:
 | `name` | VARCHAR(50) | NOT NULL | 股票名称 |
 | `market` | ENUM('SH','SZ','BJ') | NOT NULL | 市场：上海/深圳/北京 |
 | `industry` | VARCHAR(50) | NULL | 所属行业 |
-| `list_date` | DATE | NULL | 上市日期 |
-| `status` | ENUM('正常','ST','\*ST','退市','暂停上市') | DEFAULT '正常' | 交易状态 |
+| `pe_ttm` | DECIMAL(10,2) | NULL | 动态市盈率 |
+| `dividend_yield` | DECIMAL(10,4) | NULL | 股息率（%） |
 | `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | `updated_at` | DATETIME | ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
 
 > code 字段设计为自然键（UNIQUE），API 中通过 code 而非 id 进行资源定位。
+> list_date、status 字段保留在数据库结构中，此处不再展开。
+
+### 3.3 dividends 表结构
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | INT | PK, AUTO_INCREMENT | 主键 |
+| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
+| `fiscal_year` | INT | NOT NULL | 财年 |
+| `net_profit` | DECIMAL(18,4) | NULL | 净利润（亿元） |
+| `dividend_amount` | DECIMAL(18,4) | NULL | 分红总额（亿元） |
+| `dividend_per_share` | DECIMAL(10,4) | NULL | 每股分红（元） |
+| `ex_date` | DATE | NULL | 除权除息日 |
+| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+
+> 唯一约束：UNIQUE(stock_code, fiscal_year)，每只股票每个财年仅一条记录。
 
 ---
 
@@ -109,6 +125,7 @@ AIGC:
 | PUT | `/api/stock/<code>` | 更新股票 |
 | DELETE | `/api/stock/<code>` | 删除股票 |
 | GET | `/api/stats` | 统计概览 |
+| POST | `/api/update-dividends` | 全量/增量更新分红与PE数据 |
 
 ### 4.2 接口详情
 
@@ -143,6 +160,8 @@ AIGC:
       "industry": "白酒",
       "list_date": "2001-08-27",
       "status": "正常",
+      "pe_ttm": 25.30,
+      "dividend_yield": 0.0235,
       "created_at": "...",
       "updated_at": "..."
     }
@@ -189,6 +208,38 @@ AIGC:
 }
 ```
 
+#### POST /api/update-dividends
+
+全量或增量更新分红数据与PE数据。
+
+**Query 参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `mode` | string | `full` | 更新模式：`full`=全量更新所有股票，`incremental`=仅更新缺失/过期的股票 |
+
+**数据来源**：
+
+| 数据 | 来源 |
+|------|------|
+| 净利润 | 东方财富 datacenter-web API |
+| 分红方案 | 新浪财经 vISSUE_ShareBonus 页面 |
+| PE（动态市盈率） | 腾讯行情接口 qt.gtimg.cn |
+
+**处理逻辑**：
+
+- 遍历 stocks 表中所有（或增量）股票
+- 从东方财富获取历年净利润
+- 从新浪财经解析分红方案（送股/转增/派息），仅计入"实施"状态的分红记录
+- 从腾讯行情获取最新动态市盈率
+- 财年映射：分红日期月份 ≤7 归上一财年（年终分红），≥8 归当年（中期分红）
+- 股息率计算：取最近两个财年 dividend_per_share 的最大值，除以当前股价
+- dividend_per_share 由新浪每10股数据除以 10 得到
+- 写入 dividends 表（upsert 逻辑，UNIQUE(stock_code, fiscal_year)）
+- 更新 stocks 表的 pe_ttm 和 dividend_yield
+
+**成功响应**：`200` + `{"success": true, "message": "分红数据更新完成", "updated": 16, "total_dividends": 77}`
+
 ---
 
 ## 五、业务逻辑
@@ -229,6 +280,41 @@ AIGC:
 - 编辑时 code 字段锁定（不可修改主键）
 - 删除前 `confirm()` 二次确认
 - 操作结果 Toast 提示（2.5 秒自动消失）
+
+### 5.5 数据源与采集逻辑
+
+#### PE 数据源
+
+- **接口**：`https://qt.gtimg.cn/q={prefix}{code}`
+- **prefix 规则**：SH → `sh`，SZ → `sz`
+- **解析**：返回字符串按 `~` 分割，`parts[39]` 为动态市盈率
+
+#### 分红数据源
+
+- **接口**：`https://vip.stock.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/{code}.phtml`
+- **解析**：解析 HTML 中的 `<tr>` 块，提取送股/转增/派息（每10股数据）
+- **过滤**：仅计入"实施"状态的分红记录
+- **换算**：每10股派息数据除以 10 得到 dividend_per_share（每股分红/元）
+
+#### 净利润数据源
+
+- **接口**：东方财富 datacenter-web API
+- **用途**：获取历年净利润（亿元），写入 dividends.net_profit
+
+#### 财年映射规则
+
+| 除权除息日月份 | 归属财年 | 说明 |
+|------|------|------|
+| 1月 ~ 7月 | 上一年 | 年终分红 |
+| 8月 ~ 12月 | 当前年 | 中期分红 |
+
+#### 股息率计算
+
+取最近两个财年 dividend_per_share 的最大值，除以当前股价，公式：
+
+```
+dividend_yield = MAX(dps_last_year, dps_year_before) / current_price
+```
 
 ---
 
@@ -288,6 +374,14 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 ---
 
 ## 八、后续扩展规划
+
+### 8.1 当前数据规模
+
+| 指标 | 数值 |
+|------|------|
+| 股票总数 | 16 只（SH 7 只，SZ 9 只） |
+| 分红记录 | 77 条 |
+| 覆盖财年 | 约 20 个财年 |
 
 | 阶段 | 模块 | 说明 |
 |------|------|------|
