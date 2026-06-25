@@ -206,7 +206,7 @@ def api_update_dividends():
                         "VALUES (%s, %s, %s, %s) "
                         "ON DUPLICATE KEY UPDATE net_profit=VALUES(net_profit), dividend_amount=VALUES(dividend_amount)",
                         (code, year, np_val, da_val),
-                        commit=True
+                        fetch=False
                     )
                     updated_count += 1
             time.sleep(0.3)
