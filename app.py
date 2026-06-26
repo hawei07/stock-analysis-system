@@ -231,7 +231,7 @@ def api_update_dividends():
             try:
                 url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
                        "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
-                       f"&filter=(SECURITY_CODE=%22{code}%22)&pageSize=20")
+                       f"&filter=(SECURITY_CODE=%22{code}%22)&pageSize=200")
                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
                 data = resp.json()
                 if data.get("success"):

@@ -174,7 +174,7 @@ tr:hover td{background:#fafbff}
   <div class="detail-content">
     <div class="tab-panel active" id="panel-dividends">
       <div class="chart-container">
-        <h3 style="margin-bottom:16px;font-size:16px;font-weight:600">年度净利润与分红金额（亿元）</h3>
+        <h3 style="margin-bottom:16px;font-size:16px;font-weight:600">净利润、分红金额与分红比例</h3>
         <div class="chart-box" id="chartDividends"></div>
       </div>
     </div>
@@ -323,21 +323,33 @@ function renderDividendsChart(data) {
   const years = data.map(d => d.fiscal_year + '');
   const netProfits = data.map(d => d.net_profit);
   const dividends = data.map(d => d.dividend_amount);
+  const payoutRatios = data.map(d => d.net_profit > 0 ? +(d.dividend_amount / d.net_profit * 100).toFixed(1) : null);
 
   chartInstance = echarts.init(dom);
   const option = {
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      valueFormatter: v => v !== null ? v.toFixed(2) + ' 亿元' : '-'
+      axisPointer: { type: 'cross' },
+      formatter: function(params) {
+        const year = params[0].axisValue;
+        let html = '<strong>' + year + '</strong><br/>';
+        params.forEach(p => {
+          if (p.seriesName === '分红比例') {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value !== null ? p.value + '%' : '-') + '<br/>';
+          } else {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value !== null ? p.value.toFixed(2) + ' 亿元' : '-') + '<br/>';
+          }
+        });
+        return html;
+      }
     },
     legend: {
-      data: ['净利润', '分红金额'],
+      data: ['净利润', '分红金额', '分红比例'],
       top: 4
     },
     grid: {
       left: 60,
-      right: 60,
+      right: 80,
       top: 50,
       bottom: 40
     },
@@ -347,15 +359,24 @@ function renderDividendsChart(data) {
       name: '财年',
       axisLabel: { fontSize: 12 }
     },
-    yAxis: {
-      type: 'value',
-      name: '金额（亿元）',
-      axisLabel: { fontSize: 12 }
-    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '金额（亿元）',
+        axisLabel: { fontSize: 12 }
+      },
+      {
+        type: 'value',
+        name: '分红比例（%）',
+        axisLabel: { fontSize: 12 },
+        splitLine: { show: false }
+      }
+    ],
     series: [
       {
         name: '净利润',
         type: 'bar',
+        yAxisIndex: 0,
         data: netProfits,
         itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] },
         label: {
@@ -368,6 +389,7 @@ function renderDividendsChart(data) {
       {
         name: '分红金额',
         type: 'bar',
+        yAxisIndex: 0,
         data: dividends,
         itemStyle: { color: '#52c41a', borderRadius: [4, 4, 0, 0] },
         label: {
@@ -375,6 +397,23 @@ function renderDividendsChart(data) {
           position: 'top',
           fontSize: 11,
           formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
+        }
+      },
+      {
+        name: '分红比例',
+        type: 'line',
+        yAxisIndex: 1,
+        data: payoutRatios,
+        lineStyle: { color: '#fa8c16', width: 2.5 },
+        itemStyle: { color: '#fa8c16' },
+        symbol: 'circle',
+        symbolSize: 6,
+        label: {
+          show: true,
+          position: 'top',
+          fontSize: 10,
+          color: '#fa8c16',
+          formatter: p => p.value !== null ? p.value + '%' : ''
         }
       }
     ]
