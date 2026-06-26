@@ -222,7 +222,7 @@ AIGC:
 
 | 数据 | 来源 |
 |------|------|
-| 净利润 | 东方财富 datacenter-web API |
+| 净利润 | 东方财富 datacenter-web API（pageSize=200，覆盖上市以来全部年报） |
 | 分红方案 | 新浪财经 vISSUE_ShareBonus 页面 |
 | PE（动态市盈率） | 腾讯行情接口 qt.gtimg.cn |
 
@@ -238,7 +238,7 @@ AIGC:
 - 写入 dividends 表（upsert 逻辑，UNIQUE(stock_code, fiscal_year)）
 - 更新 stocks 表的 pe_ttm 和 dividend_yield
 
-**成功响应**：`200` + `{"success": true, "message": "分红数据更新完成", "updated": 16, "total_dividends": 77}`
+**成功响应**：`200` + `{"success": true, "message": "已更新 295 条分红记录", "stocks_processed": 16}`
 
 ---
 
@@ -299,7 +299,20 @@ AIGC:
 #### 净利润数据源
 
 - **接口**：东方财富 datacenter-web API
+- **参数**：`pageSize=200`，确保覆盖上市以来全部年报数据（A股最老约30年）
 - **用途**：获取历年净利润（亿元），写入 dividends.net_profit
+
+#### 分红图表可视化
+
+分红详情页使用 ECharts 柱状图+折线图混合图表，双 Y 轴布局：
+
+| 系列 | 图表类型 | Y 轴 | 颜色 | 说明 |
+|------|------|------|------|------|
+| 净利润 | 柱状图 | 左轴（亿元） | 蓝色 `#4a6cf7` | 各财年归母净利润 |
+| 分红金额 | 柱状图 | 左轴（亿元） | 绿色 `#52c41a` | 各财年分红总额 |
+| 分红比例 | 折线图 | 右轴（%） | 橙色 `#fa8c16` | 分红金额 ÷ 净利润 × 100% |
+
+前端直接计算 `payout_ratio = dividend_amount / net_profit * 100`，无需额外后端接口。
 
 #### 财年映射规则
 
@@ -380,8 +393,8 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 | 指标 | 数值 |
 |------|------|
 | 股票总数 | 16 只（SH 7 只，SZ 9 只） |
-| 分红记录 | 77 条 |
-| 覆盖财年 | 约 20 个财年 |
+| 分红记录 | 298 条 |
+| 覆盖财年 | 完整覆盖各股票上市以来全部分红（最早 1997 年） |
 
 | 阶段 | 模块 | 说明 |
 |------|------|------|
