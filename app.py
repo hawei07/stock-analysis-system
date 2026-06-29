@@ -530,7 +530,7 @@ def api_stock_financials(code):
                   cf.short_borrow, cf.noncurrent_liab_due1y, cf.long_borrow, cf.bonds_payable,
                   d.dividend_amount, d.dividend_per_share
            FROM custom_financials cf
-           LEFT JOIN dividends d ON cf.stock_code = d.stock_code AND cf.fiscal_year = d.fiscal_year
+           LEFT JOIN dividends d ON cf.stock_code = d.stock_code COLLATE utf8mb4_unicode_ci AND cf.fiscal_year = d.fiscal_year
            WHERE cf.stock_code = %s AND cf.fiscal_year BETWEEN %s AND %s
            ORDER BY cf.fiscal_year DESC""",
         (code, from_year, to_year)
@@ -638,4 +638,10 @@ def api_stock_financials(code):
 
 if __name__ == "__main__":
     print("股票分析系统 Web 服务启动: http://127.0.0.1:5002")
+    # 启动时确保 custom_financials 表有新增列
+    try:
+        _ensure_financials_columns()
+        print("✓ 已确保 custom_financials 表结构完整")
+    except Exception as e:
+        print(f"⚠ 表结构检查异常: {e}")
     app.run(host="127.0.0.1", port=5002, debug=False)
