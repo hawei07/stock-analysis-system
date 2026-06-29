@@ -355,6 +355,27 @@ def api_update_dividends():
 
 # ==================== 自定义财报 API ====================
 
+
+def _ensure_financials_columns():
+    """确保 custom_financials 包含新增字段（幂等）"""
+    new_columns = [
+        ("basic_eps", "DECIMAL(18,4) DEFAULT NULL COMMENT '归母普通股每股收益'"),
+        ("debt_ratio", "DECIMAL(10,4) DEFAULT NULL COMMENT '资产负债率(%)'"),
+        ("short_borrow", "DECIMAL(18,4) DEFAULT NULL COMMENT '短期借款(亿)'"),
+        ("noncurrent_liab_due1y", "DECIMAL(18,4) DEFAULT NULL COMMENT '一年内到期非流动负债(亿)'"),
+        ("long_borrow", "DECIMAL(18,4) DEFAULT NULL COMMENT '长期借款(亿)'"),
+        ("bonds_payable", "DECIMAL(18,4) DEFAULT NULL COMMENT '应付债券(亿)'"),
+    ]
+    for col_name, col_def in new_columns:
+        try:
+            execute_query(
+                f"ALTER TABLE custom_financials ADD COLUMN {col_name} {col_def}",
+                fetch=False,
+            )
+        except Exception:
+            pass  # 列已存在则忽略
+
+
 @app.route("/api/update-financials", methods=["POST"])
 def api_update_financials():
     """从东方财富拉取年报财务数据并存入 custom_financials 表
@@ -365,6 +386,9 @@ def api_update_financials():
         mode = request.get_json(silent=True).get("mode", "full")
     if request.args.get("mode"):
         mode = request.args["mode"]
+
+    # 确保新字段列存在
+    _ensure_financials_columns()
 
     try:
         stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
@@ -413,19 +437,44 @@ def api_update_financials():
                     total_share = item.get("TOTAL_SHARE")
                     total_shares_val = round(total_share / 1e8, 4) if total_share else None
 
+                    # 新增字段
+                    basic_eps = item.get("BASIC_EPS")
+                    basic_eps_val = round(float(basic_eps), 4) if basic_eps else None
+
+                    ta_raw = item.get("TOTAL_ASSETS_PK", 0)
+                    te_raw = item.get("TOTAL_EQUITY_PK", 0)
+                    ta_val = round(ta_raw / 1e8, 4) if ta_raw else None
+                    te_val = round(te_raw / 1e8, 4) if te_raw else None
+                    # 资产负债率 = (总资产 - 归母权益) / 总资产 * 100
+                    debt_ratio_val = round((ta_raw - te_raw) / ta_raw * 100, 2) if (ta_raw and te_raw and ta_raw > 0) else None
+
+                    # 有息负债相关字段（单位：亿元）
+                    def _to_yi(val):
+                        return round(val / 1e8, 4) if val else None
+
+                    short_borrow_val = _to_yi(item.get("STBORROW"))
+                    ncl_due1y_val = _to_yi(item.get("NCLDUE1Y"))
+                    long_borrow_val = _to_yi(item.get("LTBORROW"))
+                    bonds_val = _to_yi(item.get("BONDSPAYABLE"))
+
                     execute_query(
                         """INSERT INTO custom_financials
                         (stock_code, fiscal_year, total_revenue, operate_profit, parent_profit,
                          deducted_profit, operate_cashflow, roe, deducted_roe, roic,
-                         total_assets, total_equity, total_shares, audit_opinion)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         total_assets, total_equity, total_shares, audit_opinion,
+                         basic_eps, debt_ratio,
+                         short_borrow, noncurrent_liab_due1y, long_borrow, bonds_payable)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                          total_revenue=VALUES(total_revenue), operate_profit=VALUES(operate_profit),
                          parent_profit=VALUES(parent_profit), deducted_profit=VALUES(deducted_profit),
                          operate_cashflow=VALUES(operate_cashflow), roe=VALUES(roe),
                          deducted_roe=VALUES(deducted_roe), roic=VALUES(roic),
                          total_assets=VALUES(total_assets), total_equity=VALUES(total_equity),
-                         total_shares=VALUES(total_shares), audit_opinion=VALUES(audit_opinion)""",
+                         total_shares=VALUES(total_shares), audit_opinion=VALUES(audit_opinion),
+                         basic_eps=VALUES(basic_eps), debt_ratio=VALUES(debt_ratio),
+                         short_borrow=VALUES(short_borrow), noncurrent_liab_due1y=VALUES(noncurrent_liab_due1y),
+                         long_borrow=VALUES(long_borrow), bonds_payable=VALUES(bonds_payable)""",
                         (
                             code, year,
                             round(item["TOTALOPERATEREVE"] / 1e8, 4) if item.get("TOTALOPERATEREVE") else None,
@@ -436,10 +485,16 @@ def api_update_financials():
                             round(item["ROEJQ"], 4) if item.get("ROEJQ") else None,
                             round(item["ROEKCJQ"], 4) if item.get("ROEKCJQ") else None,
                             round(item["ROIC"], 4) if item.get("ROIC") else None,
-                            round(item.get("TOTAL_ASSETS_PK", 0) / 1e8, 4) if item.get("TOTAL_ASSETS_PK") else None,
-                            round(item.get("TOTAL_EQUITY_PK", 0) / 1e8, 4) if item.get("TOTAL_EQUITY_PK") else None,
+                            ta_val,
+                            te_val,
                             total_shares_val,
                             None,  # audit_opinion not available in this API
+                            basic_eps_val,
+                            debt_ratio_val,
+                            short_borrow_val,
+                            ncl_due1y_val,
+                            long_borrow_val,
+                            bonds_val,
                         ),
                         fetch=False
                     )
@@ -468,14 +523,38 @@ def api_stock_financials(code):
     to_year = request.args.get("to_year", 2025, type=int)
 
     rows = execute_query(
-        """SELECT fiscal_year, total_revenue, operate_profit, parent_profit, deducted_profit,
-                  operate_cashflow, roe, deducted_roe, roic, total_assets, total_equity,
-                  total_shares, audit_opinion
-           FROM custom_financials
-           WHERE stock_code = %s AND fiscal_year BETWEEN %s AND %s
-           ORDER BY fiscal_year DESC""",
+        """SELECT cf.fiscal_year, cf.total_revenue, cf.operate_profit, cf.parent_profit,
+                  cf.deducted_profit, cf.operate_cashflow, cf.roe, cf.deducted_roe, cf.roic,
+                  cf.total_assets, cf.total_equity, cf.total_shares, cf.audit_opinion,
+                  cf.basic_eps, cf.debt_ratio,
+                  cf.short_borrow, cf.noncurrent_liab_due1y, cf.long_borrow, cf.bonds_payable,
+                  d.dividend_amount, d.dividend_per_share
+           FROM custom_financials cf
+           LEFT JOIN dividends d ON cf.stock_code = d.stock_code AND cf.fiscal_year = d.fiscal_year
+           WHERE cf.stock_code = %s AND cf.fiscal_year BETWEEN %s AND %s
+           ORDER BY cf.fiscal_year DESC""",
         (code, from_year, to_year)
     )
+
+    # 获取当前股价（用于股息率计算）
+    cur_price = None
+    try:
+        stock = execute_query("SELECT market FROM stocks WHERE code=%s", (code,))
+        if stock:
+            market = stock[0].get("market", "SH")
+            prefix = "sh" if market == "SH" else "sz"
+            url = f"https://qt.gtimg.cn/q={prefix}{code}"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+            resp.encoding = "gbk"
+            text = resp.text
+            if text.startswith("v_"):
+                parts = text.split("~")
+                if len(parts) >= 4:
+                    price_str = parts[3].strip()
+                    if price_str and price_str not in ("", "-"):
+                        cur_price = float(price_str)
+    except Exception:
+        pass
 
     result = []
     for r in rows:
@@ -491,10 +570,42 @@ def api_stock_financials(code):
         te = float(r["total_equity"]) if r["total_equity"] else 0
         ts = float(r["total_shares"]) if r["total_shares"] else 0
 
+        # 新增字段
+        basic_eps = float(r["basic_eps"]) if r.get("basic_eps") else None
+        debt_ratio = float(r["debt_ratio"]) if r.get("debt_ratio") else None
+        short_borrow = float(r["short_borrow"]) if r.get("short_borrow") else None
+        ncl_due1y = float(r["noncurrent_liab_due1y"]) if r.get("noncurrent_liab_due1y") else None
+        long_borrow = float(r["long_borrow"]) if r.get("long_borrow") else None
+        bonds_payable = float(r["bonds_payable"]) if r.get("bonds_payable") else None
+        dividend_amount = float(r["dividend_amount"]) if r.get("dividend_amount") else None
+        dividend_per_share = float(r["dividend_per_share"]) if r.get("dividend_per_share") else None
+
         # 派生指标
         core_profit_rate = round(op / rev * 100, 2) if rev else None
         net_profit_rate = round(pp / rev * 100, 2) if rev else None
         cashflow_to_profit = round(ocf / pp * 100, 2) if pp and pp > 0 else None
+
+        # 分红率 = 分红金额 / 归母净利润 * 100
+        dividend_payout_ratio = (
+            round(dividend_amount / pp * 100, 2)
+            if (dividend_amount is not None and pp and pp > 0) else None
+        )
+
+        # 有息负债率 = (短期借款+一年内到期非流动负债+长期借款+应付债券) / 总资产 * 100
+        interest_sum = (
+            (short_borrow or 0) + (ncl_due1y or 0) +
+            (long_borrow or 0) + (bonds_payable or 0)
+        )
+        interest_bearing_debt_ratio = (
+            round(interest_sum / ta * 100, 2) if (interest_sum > 0 and ta > 0) else None
+        )
+
+        # 股息率 = 每股分红 / 当前股价 * 100
+        dividend_yield_fin = (
+            round(dividend_per_share / cur_price * 100, 2)
+            if (dividend_per_share is not None and dividend_per_share > 0
+                and cur_price and cur_price > 0) else None
+        )
 
         result.append({
             "fiscal_year": r["fiscal_year"],
@@ -513,6 +624,14 @@ def api_stock_financials(code):
             "core_profit_rate": core_profit_rate,
             "net_profit_rate": net_profit_rate,
             "cashflow_to_profit": cashflow_to_profit,
+            # 新增7个指标
+            "basic_eps": basic_eps,
+            "debt_ratio": debt_ratio,
+            "dividend_amount": dividend_amount,
+            "dividend_per_share": dividend_per_share,
+            "dividend_payout_ratio": dividend_payout_ratio,
+            "interest_bearing_debt_ratio": interest_bearing_debt_ratio,
+            "dividend_yield_fin": dividend_yield_fin,
         })
     return jsonify(result)
 

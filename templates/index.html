@@ -715,7 +715,9 @@ function renderFinancialsTable(data) {
     const fields = ['total_revenue', 'operate_profit', 'parent_profit', 'deducted_profit',
                     'operate_cashflow', 'roe', 'deducted_roe', 'roic',
                     'total_assets', 'total_equity', 'total_shares',
-                    'core_profit_rate', 'net_profit_rate', 'cashflow_to_profit'];
+                    'core_profit_rate', 'net_profit_rate', 'cashflow_to_profit',
+                    'dividend_amount', 'dividend_per_share', 'dividend_payout_ratio',
+                    'basic_eps', 'debt_ratio', 'interest_bearing_debt_ratio'];
     for (const f of fields) {
       const cur = d[f];
       if (cur == null) { yoyMap[d.fiscal_year][f] = null; continue; }
@@ -740,6 +742,14 @@ function renderFinancialsTable(data) {
     { name: '总资产', field: 'total_assets', unit: '亿元', isPercent: false, showYoy: true },
     { name: '归母权益', field: 'total_equity', unit: '亿元', isPercent: false, showYoy: true },
     { name: '总股本', field: 'total_shares', unit: '亿股', isPercent: false, showYoy: true },
+    // 新增7个指标
+    { name: '分红金额', field: 'dividend_amount', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '每股分红', field: 'dividend_per_share', unit: '元', isPercent: false, showYoy: true },
+    { name: '分红率', field: 'dividend_payout_ratio', unit: '%', isPercent: true, showYoy: true },
+    { name: '归母普通股每股收益', field: 'basic_eps', unit: '元', isPercent: false, showYoy: true },
+    { name: '股息率', field: 'dividend_yield_fin', unit: '%', isPercent: true, showYoy: false },
+    { name: '资产负债率', field: 'debt_ratio', unit: '%', isPercent: true, showYoy: true },
+    { name: '有息负债率', field: 'interest_bearing_debt_ratio', unit: '%', isPercent: true, showYoy: true },
     { name: '审计意见', field: 'audit_opinion', unit: '', isPercent: false, showYoy: false },
   ];
 
