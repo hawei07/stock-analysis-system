@@ -125,16 +125,17 @@ tr:hover td{background:#fafbff}
 .fin-table .indent-name{padding-left:20px}
 .fin-table .sub-name{color:#888;font-size:11px}
 
-/* 拖拽排序 */
-.fin-table tbody tr[draggable]{cursor:grab;user-select:none;-webkit-user-drag:element}
-.fin-table tbody tr[draggable] *{user-select:none!important;-webkit-user-drag:none}
-.fin-table tbody tr[draggable]:active{cursor:grabbing}
-.fin-table tbody tr.dragging{opacity:.35;background:#e6f0ff!important}
-.fin-table tbody tr.dragging td{background:transparent!important}
-.fin-table tbody tr.drag-over-top{border-top:3px solid #4a6cf7!important}
-.fin-table tbody tr.drag-over-bottom{border-bottom:3px solid #4a6cf7!important}
-.fin-table tbody tr.drag-target{background:#f0f5ff!important}
-.fin-table tbody tr.drag-target td{background:#f0f5ff!important}
+/* 排序模式 */
+.sort-mode-toggle{margin-left:12px;font-size:12px;padding:4px 12px}
+.fin-table .sort-handle{display:none;width:28px;text-align:center;cursor:grab;user-select:none;font-size:16px;color:#999;vertical-align:middle}
+.fin-table .sort-handle:active{cursor:grabbing}
+.fin-table.sort-mode .sort-handle{display:table-cell}
+.fin-table.sort-mode thead th.sticky-col{padding-left:28px}
+body.reorder-active{user-select:none!important;-webkit-user-select:none!important}
+.fin-table .reorder-ghost{position:fixed;pointer-events:none;z-index:999;opacity:.85;background:#e6f0ff;box-shadow:0 4px 16px rgba(0,0,0,.15)}
+.fin-table .reorder-ghost td{padding:6px 10px;white-space:nowrap;font-size:12px}
+.fin-table .reorder-insert-marker{position:absolute;left:0;right:0;height:3px;background:#4a6cf7;pointer-events:none;z-index:998}
+.fin-table.sort-mode tbody tr.sort-hover{border-top:3px solid #4a6cf7!important}
 
 @media (max-width:768px){
   .fin-table .sticky-col{min-width:140px}
@@ -229,6 +230,7 @@ tr:hover td{background:#fafbff}
         <input type="number" id="finToYear" value="2025" min="2000" max="2030" style="width:70px">
         <button class="btn btn-primary btn-sm" onclick="loadFinancials()">查询</button>
         <button class="btn btn-success btn-sm" onclick="updateFinancials()">更新数据</button>
+        <button class="btn btn-outline btn-sm sort-mode-toggle" id="btnToggleSort" onclick="toggleSortMode()" style="display:none">调整排序</button>
         <span id="finStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
       <div class="fin-table-wrap" id="tableFinancialsWrap">
@@ -739,7 +741,7 @@ function renderFinancialsTable(data) {
     { name: '审计意见', field: 'audit_opinion', unit: '', isPercent: false, showYoy: false },
   ];
 
-  // 从 localStorage 恢复指标排序
+  // 从 localStorage 恢复排序
   const savedOrder = localStorage.getItem('financials-indicator-order');
   if (savedOrder) {
     try {
@@ -755,16 +757,19 @@ function renderFinancialsTable(data) {
       });
     } catch (e) {}
   }
+  // 暴露到全局，供排序模式使用
+  window._finIndicators = indicators;
 
   // 构建表格
-  let html = '<table class="fin-table"><thead><tr>';
-  // 第1行表头：指标 + 年份
+  let html = '<table class="fin-table" id="finMainTable"><thead><tr>';
+  // 排序手柄列（默认隐藏）+ 指标列 + 年份
+  html += '<th class="sort-handle sticky-header" rowspan="2" style="min-width:28px;background:#f0f0f0"></th>';
   html += '<th class="sticky-col sticky-header" rowspan="2" style="min-width:180px">指标</th>';
   for (const y of years) {
     html += `<th class="sticky-header year-header" colspan="2">${y}</th>`;
   }
   html += '</tr><tr>';
-  // 第2行表头：每年两个子列
+  // 第2行表头：每年两个子列（手柄列占位）
   for (const y of years) {
     html += '<th class="sticky-header sub-header">原值</th>';
     html += '<th class="sticky-header sub-header">同比%</th>';
@@ -772,7 +777,7 @@ function renderFinancialsTable(data) {
   html += '</tr></thead><tbody>';
 
   // 单位行
-  html += '<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">单位</td>';
+  html += '<tr class="unit-row"><td class="sort-handle" style="background:#fafafa"></td><td class="sticky-col" style="background:#fafafa;font-weight:500">单位</td>';
   for (const y of years) {
     html += `<td style="text-align:center;background:#fafafa">-</td>`;
     html += `<td style="text-align:center;background:#fafafa">%</td>`;
@@ -784,7 +789,7 @@ function renderFinancialsTable(data) {
   for (const d of data) dataMap[d.fiscal_year] = d;
 
   for (const ind of indicators) {
-    html += `<tr draggable="true" data-indicator-field="${ind.field}"><td class="sticky-col">${ind.name}</td>`;
+    html += `<tr data-indicator-field="${ind.field}"><td class="sort-handle">⋮⋮</td><td class="sticky-col">${ind.name}</td>`;
     for (const y of years) {
       const d = dataMap[y];
       const val = d ? d[ind.field] : null;
@@ -825,81 +830,159 @@ function renderFinancialsTable(data) {
   html += '</tbody></table>';
   wrap.innerHTML = html;
 
-  // 绑定拖拽排序事件
-  (function attachDragEvents() {
-    const rows = wrap.querySelectorAll('tbody tr[draggable]');
-    let dragSrc = null;
+  // 显示排序按钮
+  const btnSort = document.getElementById('btnToggleSort');
+  if (btnSort) btnSort.style.display = 'inline-block';
 
-    rows.forEach(row => {
-      row.addEventListener('dragstart', function(e) {
-        dragSrc = this;
-        // 清除可能干扰拖拽的文本选区
-        if (document.getSelection) document.getSelection().removeAllRanges();
-        this.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', this.dataset.indicatorField);
-        // 设置拖拽图像为当前行（避免 sticky 列造成的图像偏移）
-        const ghost = this.cloneNode(true);
-        ghost.style.position = 'absolute'; ghost.style.top = '-9999px';
-        ghost.style.opacity = '0.5'; ghost.style.width = this.offsetWidth + 'px';
-        document.body.appendChild(ghost);
-        e.dataTransfer.setDragImage(ghost, 0, 0);
-        setTimeout(() => document.body.removeChild(ghost), 0);
-      });
+  // 绑定拖拽排序事件（mousedown/mousemove/mouseup 实现）
+  attachReorderEvents(wrap);
+}
 
-      row.addEventListener('dragend', function() {
-        this.classList.remove('dragging');
-        dragSrc = null;
-        rows.forEach(r => {
-          r.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
-        });
-      });
+// ==================== 排序模式 ====================
 
-      row.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        if (this === dragSrc) return;
-        e.dataTransfer.dropEffect = 'move';
-        rows.forEach(r => {
-          r.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
-        });
-        const rect = this.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        if (e.clientY < mid) {
-          this.classList.add('drag-over-top');
-        } else {
-          this.classList.add('drag-over-bottom');
-        }
-        this.classList.add('drag-target');
-      });
+let _reorderState = null; // { table, tbody, rows, dragRow, ghost, marker, startY, rowHeight, dragIdx }
 
-      row.addEventListener('dragleave', function() {
-        this.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
-      });
+function toggleSortMode() {
+  const table = document.getElementById('finMainTable');
+  if (!table) return;
+  const btn = document.getElementById('btnToggleSort');
+  const isActive = table.classList.contains('sort-mode');
 
-      row.addEventListener('drop', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (dragSrc === this) return;
-        rows.forEach(r => {
-          r.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
-        });
+  if (isActive) {
+    // 退出排序模式
+    table.classList.remove('sort-mode');
+    btn.textContent = '调整排序';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-outline');
+    // 清除残留状态
+    document.body.classList.remove('reorder-active');
+    if (_reorderState) {
+      if (_reorderState.ghost) _reorderState.ghost.remove();
+      if (_reorderState.marker) _reorderState.marker.remove();
+      _reorderState = null;
+    }
+  } else {
+    // 进入排序模式
+    table.classList.add('sort-mode');
+    btn.textContent = '完成排序';
+    btn.classList.remove('btn-outline');
+    btn.classList.add('btn-primary');
+  }
+}
 
-        const tbody = this.parentNode;
-        const rect = this.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2;
-        if (e.clientY < mid) {
-          tbody.insertBefore(dragSrc, this);
-        } else {
-          tbody.insertBefore(dragSrc, this.nextSibling);
-        }
+function attachReorderEvents(wrap) {
+  const table = document.getElementById('finMainTable');
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
 
-        // 保存新排序到 localStorage
-        const newRows = tbody.querySelectorAll('tr[draggable]');
-        const newOrder = Array.from(newRows).map(r => r.dataset.indicatorField);
-        localStorage.setItem('financials-indicator-order', JSON.stringify(newOrder));
-      });
-    });
-  })();
+  // 每次渲染后重新绑定
+  tbody.removeEventListener('mousedown', _onSortMouseDown);
+  tbody.addEventListener('mousedown', _onSortMouseDown);
+}
+
+function _onSortMouseDown(e) {
+  const table = document.getElementById('finMainTable');
+  if (!table || !table.classList.contains('sort-mode')) return;
+
+  // 找到排序手柄
+  const handle = e.target.closest('.sort-handle');
+  if (!handle) return;
+  const row = handle.closest('tr');
+  if (!row || !row.dataset.indicatorField) return;
+
+  e.preventDefault();
+  document.body.classList.add('reorder-active');
+
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr[data-indicator-field]'));
+  const dragIdx = rows.indexOf(row);
+  const rect = row.getBoundingClientRect();
+  const rowHeight = rect.height;
+  const startY = e.clientY;
+  let curIdx = dragIdx;
+  let moveY = startY;
+
+  // 创建 ghost
+  const ghost = row.cloneNode(true);
+  ghost.classList.add('reorder-ghost');
+  ghost.style.width = rect.width + 'px';
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  document.body.appendChild(ghost);
+
+  // 创建插入标记
+  const marker = document.createElement('div');
+  marker.classList.add('reorder-insert-marker');
+  document.body.appendChild(marker);
+
+  // 高亮被拖拽行
+  row.style.opacity = '0.3';
+
+  _reorderState = { table, tbody, rows, dragRow: row, ghost, marker, startY, rowHeight, dragIdx };
+
+  function onMove(ev) {
+    moveY = ev.clientY;
+    const dy = moveY - startY;
+    ghost.style.top = (rect.top + dy) + 'px';
+
+    // 计算目标索引
+    const offset = Math.round(dy / rowHeight);
+    let targetIdx = dragIdx + offset;
+    targetIdx = Math.max(0, Math.min(targetIdx, rows.length - 1));
+
+    if (targetIdx !== curIdx) {
+      curIdx = targetIdx;
+      // 移动标记
+      const targetRow = rows[targetIdx];
+      const tr = targetRow.getBoundingClientRect();
+      const insertBefore = offset < 0 || (offset === 0 && dy < 0);
+      marker.style.top = (insertBefore ? tr.top : tr.bottom - 3) + 'px';
+      marker.style.left = tr.left + 'px';
+      marker.style.width = tr.width + 'px';
+      marker.style.display = 'block';
+
+      // 高亮目标行
+      rows.forEach(r => r.classList.remove('sort-hover'));
+      rows[targetIdx].classList.add('sort-hover');
+    }
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.body.classList.remove('reorder-active');
+
+    ghost.remove();
+    marker.remove();
+    row.style.opacity = '';
+    rows.forEach(r => r.classList.remove('sort-hover'));
+
+    if (curIdx !== dragIdx && curIdx >= 0 && curIdx < rows.length) {
+      const targetRow = rows[curIdx];
+      if (curIdx < dragIdx) {
+        tbody.insertBefore(row, targetRow);
+      } else {
+        tbody.insertBefore(row, targetRow.nextSibling);
+      }
+      // 保存新顺序
+      const newRows = tbody.querySelectorAll('tr[data-indicator-field]');
+      const newOrder = Array.from(newRows).map(r => r.dataset.indicatorField);
+      localStorage.setItem('financials-indicator-order', JSON.stringify(newOrder));
+      // 更新全局 indicators
+      if (window._finIndicators) {
+        const fieldMap = {};
+        window._finIndicators.forEach(ind => fieldMap[ind.field] = ind);
+        window._finIndicators.length = 0;
+        newOrder.forEach(f => { if (fieldMap[f]) window._finIndicators.push(fieldMap[f]); });
+      }
+    }
+
+    _reorderState = null;
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 async function updateFinancials() {
