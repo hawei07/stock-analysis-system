@@ -98,6 +98,37 @@ tr:hover td{background:#fafbff}
 .toast-error{background:#ff4d4f}
 
 #keyword{width:240px}
+
+/* 自定义财报表格 */
+.toolbar-row{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.toolbar-row label{font-size:13px;font-weight:500;color:#555}
+.toolbar-row input,.toolbar-row select{padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none}
+.toolbar-row input:focus,.toolbar-row select:focus{border-color:#4a6cf7}
+.toolbar-row input{width:80px}
+
+.fin-table-wrap{overflow-x:auto;max-width:100%;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);position:relative;max-height:70vh;overflow-y:auto}
+.fin-table{border-collapse:collapse;min-width:100%;font-size:12px}
+.fin-table th,.fin-table td{border:1px solid #e8e8e8;padding:6px 10px;text-align:right;white-space:nowrap}
+.fin-table th{background:#f0f0f0;font-weight:600;font-size:12px;color:#333}
+.fin-table td{background:#fff}
+.fin-table .sticky-col{position:sticky;left:0;z-index:2;background:#fafafa;font-weight:500;text-align:left;min-width:180px}
+.fin-table .sticky-header{position:sticky;top:0;z-index:3}
+.fin-table thead th.sticky-col{z-index:4;background:#f0f0f0}
+.fin-table .year-header{text-align:center;font-size:13px;background:#e6f0ff}
+.fin-table .sub-header{font-size:11px;color:#666;text-align:center}
+.fin-table .unit-row td{font-size:11px;color:#999;text-align:center;background:#fafafa;padding:4px 10px}
+
+/* 同比颜色编码：涨红跌绿 */
+.fin-yoy-up{background:#fff1f0!important;color:#cf1322!important}
+.fin-yoy-down{background:#f6ffed!important;color:#389e0d!important}
+.fin-yoy-neutral{color:#999}
+.fin-table .indent-name{padding-left:20px}
+.fin-table .sub-name{color:#888;font-size:11px}
+
+@media (max-width:768px){
+  .fin-table .sticky-col{min-width:140px}
+  .fin-table th,.fin-table td{padding:4px 6px;font-size:11px}
+}
 </style>
 </head>
 <body>
@@ -169,6 +200,7 @@ tr:hover td{background:#fafbff}
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
+    <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
   </div>
 
   <div class="detail-content">
@@ -176,6 +208,20 @@ tr:hover td{background:#fafbff}
       <div class="chart-container">
         <h3 style="margin-bottom:16px;font-size:16px;font-weight:600">净利润、分红金额与分红比例</h3>
         <div class="chart-box" id="chartDividends"></div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-financials" style="display:none">
+      <div class="toolbar-row">
+        <label>年份范围：</label>
+        <input type="number" id="finFromYear" value="2016" min="2000" max="2030" style="width:70px">
+        <span style="font-size:13px">至</span>
+        <input type="number" id="finToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <button class="btn btn-primary btn-sm" onclick="loadFinancials()">查询</button>
+        <button class="btn btn-success btn-sm" onclick="updateFinancials()">更新数据</button>
+        <span id="finStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="fin-table-wrap" id="tableFinancialsWrap">
+        <div class="empty" id="finEmpty">请点击"查询"加载财务数据</div>
       </div>
     </div>
   </div>
@@ -273,6 +319,8 @@ function showDetailView(code) {
   document.getElementById('view-list').classList.remove('active');
   document.getElementById('view-detail').classList.add('active');
   document.getElementById('btnBack').style.display = 'inline-block';
+  // 重置到分红标签
+  switchTab('dividends');
   loadDetail(code);
 }
 
@@ -420,11 +468,6 @@ function renderDividendsChart(data) {
   };
   chartInstance.setOption(option);
   window.addEventListener('resize', () => chartInstance && chartInstance.resize());
-}
-
-function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector('[data-tab="' + name + '"]').classList.add('active');
 }
 
 // ==================== 列表页 ====================
@@ -607,6 +650,180 @@ async function deleteStock(code, name) {
       showToast(data.error || '删除失败', 'error');
     }
   } catch (e) { showToast('请求失败', 'error'); }
+}
+
+// ==================== 自定义财报 ====================
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-tab="' + name + '"]').classList.add('active');
+  document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+  document.getElementById('panel-' + name).style.display = 'block';
+  if (name === 'financials') {
+    // 自动加载数据
+    loadFinancials();
+  }
+}
+
+async function loadFinancials() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const from = document.getElementById('finFromYear').value;
+  const to = document.getElementById('finToYear').value;
+  const wrap = document.getElementById('tableFinancialsWrap');
+  const empty = document.getElementById('finEmpty');
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+
+  try {
+    const res = await fetch(`/api/stock/${code}/financials?from_year=${from}&to_year=${to}`);
+    const data = await res.json();
+    if (!data || data.length === 0) {
+      wrap.innerHTML = '<div class="empty">暂无财务数据，请点击"更新数据"拉取</div>';
+      return;
+    }
+    renderFinancialsTable(data);
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function renderFinancialsTable(data) {
+  const wrap = document.getElementById('tableFinancialsWrap');
+  const years = data.map(d => d.fiscal_year).sort((a, b) => b - a);
+
+  // 计算同比
+  const yoyMap = {};
+  for (let i = 0; i < data.length; i++) {
+    const d = data[i];
+    const prev = data.find(p => p.fiscal_year === d.fiscal_year - 1);
+    yoyMap[d.fiscal_year] = {};
+    const fields = ['total_revenue', 'operate_profit', 'parent_profit', 'deducted_profit',
+                    'operate_cashflow', 'roe', 'deducted_roe', 'roic',
+                    'total_assets', 'total_equity', 'total_shares',
+                    'core_profit_rate', 'net_profit_rate', 'cashflow_to_profit'];
+    for (const f of fields) {
+      const cur = d[f];
+      if (cur == null) { yoyMap[d.fiscal_year][f] = null; continue; }
+      if (!prev || prev[f] == null || prev[f] === 0) { yoyMap[d.fiscal_year][f] = null; continue; }
+      yoyMap[d.fiscal_year][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100;
+    }
+  }
+
+  // 指标定义：name, field, unit, isPercent, showYoy
+  const indicators = [
+    { name: '营业总收入', field: 'total_revenue', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '核心利润（营业利润）', field: 'operate_profit', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '核心利润率', field: 'core_profit_rate', unit: '%', isPercent: true, showYoy: true },
+    { name: '归母净利润', field: 'parent_profit', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '扣非净利润', field: 'deducted_profit', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '净利润率', field: 'net_profit_rate', unit: '%', isPercent: true, showYoy: true },
+    { name: '经营现金流/净利润', field: 'cashflow_to_profit', unit: '%', isPercent: true, showYoy: true },
+    { name: 'ROE', field: 'roe', unit: '%', isPercent: true, showYoy: true },
+    { name: '扣非ROE', field: 'deducted_roe', unit: '%', isPercent: true, showYoy: true },
+    { name: 'ROIC', field: 'roic', unit: '%', isPercent: true, showYoy: true },
+    { name: '经营活动现金流量净额', field: 'operate_cashflow', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '总资产', field: 'total_assets', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '归母权益', field: 'total_equity', unit: '亿元', isPercent: false, showYoy: true },
+    { name: '总股本', field: 'total_shares', unit: '亿股', isPercent: false, showYoy: true },
+    { name: '审计意见', field: 'audit_opinion', unit: '', isPercent: false, showYoy: false },
+  ];
+
+  // 构建表格
+  let html = '<table class="fin-table"><thead><tr>';
+  // 第1行表头：指标 + 年份
+  html += '<th class="sticky-col sticky-header" rowspan="2" style="min-width:180px">指标</th>';
+  for (const y of years) {
+    html += `<th class="sticky-header year-header" colspan="2">${y}</th>`;
+  }
+  html += '</tr><tr>';
+  // 第2行表头：每年两个子列
+  for (const y of years) {
+    html += '<th class="sticky-header sub-header">原值</th>';
+    html += '<th class="sticky-header sub-header">同比%</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  // 单位行
+  html += '<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">单位</td>';
+  for (const y of years) {
+    html += `<td style="text-align:center;background:#fafafa">-</td>`;
+    html += `<td style="text-align:center;background:#fafafa">%</td>`;
+  }
+  html += '</tr>';
+
+  // 数据行
+  const dataMap = {};
+  for (const d of data) dataMap[d.fiscal_year] = d;
+
+  for (const ind of indicators) {
+    html += `<tr><td class="sticky-col">${ind.name}</td>`;
+    for (const y of years) {
+      const d = dataMap[y];
+      const val = d ? d[ind.field] : null;
+      const yoy = yoyMap[y] ? yoyMap[y][ind.field] : null;
+
+      if (!ind.showYoy) {
+        // 审计意见：只显示原值
+        const display = val || '-';
+        html += `<td style="text-align:left">${display}</td><td>-</td>`;
+      } else {
+        let display = '-';
+        if (val != null) {
+          if (ind.isPercent || ind.unit === '%') {
+            display = val.toFixed(2);
+          } else if (ind.unit === '亿元' || ind.unit === '亿股') {
+            display = val >= 100 ? val.toFixed(0) : val.toFixed(2);
+          } else {
+            display = val.toFixed(2);
+          }
+          if (ind.unit) display += ' ' + ind.unit;
+        }
+        html += `<td>${display}</td>`;
+
+        // 同比列
+        let yoyClass = 'fin-yoy-neutral';
+        let yoyDisplay = '-';
+        if (yoy != null) {
+          yoyDisplay = yoy.toFixed(1) + '%';
+          if (yoy > 0) yoyClass = 'fin-yoy-up';
+          else if (yoy < 0) yoyClass = 'fin-yoy-down';
+        }
+        html += `<td class="${yoyClass}">${yoyDisplay}</td>`;
+      }
+    }
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+async function updateFinancials() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  const statusEl = document.getElementById('finStatus');
+  statusEl.textContent = '正在更新数据，请稍候...';
+  statusEl.style.color = '#1890ff';
+
+  try {
+    const res = await fetch('/api/update-financials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'incremental' })
+    });
+    const data = await res.json();
+    if (data.success) {
+      statusEl.textContent = `更新完成: ${data.records_updated} 条记录 (${data.stocks_processed} 只股票)`;
+      statusEl.style.color = '#52c41a';
+      // 重新加载
+      loadFinancials();
+    } else {
+      statusEl.textContent = '更新失败: ' + (data.error || '未知错误');
+      statusEl.style.color = '#ff4d4f';
+    }
+  } catch (e) {
+    statusEl.textContent = '请求失败: ' + e.message;
+    statusEl.style.color = '#ff4d4f';
+  }
 }
 
 // ==================== 工具函数 ====================

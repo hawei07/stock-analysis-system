@@ -353,6 +353,170 @@ def api_update_dividends():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ==================== 自定义财报 API ====================
+
+@app.route("/api/update-financials", methods=["POST"])
+def api_update_financials():
+    """从东方财富拉取年报财务数据并存入 custom_financials 表
+    mode: full=全量拉取, incremental=增量拉取(仅更新无数据的年份)
+    """
+    mode = "full"
+    if request.is_json:
+        mode = request.get_json(silent=True).get("mode", "full")
+    if request.args.get("mode"):
+        mode = request.args["mode"]
+
+    try:
+        stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+        updated_count = 0
+        stocks_processed = 0
+        errors = []
+
+        for s in stocks:
+            code = s["code"]
+            stocks_processed += 1
+            try:
+                url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
+                       "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
+                       f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22%E5%B9%B4%E6%8A%A5%22)"
+                       "&pageSize=200&sortColumns=REPORT_DATE&sortTypes=-1")
+                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                data = resp.json()
+                if not data.get("success"):
+                    errors.append(f"{code}: API返回失败")
+                    continue
+
+                records = data["result"]["data"]
+                # 按 fiscal_year 分组，同一财年取 NOTICE_DATE 更晚的
+                year_best = {}
+                for item in records:
+                    rd = item.get("REPORT_DATE", "")
+                    if not rd:
+                        continue
+                    year = int(rd[:4])
+                    notice = item.get("NOTICE_DATE", "")
+                    if year not in year_best or notice > year_best[year][0]:
+                        year_best[year] = (notice, item)
+
+                # 增量模式：查询已有年份
+                existing_years = set()
+                if mode == "incremental":
+                    existing = execute_query(
+                        "SELECT fiscal_year FROM custom_financials WHERE stock_code=%s", (code,)
+                    )
+                    existing_years = {r["fiscal_year"] for r in existing}
+
+                for year, (_, item) in year_best.items():
+                    if mode == "incremental" and year in existing_years:
+                        continue
+
+                    total_share = item.get("TOTAL_SHARE")
+                    total_shares_val = round(total_share / 1e8, 4) if total_share else None
+
+                    execute_query(
+                        """INSERT INTO custom_financials
+                        (stock_code, fiscal_year, total_revenue, operate_profit, parent_profit,
+                         deducted_profit, operate_cashflow, roe, deducted_roe, roic,
+                         total_assets, total_equity, total_shares, audit_opinion)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON DUPLICATE KEY UPDATE
+                         total_revenue=VALUES(total_revenue), operate_profit=VALUES(operate_profit),
+                         parent_profit=VALUES(parent_profit), deducted_profit=VALUES(deducted_profit),
+                         operate_cashflow=VALUES(operate_cashflow), roe=VALUES(roe),
+                         deducted_roe=VALUES(deducted_roe), roic=VALUES(roic),
+                         total_assets=VALUES(total_assets), total_equity=VALUES(total_equity),
+                         total_shares=VALUES(total_shares), audit_opinion=VALUES(audit_opinion)""",
+                        (
+                            code, year,
+                            round(item["TOTALOPERATEREVE"] / 1e8, 4) if item.get("TOTALOPERATEREVE") else None,
+                            round(item.get("OPERATE_PROFIT_PK", 0) / 1e8, 4) if item.get("OPERATE_PROFIT_PK") else None,
+                            round(item["PARENTNETPROFIT"] / 1e8, 4) if item.get("PARENTNETPROFIT") else None,
+                            round(item["KCFJCXSYJLR"] / 1e8, 4) if item.get("KCFJCXSYJLR") else None,
+                            round(item.get("NETCASH_OPERATE_PK", 0) / 1e8, 4) if item.get("NETCASH_OPERATE_PK") else None,
+                            round(item["ROEJQ"], 4) if item.get("ROEJQ") else None,
+                            round(item["ROEKCJQ"], 4) if item.get("ROEKCJQ") else None,
+                            round(item["ROIC"], 4) if item.get("ROIC") else None,
+                            round(item.get("TOTAL_ASSETS_PK", 0) / 1e8, 4) if item.get("TOTAL_ASSETS_PK") else None,
+                            round(item.get("TOTAL_EQUITY_PK", 0) / 1e8, 4) if item.get("TOTAL_EQUITY_PK") else None,
+                            total_shares_val,
+                            None,  # audit_opinion not available in this API
+                        ),
+                        fetch=False
+                    )
+                    updated_count += 1
+
+            except Exception as e:
+                errors.append(f"{code}: {str(e)}")
+
+            time.sleep(0.3)
+
+        return jsonify({
+            "success": True,
+            "stocks_processed": stocks_processed,
+            "records_updated": updated_count,
+            "mode": mode,
+            "errors": errors[:5] if errors else [],
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/stock/<code>/financials")
+def api_stock_financials(code):
+    """查询指定股票的多年财务数据，含后端计算的派生指标"""
+    from_year = request.args.get("from_year", 2016, type=int)
+    to_year = request.args.get("to_year", 2025, type=int)
+
+    rows = execute_query(
+        """SELECT fiscal_year, total_revenue, operate_profit, parent_profit, deducted_profit,
+                  operate_cashflow, roe, deducted_roe, roic, total_assets, total_equity,
+                  total_shares, audit_opinion
+           FROM custom_financials
+           WHERE stock_code = %s AND fiscal_year BETWEEN %s AND %s
+           ORDER BY fiscal_year DESC""",
+        (code, from_year, to_year)
+    )
+
+    result = []
+    for r in rows:
+        rev = float(r["total_revenue"]) if r["total_revenue"] else 0
+        op = float(r["operate_profit"]) if r["operate_profit"] else 0
+        pp = float(r["parent_profit"]) if r["parent_profit"] else 0
+        dp = float(r["deducted_profit"]) if r["deducted_profit"] else 0
+        ocf = float(r["operate_cashflow"]) if r["operate_cashflow"] else 0
+        roe_v = float(r["roe"]) if r["roe"] else None
+        droe_v = float(r["deducted_roe"]) if r["deducted_roe"] else None
+        roic_v = float(r["roic"]) if r["roic"] else None
+        ta = float(r["total_assets"]) if r["total_assets"] else 0
+        te = float(r["total_equity"]) if r["total_equity"] else 0
+        ts = float(r["total_shares"]) if r["total_shares"] else 0
+
+        # 派生指标
+        core_profit_rate = round(op / rev * 100, 2) if rev else None
+        net_profit_rate = round(pp / rev * 100, 2) if rev else None
+        cashflow_to_profit = round(ocf / pp * 100, 2) if pp and pp > 0 else None
+
+        result.append({
+            "fiscal_year": r["fiscal_year"],
+            "total_revenue": rev,
+            "operate_profit": op,
+            "parent_profit": pp,
+            "deducted_profit": dp,
+            "operate_cashflow": ocf,
+            "roe": roe_v,
+            "deducted_roe": droe_v,
+            "roic": roic_v,
+            "total_assets": ta,
+            "total_equity": te,
+            "total_shares": ts,
+            "audit_opinion": r.get("audit_opinion"),
+            "core_profit_rate": core_profit_rate,
+            "net_profit_rate": net_profit_rate,
+            "cashflow_to_profit": cashflow_to_profit,
+        })
+    return jsonify(result)
+
+
 if __name__ == "__main__":
     print("股票分析系统 Web 服务启动: http://127.0.0.1:5002")
     app.run(host="127.0.0.1", port=5002, debug=False)
