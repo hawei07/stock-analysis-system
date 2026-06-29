@@ -125,6 +125,16 @@ tr:hover td{background:#fafbff}
 .fin-table .indent-name{padding-left:20px}
 .fin-table .sub-name{color:#888;font-size:11px}
 
+/* 拖拽排序 */
+.fin-table tbody tr[draggable]{cursor:grab;user-select:none}
+.fin-table tbody tr[draggable]:active{cursor:grabbing}
+.fin-table tbody tr.dragging{opacity:.35;background:#e6f0ff!important}
+.fin-table tbody tr.dragging td{background:transparent!important}
+.fin-table tbody tr.drag-over-top{border-top:3px solid #4a6cf7!important}
+.fin-table tbody tr.drag-over-bottom{border-bottom:3px solid #4a6cf7!important}
+.fin-table tbody tr.drag-target{background:#f0f5ff!important}
+.fin-table tbody tr.drag-target td{background:#f0f5ff!important}
+
 @media (max-width:768px){
   .fin-table .sticky-col{min-width:140px}
   .fin-table th,.fin-table td{padding:4px 6px;font-size:11px}
@@ -728,6 +738,23 @@ function renderFinancialsTable(data) {
     { name: '审计意见', field: 'audit_opinion', unit: '', isPercent: false, showYoy: false },
   ];
 
+  // 从 localStorage 恢复指标排序
+  const savedOrder = localStorage.getItem('financials-indicator-order');
+  if (savedOrder) {
+    try {
+      const orderFields = JSON.parse(savedOrder);
+      const idxMap = {};
+      indicators.forEach((ind, i) => idxMap[ind.field] = i);
+      indicators.sort((a, b) => {
+        const ai = orderFields.indexOf(a.field), bi = orderFields.indexOf(b.field);
+        if (ai === -1 && bi === -1) return idxMap[a.field] - idxMap[b.field];
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+    } catch (e) {}
+  }
+
   // 构建表格
   let html = '<table class="fin-table"><thead><tr>';
   // 第1行表头：指标 + 年份
@@ -756,7 +783,7 @@ function renderFinancialsTable(data) {
   for (const d of data) dataMap[d.fiscal_year] = d;
 
   for (const ind of indicators) {
-    html += `<tr><td class="sticky-col">${ind.name}</td>`;
+    html += `<tr draggable="true" data-indicator-field="${ind.field}"><td class="sticky-col">${ind.name}</td>`;
     for (const y of years) {
       const d = dataMap[y];
       const val = d ? d[ind.field] : null;
@@ -796,6 +823,73 @@ function renderFinancialsTable(data) {
 
   html += '</tbody></table>';
   wrap.innerHTML = html;
+
+  // 绑定拖拽排序事件
+  (function attachDragEvents() {
+    const rows = wrap.querySelectorAll('tbody tr[draggable]');
+    let dragSrc = null;
+
+    rows.forEach(row => {
+      row.addEventListener('dragstart', function(e) {
+        dragSrc = this;
+        this.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', this.dataset.indicatorField);
+      });
+
+      row.addEventListener('dragend', function() {
+        this.classList.remove('dragging');
+        dragSrc = null;
+        rows.forEach(r => {
+          r.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
+        });
+      });
+
+      row.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        if (this === dragSrc) return;
+        e.dataTransfer.dropEffect = 'move';
+        rows.forEach(r => {
+          r.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
+        });
+        const rect = this.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        if (e.clientY < mid) {
+          this.classList.add('drag-over-top');
+        } else {
+          this.classList.add('drag-over-bottom');
+        }
+        this.classList.add('drag-target');
+      });
+
+      row.addEventListener('dragleave', function() {
+        this.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
+      });
+
+      row.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (dragSrc === this) return;
+        rows.forEach(r => {
+          r.classList.remove('drag-over-top', 'drag-over-bottom', 'drag-target');
+        });
+
+        const tbody = this.parentNode;
+        const rect = this.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        if (e.clientY < mid) {
+          tbody.insertBefore(dragSrc, this);
+        } else {
+          tbody.insertBefore(dragSrc, this.nextSibling);
+        }
+
+        // 保存新排序到 localStorage
+        const newRows = tbody.querySelectorAll('tr[draggable]');
+        const newOrder = Array.from(newRows).map(r => r.dataset.indicatorField);
+        localStorage.setItem('financials-indicator-order', JSON.stringify(newOrder));
+      });
+    });
+  })();
 }
 
 async function updateFinancials() {
