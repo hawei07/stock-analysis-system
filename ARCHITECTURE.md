@@ -377,6 +377,19 @@ AIGC:
 
 ### 5.5 数据源与采集逻辑
 
+#### 自定义财报标签页
+
+前端横向滚动表格展示多年财务指标对比，支持指标行拖拽排序：
+
+| 特性 | 实现方式 |
+|------|------|
+| 指标行排序 | HTML5 Drag and Drop API，拖拽上下移动指标行 |
+| 顺序持久化 | localStorage key `financials-indicator-order` |
+| 视觉反馈 | 拖拽行半透明（opacity:0.35），目标位置蓝色边框高亮 |
+| 年份排列 | 倒序（最近年份在前），SQL ORDER BY fiscal_year DESC |
+| 同比着色 | 正值红色 `.fin-yoy-up`，负值绿色 `.fin-yoy-down` |
+| 表格滚动 | 横向滚动，首列（指标名）sticky 固定 |
+
 #### PE 数据源
 
 - **接口**：`https://qt.gtimg.cn/q={prefix}{code}`
