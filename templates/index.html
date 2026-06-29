@@ -139,6 +139,18 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .fin-table .reorder-insert-marker{position:absolute;left:0;right:0;height:3px;background:#4a6cf7;pointer-events:none;z-index:998}
 .fin-table.sort-mode tbody tr.sort-hover{border-top:3px solid #4a6cf7!important}
 
+/* 指标图表图标 */
+.chart-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:4px;cursor:pointer;color:#bbb;transition:color .2s;vertical-align:middle;border-radius:4px}
+.chart-icon:hover{color:#4a6cf7;background:#f0f5ff}
+/* 图表弹窗 */
+.chart-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center}
+.chart-modal-overlay.active{display:flex}
+.chart-modal{background:#fff;border-radius:12px;width:700px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,.15);overflow:hidden}
+.chart-modal-header{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center}
+.chart-modal-header h3{font-size:16px;font-weight:600}
+.chart-modal-body{padding:24px}
+.chart-modal-box{width:100%;height:400px}
+
 @media (max-width:768px){
   .fin-table .sticky-col{min-width:140px}
   .fin-table th,.fin-table td{padding:4px 6px;font-size:11px}
@@ -219,6 +231,13 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 
   <div class="detail-content">
     <div class="tab-panel active" id="panel-dividends">
+      <div class="toolbar-row">
+        <label>年份范围：</label>
+        <select id="divFromYear" onchange="onDivYearChange()" style="width:90px"><option value="">全部</option></select>
+        <span style="font-size:13px">至</span>
+        <select id="divToYear" onchange="onDivYearChange()" style="width:90px"><option value="">全部</option></select>
+        <button class="btn btn-outline btn-sm" onclick="resetDivYears()">重置</button>
+      </div>
       <div class="chart-container">
         <h3 style="margin-bottom:16px;font-size:16px;font-weight:600">净利润、分红金额与分红比例</h3>
         <div class="chart-box" id="chartDividends"></div>
@@ -274,6 +293,19 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" id="btnSave" onclick="saveStock()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 指标趋势图弹窗 -->
+<div class="chart-modal-overlay" id="chartModalOverlay" onclick="if(event.target===this)closeIndicatorChart()">
+  <div class="chart-modal">
+    <div class="chart-modal-header">
+      <h3 id="chartModalTitle">指标趋势</h3>
+      <button class="modal-close" onclick="closeIndicatorChart()">&times;</button>
+    </div>
+    <div class="chart-modal-body">
+      <div class="chart-modal-box" id="chartModalBox"></div>
     </div>
   </div>
 </div>
@@ -347,7 +379,13 @@ function showListView() {
 
 // ==================== 详情页 ====================
 
+function getCurrentCode() {
+  const el = document.getElementById('detailCode');
+  return el ? el.textContent.trim() : '';
+}
+
 async function loadDetail(code) {
+  divYearsPopulated = false;
   try {
     // 加载股票基本信息
     const stockRes = await fetch('/api/stock/' + code);
@@ -368,14 +406,60 @@ async function loadDetail(code) {
   }
 }
 
+let divYearsPopulated = false;
+
 async function loadDividends(code) {
+  if (!code) return;
   try {
-    const res = await fetch('/api/stock/' + code + '/dividends');
+    const from = document.getElementById('divFromYear').value;
+    const to = document.getElementById('divToYear').value;
+    let url = '/api/stock/' + code + '/dividends';
+    const params = [];
+    if (from) params.push('start_year=' + from);
+    if (to) params.push('end_year=' + to);
+    if (params.length) url += '?' + params.join('&');
+    const res = await fetch(url);
     const data = await res.json();
+    
+    // 首次加载时用全部年份数据填充下拉框
+    if (!divYearsPopulated && !from && !to) {
+      populateDivYearSelects(data);
+    }
+    
     renderDividendsChart(data);
   } catch (e) {
     showToast('加载分红数据失败', 'error');
   }
+}
+
+function populateDivYearSelects(data) {
+  const years = data.map(d => d.fiscal_year).sort((a, b) => a - b);
+  if (years.length === 0) return;
+  const fromSelect = document.getElementById('divFromYear');
+  const toSelect = document.getElementById('divToYear');
+  fromSelect.innerHTML = '<option value="">全部</option>';
+  toSelect.innerHTML = '<option value="">全部</option>';
+  years.forEach(y => {
+    fromSelect.innerHTML += `<option value="${y}">${y}</option>`;
+    toSelect.innerHTML += `<option value="${y}">${y}</option>`;
+  });
+  fromSelect.value = years[0];
+  toSelect.value = years[years.length - 1];
+  divYearsPopulated = true;
+}
+
+function onDivYearChange() {
+  loadDividends(getCurrentCode());
+}
+
+function resetDivYears() {
+  const fromSelect = document.getElementById('divFromYear');
+  const toSelect = document.getElementById('divToYear');
+  const fromOpts = fromSelect.options;
+  const toOpts = toSelect.options;
+  if (fromOpts.length > 1) fromSelect.value = fromOpts[1].value;
+  if (toOpts.length > 1) toSelect.value = toOpts[toOpts.length - 1].value;
+  loadDividends(getCurrentCode());
 }
 
 function renderDividendsChart(data) {
@@ -798,9 +882,11 @@ function renderFinancialsTable(data) {
   // 数据行
   const dataMap = {};
   for (const d of data) dataMap[d.fiscal_year] = d;
+  window._finDataMap = dataMap;
+  window._finYears = years;
 
   for (const ind of indicators) {
-    html += `<tr data-indicator-field="${ind.field}"><td class="sort-handle">⋮⋮</td><td class="sticky-col">${ind.name}</td>`;
+    html += `<tr data-indicator-field="${ind.field}"><td class="sort-handle">⋮⋮</td><td class="sticky-col">${ind.name}<span class="chart-icon" data-field="${ind.field}" data-name="${esc(ind.name)}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
     for (const y of years) {
       const d = dataMap[y];
       const val = d ? d[ind.field] : null;
@@ -847,6 +933,14 @@ function renderFinancialsTable(data) {
 
   // 绑定拖拽排序事件（mousedown/mousemove/mouseup 实现）
   attachReorderEvents(wrap);
+
+  // 绑定指标图表图标点击事件
+  wrap.querySelectorAll('.chart-icon').forEach(icon => {
+    icon.addEventListener('click', function(e) {
+      e.stopPropagation();
+      openIndicatorChart(this.dataset.field, this.dataset.name);
+    });
+  });
 }
 
 // ==================== 排序模式 ====================
@@ -1032,6 +1126,95 @@ function showToast(msg, type) {
   t.className = 'toast toast-' + type + ' show';
   setTimeout(() => { t.className = 'toast'; }, 2500);
 }
+
+// ==================== 指标趋势图弹窗 ====================
+
+function openIndicatorChart(field, name) {
+  const dataMap = window._finDataMap;
+  const years = window._finYears;
+  const indicators = window._finIndicators;
+  if (!dataMap || !years || !indicators) return;
+  const ind = indicators.find(i => i.field === field);
+  if (!ind) return;
+
+  const stockName = document.getElementById('detailName').textContent.trim();
+  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + name;
+  document.getElementById('chartModalOverlay').classList.add('active');
+
+  const sortedYears = [...years].sort((a, b) => a - b);
+  const values = sortedYears.map(y => {
+    const d = dataMap[y];
+    return d && d[field] != null ? d[field] : null;
+  });
+
+  const isPercent = ind.isPercent || ind.unit === '%';
+  const dom = document.getElementById('chartModalBox');
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) existing.dispose();
+
+  const chart = echarts.init(dom);
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        const p = params[0];
+        if (p.value == null) return p.axisValue + '<br/>无数据';
+        return p.axisValue + '<br/>' + name + ': ' + (isPercent ? p.value.toFixed(2) + '%' : p.value.toFixed(2));
+      }
+    },
+    grid: { left: 60, right: 30, top: 20, bottom: 40 },
+    xAxis: {
+      type: 'category',
+      data: sortedYears,
+      name: '年份',
+      nameLocation: 'middle',
+      nameGap: 30
+    },
+    yAxis: {
+      type: 'value',
+      name: ind.unit || '',
+      axisLabel: isPercent ? { formatter: '{value}%' } : {}
+    },
+    series: [{
+      type: 'line',
+      data: values,
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      lineStyle: { color: '#4a6cf7', width: 2 },
+      itemStyle: { color: '#4a6cf7' },
+      label: {
+        show: true,
+        position: 'top',
+        fontSize: 11,
+        formatter: function(p) {
+          if (p.value == null) return '';
+          return isPercent ? p.value.toFixed(1) + '%' : p.value.toFixed(2);
+        }
+      }
+    }]
+  });
+
+  window._chartModalInstance = chart;
+}
+
+function closeIndicatorChart() {
+  document.getElementById('chartModalOverlay').classList.remove('active');
+  if (window._chartModalInstance) {
+    window._chartModalInstance.dispose();
+    window._chartModalInstance = null;
+  }
+}
+
+// ESC 关闭图表弹窗
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    const overlay = document.getElementById('chartModalOverlay');
+    if (overlay && overlay.classList.contains('active')) {
+      closeIndicatorChart();
+    }
+  }
+});
 
 // ==================== 数据更新 ====================
 

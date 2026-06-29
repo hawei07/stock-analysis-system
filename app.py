@@ -178,11 +178,18 @@ def api_stats():
 
 @app.route("/api/stock/<code>/dividends")
 def api_stock_dividends(code):
-    rows = execute_query(
-        "SELECT fiscal_year, net_profit, dividend_amount, dividend_per_share, ex_date "
-        "FROM dividends WHERE stock_code = %s ORDER BY fiscal_year",
-        (code,)
-    )
+    start_year = request.args.get("start_year", type=int)
+    end_year = request.args.get("end_year", type=int)
+    sql = "SELECT fiscal_year, net_profit, dividend_amount, dividend_per_share, ex_date FROM dividends WHERE stock_code = %s"
+    params = [code]
+    if start_year is not None:
+        sql += " AND fiscal_year >= %s"
+        params.append(start_year)
+    if end_year is not None:
+        sql += " AND fiscal_year <= %s"
+        params.append(end_year)
+    sql += " ORDER BY fiscal_year"
+    rows = execute_query(sql, tuple(params))
     result = []
     for r in rows:
         result.append({
@@ -365,6 +372,7 @@ def _ensure_financials_columns():
         ("noncurrent_liab_due1y", "DECIMAL(18,4) DEFAULT NULL COMMENT '一年内到期非流动负债(亿)'"),
         ("long_borrow", "DECIMAL(18,4) DEFAULT NULL COMMENT '长期借款(亿)'"),
         ("bonds_payable", "DECIMAL(18,4) DEFAULT NULL COMMENT '应付债券(亿)'"),
+        ("interest_bearing_debt_ratio", "DECIMAL(10,4) DEFAULT NULL COMMENT '有息负债率(%)'"),
     ]
     for col_name, col_def in new_columns:
         try:
@@ -449,14 +457,15 @@ def api_update_financials():
                     # 资产负债率 = (总资产 - 归母权益) / 总资产 * 100
                     debt_ratio_val = round((ta_raw - te_raw) / ta_raw * 100, 2) if (ta_raw and te_raw and ta_raw > 0) else None
 
-                    # 有息负债相关字段（单位：亿元）
-                    def _to_yi(val):
-                        return round(val / 1e8, 4) if val else None
+                    # 有息负债率：直接从东方财富 API 的 INTEREST_DEBT_RATIO 字段获取（%）
+                    idr_raw = item.get("INTEREST_DEBT_RATIO")
+                    interest_bearing_debt_ratio_val = round(float(idr_raw), 4) if idr_raw else None
 
-                    short_borrow_val = _to_yi(item.get("STBORROW"))
-                    ncl_due1y_val = _to_yi(item.get("NCLDUE1Y"))
-                    long_borrow_val = _to_yi(item.get("LTBORROW"))
-                    bonds_val = _to_yi(item.get("BONDSPAYABLE"))
+                    # 有息负债明细字段（API 不返回，保留为 NULL）
+                    short_borrow_val = None
+                    ncl_due1y_val = None
+                    long_borrow_val = None
+                    bonds_val = None
 
                     execute_query(
                         """INSERT INTO custom_financials
@@ -464,8 +473,9 @@ def api_update_financials():
                          deducted_profit, operate_cashflow, roe, deducted_roe, roic,
                          total_assets, total_equity, total_shares, audit_opinion,
                          basic_eps, debt_ratio,
-                         short_borrow, noncurrent_liab_due1y, long_borrow, bonds_payable)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                         short_borrow, noncurrent_liab_due1y, long_borrow, bonds_payable,
+                         interest_bearing_debt_ratio)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                          total_revenue=VALUES(total_revenue), operate_profit=VALUES(operate_profit),
                          parent_profit=VALUES(parent_profit), deducted_profit=VALUES(deducted_profit),
@@ -475,7 +485,8 @@ def api_update_financials():
                          total_shares=VALUES(total_shares), audit_opinion=VALUES(audit_opinion),
                          basic_eps=VALUES(basic_eps), debt_ratio=VALUES(debt_ratio),
                          short_borrow=VALUES(short_borrow), noncurrent_liab_due1y=VALUES(noncurrent_liab_due1y),
-                         long_borrow=VALUES(long_borrow), bonds_payable=VALUES(bonds_payable)""",
+                         long_borrow=VALUES(long_borrow), bonds_payable=VALUES(bonds_payable),
+                         interest_bearing_debt_ratio=VALUES(interest_bearing_debt_ratio)""",
                         (
                             code, year,
                             round(item["TOTALOPERATEREVE"] / 1e8, 4) if item.get("TOTALOPERATEREVE") else None,
@@ -496,6 +507,7 @@ def api_update_financials():
                             ncl_due1y_val,
                             long_borrow_val,
                             bonds_val,
+                            interest_bearing_debt_ratio_val,
                         ),
                         fetch=False
                     )
@@ -529,6 +541,7 @@ def api_stock_financials(code):
                   cf.total_assets, cf.total_equity, cf.total_shares,
                   cf.basic_eps, cf.debt_ratio,
                   cf.short_borrow, cf.noncurrent_liab_due1y, cf.long_borrow, cf.bonds_payable,
+                  cf.interest_bearing_debt_ratio,
                   d.dividend_amount, d.dividend_per_share
            FROM custom_financials cf
            LEFT JOIN dividends d ON cf.stock_code = d.stock_code COLLATE utf8mb4_unicode_ci AND cf.fiscal_year = d.fiscal_year
@@ -597,13 +610,10 @@ def api_stock_financials(code):
             if (dividend_amount is not None and pp and pp > 0) else None
         )
 
-        # 有息负债率 = (短期借款+一年内到期非流动负债+长期借款+应付债券) / 总资产 * 100
-        interest_sum = (
-            (short_borrow or 0) + (ncl_due1y or 0) +
-            (long_borrow or 0) + (bonds_payable or 0)
-        )
+        # 有息负债率：直接从 DB 读取东方财富 API 预计算值
         interest_bearing_debt_ratio = (
-            round(interest_sum / ta * 100, 2) if (interest_sum > 0 and ta > 0) else None
+            round(float(r["interest_bearing_debt_ratio"]), 2)
+            if r.get("interest_bearing_debt_ratio") else None
         )
 
         # 股息率 = 每股分红 / 当前股价 * 100
