@@ -130,6 +130,10 @@ AIGC:
 | `gross_margin` | DECIMAL(10,4) | NULL | 毛利率（%） |
 | `net_margin` | DECIMAL(10,4) | NULL | 净利率（%） |
 | `debt_ratio` | DECIMAL(10,4) | NULL | 资产负债率（%） |
+| `short_borrow` | DECIMAL(18,4) | NULL | 短期借款（亿元） |
+| `noncurrent_liab_due1y` | DECIMAL(18,4) | NULL | 一年内到期的非流动负债（亿元） |
+| `long_borrow` | DECIMAL(18,4) | NULL | 长期借款（亿元） |
+| `bonds_payable` | DECIMAL(18,4) | NULL | 应付债券（亿元） |
 | `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 
 > 唯一约束：UNIQUE(stock_code, fiscal_year)。数据来源为东方财富 datacenter-web API，原始单位（元）入库前除以 1e8 转换为亿元。前端查询时动态计算核心利润率、净利润率、现金流利润比三个派生指标。
@@ -292,13 +296,20 @@ AIGC:
       "roe_yoy": -2.36,
       "core_profit_rate": 74.60,
       "net_profit_rate": 51.30,
-      "cashflow_to_profit": 95.60
+      "cashflow_to_profit": 95.60,
+      "dividend_amount": 746.50,
+      "dividend_per_share": 59.49,
+      "dividend_payout_ratio": 83.57,
+      "basic_eps": 71.12,
+      "dividend_yield_fin": 3.89,
+      "debt_ratio": 19.29,
+      "interest_bearing_debt_ratio": 0.52
     }
   ]
 }
 ```
 
-> 派生指标由后端动态计算：`core_profit_rate`（核心利润率）= (营业总收入 - 营业总成本) / 营业总收入 × 100，`net_profit_rate`（净利润率）= 归母净利润 / 营业总收入 × 100，`cashflow_to_profit`（现金流利润比）= 经营现金流净额 / 归母净利润 × 100。
+> 派生指标由后端动态计算。除上述三个外，还包括 `dividend_payout_ratio`（分红率）、`interest_bearing_debt_ratio`（有息负债率）、`dividend_yield_fin`（股息率）。`dividend_amount`、`dividend_per_share` 通过 LEFT JOIN dividends 表按 fiscal_year 关联获取。
 
 #### POST /api/update-financials
 
@@ -331,6 +342,21 @@ AIGC:
 | XSMLL | gross_margin | %，保持原值 |
 | XSJLL | net_margin | %，保持原值 |
 | ZCFZL | debt_ratio | %，保持原值 |
+| STBORROW | short_borrow | 元 → 亿元 |
+| NCLDUE1Y | noncurrent_liab_due1y | 元 → 亿元 |
+| LTBORROW | long_borrow | 元 → 亿元 |
+| BONDSPAYABLE | bonds_payable | 元 → 亿元 |
+
+**派生指标（后端计算）**：
+
+| 派生指标 | 公式 | 说明 |
+|------|------|------|
+| core_profit_rate | (total_revenue - operating_cost) / total_revenue × 100 | 核心利润率 |
+| net_profit_rate | net_profit / total_revenue × 100 | 净利润率 |
+| cashflow_to_profit | net_cashflow_oper / net_profit × 100 | 现金流利润比 |
+| dividend_payout_ratio | dividend_amount / net_profit × 100 | 分红率 |
+| interest_bearing_debt_ratio | (short_borrow + noncurrent_liab_due1y + long_borrow + bonds_payable) / total_assets × 100 | 有息负债率 |
+| dividend_yield_fin | dividend_per_share / cur_price × 100 | 股息率（基于腾讯行情实时股价） |
 
 **成功响应**：`200` + `{"success": true, "message": "已更新 19 条年报数据", "stock_code": "600519", "count": 19}`
 
