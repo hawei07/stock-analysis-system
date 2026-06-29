@@ -114,14 +114,16 @@ tr:hover td{background:#fafbff}
 .fin-table .sticky-col{position:sticky;left:0;z-index:2;background:#fafafa;font-weight:500;text-align:left;min-width:180px}
 .fin-table .sticky-header{position:sticky;top:0;z-index:3}
 .fin-table thead th.sticky-col{z-index:4;background:#f0f0f0}
-.fin-table .year-header{text-align:center;font-size:13px;background:#e6f0ff}
+.fin-table .year-header{text-align:center;font-size:14px;background:#e6f0ff}
 .fin-table .sub-header{font-size:11px;color:#666;text-align:center}
 .fin-table .unit-row td{font-size:11px;color:#999;text-align:center;background:#fafafa;padding:4px 10px}
 
-/* 同比颜色编码：涨红跌绿 */
-.fin-yoy-up{background:#fff1f0!important;color:#cf1322!important}
-.fin-yoy-down{background:#f6ffed!important;color:#389e0d!important}
-.fin-yoy-neutral{color:#999}
+/* 数据行：原值列放大加粗 */
+.fin-table tbody tr[data-indicator-field] td:not([class]){font-size:14px;font-weight:600;color:#222}
+/* 同比列缩小 + 颜色编码：涨红跌绿 */
+.fin-yoy-up{font-size:11px;background:#fff1f0!important;color:#cf1322!important}
+.fin-yoy-down{font-size:11px;background:#f6ffed!important;color:#389e0d!important}
+.fin-yoy-neutral{font-size:11px;color:#999}
 .fin-table .indent-name{padding-left:20px}
 .fin-table .sub-name{color:#888;font-size:11px}
 
