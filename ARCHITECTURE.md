@@ -383,9 +383,10 @@ AIGC:
 
 | 特性 | 实现方式 |
 |------|------|
-| 指标行排序 | HTML5 Drag and Drop API，拖拽上下移动指标行 |
+| 排序入口 | 工具栏"调整排序"按钮，点击进入排序模式，再次点击退出 |
+| 拖拽方式 | 排序模式下指标行首列显示 ⋮⋮ 手柄，mousedown 拖拽手柄上下移动 |
+| 视觉反馈 | 浮动 ghost 行跟随鼠标 + 蓝色插入线指示目标位置 |
 | 顺序持久化 | localStorage key `financials-indicator-order` |
-| 视觉反馈 | 拖拽行半透明（opacity:0.35），目标位置蓝色边框高亮 |
 | 年份排列 | 倒序（最近年份在前），SQL ORDER BY fiscal_year DESC |
 | 同比着色 | 正值红色 `.fin-yoy-up`，负值绿色 `.fin-yoy-down` |
 | 表格滚动 | 横向滚动，首列（指标名）sticky 固定 |
