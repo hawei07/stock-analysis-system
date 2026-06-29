@@ -126,7 +126,8 @@ tr:hover td{background:#fafbff}
 .fin-table .sub-name{color:#888;font-size:11px}
 
 /* 拖拽排序 */
-.fin-table tbody tr[draggable]{cursor:grab;user-select:none}
+.fin-table tbody tr[draggable]{cursor:grab;user-select:none;-webkit-user-drag:element}
+.fin-table tbody tr[draggable] *{user-select:none!important;-webkit-user-drag:none}
 .fin-table tbody tr[draggable]:active{cursor:grabbing}
 .fin-table tbody tr.dragging{opacity:.35;background:#e6f0ff!important}
 .fin-table tbody tr.dragging td{background:transparent!important}
@@ -832,9 +833,18 @@ function renderFinancialsTable(data) {
     rows.forEach(row => {
       row.addEventListener('dragstart', function(e) {
         dragSrc = this;
+        // 清除可能干扰拖拽的文本选区
+        if (document.getSelection) document.getSelection().removeAllRanges();
         this.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', this.dataset.indicatorField);
+        // 设置拖拽图像为当前行（避免 sticky 列造成的图像偏移）
+        const ghost = this.cloneNode(true);
+        ghost.style.position = 'absolute'; ghost.style.top = '-9999px';
+        ghost.style.opacity = '0.5'; ghost.style.width = this.offsetWidth + 'px';
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, 0, 0);
+        setTimeout(() => document.body.removeChild(ghost), 0);
       });
 
       row.addEventListener('dragend', function() {
