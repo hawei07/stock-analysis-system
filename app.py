@@ -48,6 +48,43 @@ def api_stock_detail(code):
             stock["list_date"] = str(stock["list_date"])
         stock["created_at"] = str(stock["created_at"]) if stock.get("created_at") else None
         stock["updated_at"] = str(stock["updated_at"]) if stock.get("updated_at") else None
+
+        # 获取实时行情：股价、PE(TTM)、市值
+        realtime = {"price": None, "pe_ttm": None, "market_cap": None}
+        try:
+            market = stock.get("market", "SH")
+            prefix = "sh" if market == "SH" else ("sz" if market == "SZ" else "bj")
+            url = f"https://qt.gtimg.cn/q={prefix}{code}"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+            resp.encoding = "gbk"
+            text = resp.text
+            if text.startswith("v_"):
+                parts = text.split("~")
+                if len(parts) >= 4:
+                    price_str = parts[3].strip()
+                    if price_str and price_str != "-":
+                        realtime["price"] = float(price_str)
+                if len(parts) >= 40:
+                    pe_str = parts[39].strip()
+                    if pe_str and pe_str != "-":
+                        try:
+                            realtime["pe_ttm"] = float(pe_str)
+                        except ValueError:
+                            pass
+                if len(parts) >= 46:
+                    cap_str = parts[45].strip()
+                    if cap_str and cap_str != "-":
+                        try:
+                            # 腾讯行情 parts[45] 已是亿元单位
+                            realtime["market_cap"] = round(float(cap_str), 2)
+                        except ValueError:
+                            pass
+        except Exception:
+            pass
+
+        stock["realtime"] = realtime
+        stock["dividend_yield"] = stock.get("dividend_yield")  # 已在 stocks 表中
+
         return jsonify(stock)
     return jsonify({"error": "未找到该股票"}), 404
 

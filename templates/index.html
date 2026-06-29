@@ -66,6 +66,15 @@ tr:hover td{background:#fafbff}
 .detail-stock-info .stock-meta{font-size:13px;color:#999}
 .detail-stock-info .stock-meta span{margin-right:16px}
 
+/* 实时指标卡片 */
+.realtime-cards{display:flex;gap:16px;padding:16px 32px;background:#fff;border-bottom:1px solid #e8e8e8;flex-wrap:wrap}
+.realtime-card{background:#f7f9fc;border-radius:8px;padding:12px 20px;min-width:140px;flex:1;text-align:center;border:1px solid #e8e8e8}
+.realtime-card .label{font-size:12px;color:#999;margin-bottom:4px}
+.realtime-card .value{font-size:22px;font-weight:700;color:#1a1a2e}
+.realtime-card .value.pos{color:#cf1322}
+.realtime-card .value.neg{color:#389e0d}
+.realtime-card .unit{font-size:12px;color:#999;margin-left:2px;font-weight:400}
+
 .tabs{display:flex;gap:0;background:#fff;border-bottom:2px solid #e8e8e8;padding:0 32px}
 .tab-btn{padding:14px 24px;font-size:14px;font-weight:500;color:#666;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
 .tab-btn:hover{color:#4a6cf7}
@@ -221,6 +230,25 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         <span id="detailListDate"></span>
         <span id="detailStatus"></span>
       </span>
+    </div>
+  </div>
+
+  <div class="realtime-cards" id="realtimeCards">
+    <div class="realtime-card">
+      <div class="label">最新股价</div>
+      <div class="value" id="rtPrice">--</div>
+    </div>
+    <div class="realtime-card">
+      <div class="label">PE(TTM)</div>
+      <div class="value" id="rtPE">--</div>
+    </div>
+    <div class="realtime-card">
+      <div class="label">股息率</div>
+      <div class="value" id="rtDivYield">--</div>
+    </div>
+    <div class="realtime-card">
+      <div class="label">最新市值</div>
+      <div class="value" id="rtMarketCap">--</div>
     </div>
   </div>
 
@@ -398,6 +426,23 @@ async function loadDetail(code) {
     document.getElementById('detailIndustry').textContent = stock.industry ? '行业: ' + stock.industry : '';
     document.getElementById('detailListDate').textContent = stock.list_date ? '上市: ' + stock.list_date : '';
     document.getElementById('detailStatus').innerHTML = '<span class="status-tag status-' + stock.status + '">' + stock.status + '</span>';
+
+    // 填充实时指标卡片
+    const rt = stock.realtime || {};
+    document.getElementById('rtPrice').textContent = rt.price != null ? rt.price.toFixed(2) + ' 元' : '--';
+    const peEl = document.getElementById('rtPE');
+    peEl.textContent = rt.pe_ttm != null ? rt.pe_ttm.toFixed(2) : '--';
+    peEl.className = 'value';
+    if (rt.pe_ttm != null && rt.pe_ttm < 0) peEl.classList.add('neg');
+
+    const divYield = parseFloat(stock.dividend_yield);
+    const dyEl = document.getElementById('rtDivYield');
+    dyEl.textContent = !isNaN(divYield) ? divYield.toFixed(2) + '%' : '--';
+    dyEl.className = 'value';
+
+    const mcEl = document.getElementById('rtMarketCap');
+    mcEl.textContent = rt.market_cap != null ? rt.market_cap.toFixed(2) + ' 亿' : '--';
+    mcEl.className = 'value';
 
     // 加载分红数据并渲染图表
     loadDividends(code);
