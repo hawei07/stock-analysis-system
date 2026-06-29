@@ -438,7 +438,8 @@ def api_update_financials():
                     total_shares_val = round(total_share / 1e8, 4) if total_share else None
 
                     # 新增字段
-                    basic_eps = item.get("BASIC_EPS")
+                    # 东方财富 RPT_F10_FINANCE_MAINFINADATA 中基本每股收益字段为 EPSJB
+                    basic_eps = item.get("EPSJB")
                     basic_eps_val = round(float(basic_eps), 4) if basic_eps else None
 
                     ta_raw = item.get("TOTAL_ASSETS_PK", 0)
@@ -525,7 +526,7 @@ def api_stock_financials(code):
     rows = execute_query(
         """SELECT cf.fiscal_year, cf.total_revenue, cf.operate_profit, cf.parent_profit,
                   cf.deducted_profit, cf.operate_cashflow, cf.roe, cf.deducted_roe, cf.roic,
-                  cf.total_assets, cf.total_equity, cf.total_shares, cf.audit_opinion,
+                  cf.total_assets, cf.total_equity, cf.total_shares,
                   cf.basic_eps, cf.debt_ratio,
                   cf.short_borrow, cf.noncurrent_liab_due1y, cf.long_borrow, cf.bonds_payable,
                   d.dividend_amount, d.dividend_per_share
@@ -572,7 +573,12 @@ def api_stock_financials(code):
 
         # 新增字段
         basic_eps = float(r["basic_eps"]) if r.get("basic_eps") else None
-        debt_ratio = float(r["debt_ratio"]) if r.get("debt_ratio") else None
+        debt_ratio_raw = float(r["debt_ratio"]) if r.get("debt_ratio") else None
+        # 动态回退：DB 中 debt_ratio 为 NULL 但 total_assets 和 total_equity 有值时计算
+        debt_ratio = (
+            debt_ratio_raw if debt_ratio_raw is not None
+            else (round((ta - te) / ta * 100, 2) if ta > 0 else None)
+        )
         short_borrow = float(r["short_borrow"]) if r.get("short_borrow") else None
         ncl_due1y = float(r["noncurrent_liab_due1y"]) if r.get("noncurrent_liab_due1y") else None
         long_borrow = float(r["long_borrow"]) if r.get("long_borrow") else None
@@ -620,7 +626,6 @@ def api_stock_financials(code):
             "total_assets": ta,
             "total_equity": te,
             "total_shares": ts,
-            "audit_opinion": r.get("audit_opinion"),
             "core_profit_rate": core_profit_rate,
             "net_profit_rate": net_profit_rate,
             "cashflow_to_profit": cashflow_to_profit,
