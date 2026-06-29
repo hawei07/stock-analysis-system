@@ -110,6 +110,30 @@ AIGC:
 
 > 唯一约束：UNIQUE(stock_code, fiscal_year)，每只股票每个财年仅一条记录。
 
+### 3.4 custom_financials 表结构
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | INT | PK, AUTO_INCREMENT | 主键 |
+| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
+| `fiscal_year` | INT | NOT NULL | 财年 |
+| `total_revenue` | DECIMAL(18,4) | NULL | 营业总收入（亿元） |
+| `operating_cost` | DECIMAL(18,4) | NULL | 营业总成本（亿元） |
+| `operating_profit` | DECIMAL(18,4) | NULL | 营业利润（亿元） |
+| `total_profit` | DECIMAL(18,4) | NULL | 利润总额（亿元） |
+| `net_profit` | DECIMAL(18,4) | NULL | 归母净利润（亿元） |
+| `total_assets` | DECIMAL(18,4) | NULL | 资产总计（亿元） |
+| `total_equity` | DECIMAL(18,4) | NULL | 归母股东权益（亿元） |
+| `net_cashflow_oper` | DECIMAL(18,4) | NULL | 经营活动现金流量净额（亿元） |
+| `basic_eps` | DECIMAL(10,4) | NULL | 基本每股收益（元） |
+| `roe` | DECIMAL(10,4) | NULL | 加权平均净资产收益率（%） |
+| `gross_margin` | DECIMAL(10,4) | NULL | 毛利率（%） |
+| `net_margin` | DECIMAL(10,4) | NULL | 净利率（%） |
+| `debt_ratio` | DECIMAL(10,4) | NULL | 资产负债率（%） |
+| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+
+> 唯一约束：UNIQUE(stock_code, fiscal_year)。数据来源为东方财富 datacenter-web API，原始单位（元）入库前除以 1e8 转换为亿元。前端查询时动态计算核心利润率、净利润率、现金流利润比三个派生指标。
+
 ---
 
 ## 四、API 接口文档
@@ -126,6 +150,8 @@ AIGC:
 | DELETE | `/api/stock/<code>` | 删除股票 |
 | GET | `/api/stats` | 统计概览 |
 | POST | `/api/update-dividends` | 全量/增量更新分红与PE数据 |
+| GET | `/api/stock/<code>/financials` | 查询单只股票自定义财报数据 |
+| POST | `/api/update-financials` | 从东方财富拉取并更新财报数据 |
 
 ### 4.2 接口详情
 
@@ -239,6 +265,74 @@ AIGC:
 - 更新 stocks 表的 pe_ttm 和 dividend_yield
 
 **成功响应**：`200` + `{"success": true, "message": "已更新 295 条分红记录", "stocks_processed": 16}`
+
+#### GET /api/stock/&lt;code&gt;/financials
+
+查询单只股票的自定义财报数据，返回历年财务指标及同比变化。
+
+**Path 参数**：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `code` | string | 股票代码（如 600519） |
+
+**响应**：
+
+```json
+{
+  "data": [
+    {
+      "stock_code": "600519",
+      "fiscal_year": 2025,
+      "total_revenue": 1741.44,
+      "total_revenue_yoy": 15.66,
+      "net_profit": 893.27,
+      "net_profit_yoy": 15.45,
+      "roe": 29.83,
+      "roe_yoy": -2.36,
+      "core_profit_rate": 74.60,
+      "net_profit_rate": 51.30,
+      "cashflow_to_profit": 95.60
+    }
+  ]
+}
+```
+
+> 派生指标由后端动态计算：`core_profit_rate`（核心利润率）= (营业总收入 - 营业总成本) / 营业总收入 × 100，`net_profit_rate`（净利润率）= 归母净利润 / 营业总收入 × 100，`cashflow_to_profit`（现金流利润比）= 经营现金流净额 / 归母净利润 × 100。
+
+#### POST /api/update-financials
+
+从东方财富 API 拉取单只股票的全部年报数据，进行单位转换后 upsert 写入 custom_financials 表。
+
+**请求体**：
+
+```json
+{
+  "code": "600519"
+}
+```
+
+**数据来源**：东方财富 datacenter-web API，pageSize=200 覆盖全部年报。
+
+**字段映射与转换**：
+
+| 东方财富字段 | 目标字段 | 转换 |
+|------|------|------|
+| TOTALOPERATEREVE | total_revenue | 元 → 亿元（÷1e8） |
+| TOTALOPERATEEXP | operating_cost | 元 → 亿元 |
+| OPERATEPROFIT | operating_profit | 元 → 亿元 |
+| TOTPROFIT | total_profit | 元 → 亿元 |
+| PARENTNETPROFIT | net_profit | 元 → 亿元 |
+| TOTALASSETS | total_assets | 元 → 亿元 |
+| TOTALSHOLDEREQUITY | total_equity | 元 → 亿元 |
+| KCFJCXJJE | net_cashflow_oper | 元 → 亿元 |
+| BASICEPS | basic_eps | 元，保持原值 |
+| ROEJQ | roe | %，保持原值 |
+| XSMLL | gross_margin | %，保持原值 |
+| XSJLL | net_margin | %，保持原值 |
+| ZCFZL | debt_ratio | %，保持原值 |
+
+**成功响应**：`200` + `{"success": true, "message": "已更新 19 条年报数据", "stock_code": "600519", "count": 19}`
 
 ---
 
@@ -394,6 +488,7 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 |------|------|
 | 股票总数 | 16 只（SH 7 只，SZ 9 只） |
 | 分红记录 | 298 条 |
+| 财报记录 | 191 条（7只股票，2016-2025） |
 | 覆盖财年 | 完整覆盖各股票上市以来全部分红（最早 1997 年） |
 
 | 阶段 | 模块 | 说明 |
