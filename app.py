@@ -447,7 +447,7 @@ def api_update_financials():
             try:
                 url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
                        "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
-                       f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22%E5%B9%B4%E6%8A%A5%22)"
+                       f"&filter=(SECURITY_CODE=%22{code}%22)"
                        "&pageSize=200&sortColumns=REPORT_DATE&sortTypes=-1")
                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
                 data = resp.json()
@@ -768,36 +768,35 @@ def _parse_sina_bs(html, target_year=None):
 
         rows = _re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, _re.DOTALL)
 
-        # 在表头行中找年报列（-12-31）的索引——一个表可能有多列年报
-        annual_cols = []  # [(idx, year), ...]
+        # 在表头行中找所有日期列
+        date_cols = []  # [(col_idx, year, date_str)]
         for r in rows:
             cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
             cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
             if any('报表日期' in c for c in cells):
                 for idx, c in enumerate(cells):
-                    m = _re.match(r'(\d{4})-12-31', c)
+                    m = _re.match(r'(\d{4})-(\d{2})-(\d{2})', c)
                     if m:
-                        annual_cols.append((idx, int(m.group(1))))
+                        date_cols.append((idx, int(m.group(1)), c))
                 break
 
-        if not annual_cols:
+        if not date_cols:
             continue
 
-        # 对每个年报列解析数据
-        for annual_col, annual_year in annual_cols:
-            # 如果指定了目标年份且不匹配，跳过
-            if target_year is not None and annual_year != target_year:
+        # 对每个日期列解析数据，按年保留最新日期的数据
+        for col_idx, col_year, col_date in date_cols:
+            if target_year is not None and col_year != target_year:
                 continue
 
             values = {}
             for r in rows:
                 cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
                 cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
-                if not cells or len(cells) <= annual_col:
+                if not cells or len(cells) <= col_idx:
                     continue
 
                 row_name = cells[0]
-                raw_val = cells[annual_col]
+                raw_val = cells[col_idx]
 
                 for pattern, col in BS_ROW_MAP:
                     if row_name.startswith(pattern) or (pattern == "库存股" and "库存股" in row_name):
@@ -809,7 +808,11 @@ def _parse_sina_bs(html, target_year=None):
                         break
 
             if values:
-                all_year_data[annual_year] = values
+                # 已完成的财年优先保留 12-31 年报，当年取最新季度
+                existing = all_year_data.get(col_year)
+                if existing is None or col_date > (all_year_data.get(f"_max_date_{col_year}", "")):
+                    all_year_data[col_year] = values
+                    all_year_data[f"_max_date_{col_year}"] = col_date
 
     if target_year is not None:
         return all_year_data.get(target_year)
@@ -848,7 +851,7 @@ def api_update_balance_sheet():
                 # 解析全部年份的年报数据
                 all_years = _parse_sina_bs(resp.text)
 
-                for year, values in sorted(all_years.items()):
+                for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
                     if mode == "incremental" and year in existing_years:
                         continue
 
