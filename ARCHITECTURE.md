@@ -375,7 +375,7 @@ AIGC:
 
 #### POST /api/update-financials
 
-从东方财富 API 拉取单只股票的全部年报数据，进行单位转换后 upsert 写入 custom_financials 表。
+从东方财富 API 拉取全部报告类型的数据，按财年取 NOTICE_DATE 最晚的报告（已完成财年自然取年报，当年取最新累计季报），进行单位转换后 upsert 写入 custom_financials 表。
 
 **请求体**：
 
@@ -457,7 +457,8 @@ AIGC:
 **数据来源**：`https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_BalanceSheet/stockid/{code}/ctrl/part/displaytype/0.phtml`
 
 **处理逻辑**：
-- 解析 HTML 中所有"报表日期"表格，提取年报（-12-31）列数据
+- 解析 HTML 中所有"报表日期"表格，提取所有日期列数据
+- 同一财年有多列时优先保留最晚日期（已完财年取 12-31 年报，当年取最新季度）
 - 中文科目名前缀匹配 49 个 DB 字段（如"货币资金"→monetary_funds、"在建工程(合计)"→cip）
 - 新浪原始单位万元，入库前 ÷ 10000 转为亿元
 - upsert 写入 balance_sheets 表（UNIQUE(stock_code, fiscal_year)）
@@ -551,6 +552,7 @@ AIGC:
 | 表格滚动 | 横向滚动，首列（科目名）sticky 固定 |
 | 图表弹窗 | 每科目名后带小图表图标，点击弹出 ECharts 折线图弹窗（Y轴单位亿元、遮罩/ESC关闭） |
 | 数据源 | 新浪财经资产负债表页面 `displaytype/0`，覆盖上市以来全部年份 |
+| 当前年份 | 已完成财年取 12-31 年报列，当前未完成财年取最新季度列（如 Q1） |
 
 #### PE 数据源
 
