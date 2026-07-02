@@ -21,7 +21,7 @@ AIGC:
 
 - **技术栈**：Python 3.11 + Flask + MySQL 8.4
 - **访问地址**：`http://127.0.0.1:5002`
-- **代码仓库**：`D:\stock-analysis-system`（Git 管理，分支策略 `feature/xxx → main`）
+- **代码仓库**：`D:\stock-analysis-system`（Git 管理，分支策略 `feature/xxx → main`，修改后立即本地 commit，仅在明确指令时 push）
 
 ---
 
