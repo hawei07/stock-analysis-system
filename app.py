@@ -688,9 +688,228 @@ def api_stock_financials(code):
     return jsonify(result)
 
 
+# ==================== 资产负债表 API（数据源：新浪财经） ====================
+
+# 新浪资产负债表 → 数据库字段映射 (中文行名 → DB column)
+BS_ROW_MAP = [
+    # 流动资产
+    ("货币资金", "monetary_funds"),
+    ("交易性金融资产", "trading_fin_assets"),
+    ("应收票据", "notes_receivable"),
+    ("应收账款", "accounts_receivable"),
+    ("应收款项融资", "receivables_financing"),
+    ("预付款项", "prepayment"),
+    ("其他应收款", "other_receivables"),       # 匹配"其他应收款(合计)"
+    ("存货", "inventory"),
+    ("一年内到期的非流动资产", "noncurrent_assets_due1y"),
+    ("其他流动资产", "other_current_assets"),
+    ("流动资产合计", "total_current_assets"),
+    # 非流动资产
+    ("持有至到期投资", "held_to_maturity_invest"),
+    ("长期股权投资", "longterm_equity_invest"),
+    ("投资性房地产", "investment_property"),
+    ("在建工程", "cip"),                       # 匹配"在建工程(合计)"
+    ("固定资产", "fixed_assets"),             # 匹配"固定资产及清理(合计)"
+    ("使用权资产", "right_of_use_assets"),
+    ("无形资产", "intangible_assets"),
+    ("开发支出", "development_expenditure"),
+    ("商誉", "goodwill"),
+    ("长期待摊费用", "longterm_prepaid_expense"),
+    ("递延所得税资产", "deferred_tax_assets"),
+    ("其他非流动资产", "other_noncurrent_assets"),
+    ("非流动资产合计", "total_noncurrent_assets"),
+    ("资产总计", "total_assets"),
+    # 流动负债
+    ("短期借款", "short_borrow"),
+    ("应付票据", "notes_payable"),
+    ("应付账款", "accounts_payable"),
+    ("预收款项", "advance_receipts"),
+    ("应付职工薪酬", "payroll_payable"),
+    ("应交税费", "taxes_payable"),
+    ("其他应付款", "other_payables"),         # 匹配"其他应付款(合计)"
+    ("一年内到期的非流动负债", "noncurrent_liab_due1y"),
+    ("其他流动负债", "other_current_liabilities"),
+    ("流动负债合计", "total_current_liabilities"),
+    # 非流动负债
+    ("长期借款", "long_borrow"),
+    ("应付债券", "bonds_payable"),
+    ("租赁负债", "lease_liabilities"),
+    ("递延所得税负债", "deferred_tax_liabilities"),
+    ("非流动负债合计", "total_noncurrent_liabilities"),
+    ("负债合计", "total_liabilities"),
+    # 股东权益
+    ("实收资本", "paid_in_capital"),          # 匹配"实收资本(或股本)"
+    ("资本公积", "capital_reserve"),
+    ("库存股", "treasury_stock"),             # 匹配"减：库存股"
+    ("盈余公积", "surplus_reserve"),
+    ("未分配利润", "retained_earnings"),
+    ("归属于母公司股东权益合计", "parent_equity"),
+    ("少数股东权益", "minority_interests"),
+    ("所有者权益", "total_equity"),            # 匹配"所有者权益(或股东权益)合计"
+]
+
+# 所有 BS 字段列表（用于查询 + INSERT 构建）
+BS_COLUMNS = [col for _, col in BS_ROW_MAP]
+
+
+def _parse_sina_bs(html, target_year=None):
+    """解析新浪资产负债表 HTML，提取每年年报科目数据（万元→亿元）。
+    如果指定 target_year，只返回该年数据；否则返回 {year: {col: val}} 字典。
+    """
+    import re as _re
+
+    # 找所有包含"报表日期"的表
+    all_tables = _re.findall(r'<table[^>]*>(.*?)</table>', html, _re.DOTALL)
+    all_year_data = {}  # year → {col: value}
+
+    for table_html in all_tables:
+        if '报表日期' not in table_html or '货币资金' not in table_html:
+            continue
+
+        rows = _re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, _re.DOTALL)
+
+        # 在表头行中找年报列（-12-31）的索引
+        annual_col = None
+        annual_year = None
+        for r in rows:
+            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
+            cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+            if any('报表日期' in c for c in cells):
+                for idx, c in enumerate(cells):
+                    m = _re.match(r'(\d{4})-12-31', c)
+                    if m:
+                        annual_col = idx
+                        annual_year = int(m.group(1))
+                        break
+                break
+
+        if annual_col is None or annual_year is None:
+            continue
+
+        # 如果指定了目标年份且不匹配，跳过
+        if target_year is not None and annual_year != target_year:
+            continue
+
+        # 解析该表格中所有行的年报列数据
+        values = {}
+        for r in rows:
+            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
+            cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+            if not cells or len(cells) <= annual_col:
+                continue
+
+            row_name = cells[0]
+            raw_val = cells[annual_col]
+
+            for pattern, col in BS_ROW_MAP:
+                if row_name.startswith(pattern) or (pattern == "库存股" and "库存股" in row_name):
+                    if raw_val and raw_val not in ("--", "", "None"):
+                        try:
+                            values[col] = round(float(raw_val.replace(",", "")) / 10000, 4)
+                        except ValueError:
+                            pass
+                    break
+
+        if values:
+            all_year_data[annual_year] = values
+
+    if target_year is not None:
+        return all_year_data.get(target_year)
+    return all_year_data
+
+
+@app.route("/api/update-balance-sheet", methods=["POST"])
+def api_update_balance_sheet():
+    """从新浪财经拉取资产负债表数据并存入 balance_sheets 表"""
+    mode = "full"
+    if request.is_json:
+        mode = request.get_json(silent=True).get("mode", "full")
+    if request.args.get("mode"):
+        mode = request.args["mode"]
+
+    try:
+        stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+        updated_count = 0
+        errors = []
+
+        for s in stocks:
+            code = s["code"]
+            try:
+                url = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_BalanceSheet/stockid/{code}/ctrl/part/displaytype/0.phtml"
+                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                resp.encoding = "gbk"
+
+                # 增量模式：查询已有年份
+                existing_years = set()
+                if mode == "incremental":
+                    existing = execute_query(
+                        "SELECT fiscal_year FROM balance_sheets WHERE stock_code=%s", (code,)
+                    )
+                    existing_years = {r["fiscal_year"] for r in existing}
+
+                # 解析全部年份的年报数据
+                all_years = _parse_sina_bs(resp.text)
+
+                for year, values in sorted(all_years.items()):
+                    if mode == "incremental" and year in existing_years:
+                        continue
+
+                    columns = BS_COLUMNS
+                    placeholders = ", ".join(["%s"] * len(columns))
+                    col_names = ", ".join(columns)
+                    update_clause = ", ".join([f"{c}=VALUES({c})" for c in columns])
+
+                    sql = (
+                        f"INSERT INTO balance_sheets (stock_code, fiscal_year, {col_names}) "
+                        f"VALUES (%s, %s, {placeholders}) "
+                        f"ON DUPLICATE KEY UPDATE {update_clause}"
+                    )
+                    params = [code, year] + [values.get(c) for c in columns]
+                    execute_query(sql, tuple(params), fetch=False)
+                    updated_count += 1
+
+            except Exception as e:
+                errors.append(f"{code}: {str(e)}")
+
+            time.sleep(0.3)
+
+        return jsonify({
+            "success": True,
+            "stocks_processed": len(stocks),
+            "records_updated": updated_count,
+            "mode": mode,
+            "errors": errors[:5] if errors else [],
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/stock/<code>/balance-sheet")
+def api_stock_balance_sheet(code):
+    """查询指定股票的历年资产负债表数据"""
+    from_year = request.args.get("from_year", 2000, type=int)
+    to_year = request.args.get("to_year", 2030, type=int)
+
+    rows = execute_query(
+        """SELECT * FROM balance_sheets
+           WHERE stock_code = %s AND fiscal_year BETWEEN %s AND %s
+           ORDER BY fiscal_year DESC""",
+        (code, from_year, to_year)
+    )
+
+    result = []
+    for r in rows:
+        item = {"fiscal_year": r["fiscal_year"]}
+        for col in BS_COLUMNS:
+            val = r.get(col)
+            item[col] = float(val) if val is not None else None
+        result.append(item)
+
+    return jsonify(result)
+
+
 if __name__ == "__main__":
     print("股票分析系统 Web 服务启动: http://127.0.0.1:5002")
-    # 启动时确保 custom_financials 表有新增列
     try:
         _ensure_financials_columns()
         print("✓ 已确保 custom_financials 表结构完整")

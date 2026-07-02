@@ -159,6 +159,9 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .chart-modal-header h3{font-size:16px;font-weight:600}
 .chart-modal-body{padding:24px}
 .chart-modal-box{width:100%;height:400px}
+/* 资产负债表分组行 */
+.section-row td{padding:8px 16px !important;border-bottom:2px solid #4a6cf7 !important}
+#bsMainTable .sticky-col{min-width:auto;white-space:nowrap;padding-right:18px}
 
 @media (max-width:768px){
   .fin-table .sticky-col{min-width:140px}
@@ -255,6 +258,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   <div class="tabs">
     <button class="tab-btn active" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
     <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
+    <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
   </div>
 
   <div class="detail-content">
@@ -284,6 +288,20 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <div class="fin-table-wrap" id="tableFinancialsWrap">
         <div class="empty" id="finEmpty">请点击"查询"加载财务数据</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-balance" style="display:none">
+      <div class="toolbar-row">
+        <label>年份范围：</label>
+        <input type="number" id="bsFromYear" value="2016" min="2000" max="2030" style="width:70px">
+        <span style="font-size:13px">至</span>
+        <input type="number" id="bsToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <button class="btn btn-primary btn-sm" onclick="loadBalanceSheet()">查询</button>
+        <button class="btn btn-success btn-sm" onclick="updateBalanceSheet()">更新数据</button>
+        <span id="bsStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="fin-table-wrap" id="tableBalanceSheetWrap">
+        <div class="empty" id="bsEmpty">请点击"查询"加载资产负债表数据</div>
       </div>
     </div>
   </div>
@@ -804,8 +822,9 @@ function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
   document.getElementById('panel-' + name).style.display = 'block';
   if (name === 'financials') {
-    // 自动加载数据
     loadFinancials();
+  } else if (name === 'balance') {
+    loadBalanceSheet();
   }
 }
 
@@ -1153,6 +1172,263 @@ async function updateFinancials() {
       statusEl.style.color = '#52c41a';
       // 重新加载
       loadFinancials();
+    } else {
+      statusEl.textContent = '更新失败: ' + (data.error || '未知错误');
+      statusEl.style.color = '#ff4d4f';
+    }
+  } catch (e) {
+    statusEl.textContent = '请求失败: ' + e.message;
+    statusEl.style.color = '#ff4d4f';
+  }
+}
+
+// ==================== 资产负债表 ====================
+
+async function loadBalanceSheet() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const from = document.getElementById('bsFromYear').value;
+  const to = document.getElementById('bsToYear').value;
+  const wrap = document.getElementById('tableBalanceSheetWrap');
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+
+  try {
+    const res = await fetch(`/api/stock/${code}/balance-sheet?from_year=${from}&to_year=${to}`);
+    const data = await res.json();
+    if (!data || data.length === 0) {
+      wrap.innerHTML = '<div class="empty">暂无资产负债表数据，请点击"更新数据"拉取</div>';
+      return;
+    }
+    renderBalanceSheetTable(data);
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function renderBalanceSheetTable(data) {
+  const wrap = document.getElementById('tableBalanceSheetWrap');
+  const years = data.map(d => d.fiscal_year).sort((a, b) => b - a);
+  const dataMap = {};
+  for (const d of data) dataMap[d.fiscal_year] = d;
+
+  // 资产负债表科目分组
+  const sections = [
+    {
+      title: '流动资产',
+      items: [
+        { name: '货币资金', field: 'monetary_funds' },
+        { name: '交易性金融资产', field: 'trading_fin_assets' },
+        { name: '应收票据', field: 'notes_receivable' },
+        { name: '应收账款', field: 'accounts_receivable' },
+        { name: '应收款项融资', field: 'receivables_financing' },
+        { name: '预付款项', field: 'prepayment' },
+        { name: '其他应收款', field: 'other_receivables' },
+        { name: '存货', field: 'inventory' },
+        { name: '一年内到期的非流动资产', field: 'noncurrent_assets_due1y' },
+        { name: '其他流动资产', field: 'other_current_assets' },
+        { name: '流动资产合计', field: 'total_current_assets', bold: true },
+      ]
+    },
+    {
+      title: '非流动资产',
+      items: [
+        { name: '持有至到期投资', field: 'held_to_maturity_invest' },
+        { name: '长期股权投资', field: 'longterm_equity_invest' },
+        { name: '投资性房地产', field: 'investment_property' },
+        { name: '在建工程', field: 'cip' },
+        { name: '固定资产', field: 'fixed_assets' },
+        { name: '使用权资产', field: 'right_of_use_assets' },
+        { name: '无形资产', field: 'intangible_assets' },
+        { name: '开发支出', field: 'development_expenditure' },
+        { name: '商誉', field: 'goodwill' },
+        { name: '长期待摊费用', field: 'longterm_prepaid_expense' },
+        { name: '递延所得税资产', field: 'deferred_tax_assets' },
+        { name: '其他非流动资产', field: 'other_noncurrent_assets' },
+        { name: '非流动资产合计', field: 'total_noncurrent_assets', bold: true },
+      ]
+    },
+    {
+      title: '资产总计',
+      items: [
+        { name: '资产总计', field: 'total_assets', bold: true },
+      ]
+    },
+    {
+      title: '流动负债',
+      items: [
+        { name: '短期借款', field: 'short_borrow' },
+        { name: '应付票据', field: 'notes_payable' },
+        { name: '应付账款', field: 'accounts_payable' },
+        { name: '预收款项', field: 'advance_receipts' },
+        { name: '应付职工薪酬', field: 'payroll_payable' },
+        { name: '应交税费', field: 'taxes_payable' },
+        { name: '其他应付款', field: 'other_payables' },
+        { name: '一年内到期的非流动负债', field: 'noncurrent_liab_due1y' },
+        { name: '其他流动负债', field: 'other_current_liabilities' },
+        { name: '流动负债合计', field: 'total_current_liabilities', bold: true },
+      ]
+    },
+    {
+      title: '非流动负债',
+      items: [
+        { name: '长期借款', field: 'long_borrow' },
+        { name: '应付债券', field: 'bonds_payable' },
+        { name: '租赁负债', field: 'lease_liabilities' },
+        { name: '递延所得税负债', field: 'deferred_tax_liabilities' },
+        { name: '非流动负债合计', field: 'total_noncurrent_liabilities', bold: true },
+      ]
+    },
+    {
+      title: '负债合计',
+      items: [
+        { name: '负债合计', field: 'total_liabilities', bold: true },
+      ]
+    },
+    {
+      title: '股东权益',
+      items: [
+        { name: '实收资本（股本）', field: 'paid_in_capital' },
+        { name: '资本公积', field: 'capital_reserve' },
+        { name: '减：库存股', field: 'treasury_stock' },
+        { name: '盈余公积', field: 'surplus_reserve' },
+        { name: '未分配利润', field: 'retained_earnings' },
+        { name: '归母股东权益合计', field: 'parent_equity', bold: true },
+        { name: '少数股东权益', field: 'minority_interests' },
+        { name: '股东权益合计', field: 'total_equity', bold: true },
+      ]
+    }
+  ];
+
+  let html = '<table class="fin-table" id="bsMainTable"><thead><tr>';
+  html += '<th class="sticky-col sticky-header" rowspan="1">科目</th>';
+  for (const y of years) {
+    html += `<th class="sticky-header year-header">${y}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  // 单位行
+  html += '<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">单位：亿元</td>';
+  for (const y of years) {
+    html += '<td style="text-align:center;background:#fafafa">亿元</td>';
+  }
+  html += '</tr>';
+
+  for (const section of sections) {
+    // 分组标题行
+    html += `<tr class="section-row"><td class="sticky-col" style="background:#e6f0ff;font-weight:700;font-size:13px;color:#1a1a2e" colspan="${years.length + 1}">${section.title}</td></tr>`;
+    for (const item of section.items) {
+      const boldStyle = item.bold ? 'font-weight:600;' : '';
+      html += `<tr><td class="sticky-col" style="${boldStyle}">${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
+      for (const y of years) {
+        const d = dataMap[y];
+        const val = d ? d[item.field] : null;
+        let display = '-';
+        if (val != null) {
+          display = Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2);
+        }
+        html += `<td style="text-align:right;${boldStyle}">${display}</td>`;
+      }
+      html += '</tr>';
+    }
+  }
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+
+  // 暴露数据供图表弹窗使用
+  window._bsDataMap = dataMap;
+  window._bsYears = years;
+
+  // 绑定图表图标点击事件
+  wrap.querySelectorAll('.chart-icon').forEach(icon => {
+    icon.addEventListener('click', function(e) {
+      e.stopPropagation();
+      openBSChart(this.dataset.field, this.dataset.name);
+    });
+  });
+}
+
+function openBSChart(field, name) {
+  const dataMap = window._bsDataMap;
+  const years = window._bsYears;
+  if (!dataMap || !years) return;
+
+  const stockName = document.getElementById('detailName').textContent.trim();
+  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + name;
+  document.getElementById('chartModalOverlay').classList.add('active');
+
+  const sortedYears = [...years].sort((a, b) => a - b);
+  const values = sortedYears.map(y => {
+    const d = dataMap[y];
+    return d && d[field] != null ? d[field] : null;
+  });
+
+  const dom = document.getElementById('chartModalBox');
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) existing.dispose();
+
+  const chart = echarts.init(dom);
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        const p = params[0];
+        if (p.value == null) return p.axisValue + '<br/>无数据';
+        return p.axisValue + '<br/>' + name + ': ' + p.value.toFixed(2) + ' 亿元';
+      }
+    },
+    grid: { left: 60, right: 30, top: 20, bottom: 40 },
+    xAxis: {
+      type: 'category',
+      data: sortedYears,
+      name: '年份',
+      nameLocation: 'middle',
+      nameGap: 30
+    },
+    yAxis: {
+      type: 'value',
+      name: '亿元',
+    },
+    series: [{
+      type: 'line',
+      data: values,
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      lineStyle: { color: '#4a6cf7', width: 2 },
+      itemStyle: { color: '#4a6cf7' },
+      label: {
+        show: true,
+        position: 'top',
+        fontSize: 11,
+        formatter: function(p) {
+          if (p.value == null) return '';
+          return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2);
+        }
+      }
+    }]
+  });
+
+  window._chartModalInstance = chart;
+}
+
+async function updateBalanceSheet() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  const statusEl = document.getElementById('bsStatus');
+  statusEl.textContent = '正在更新数据，请稍候...';
+  statusEl.style.color = '#1890ff';
+
+  try {
+    const res = await fetch('/api/update-balance-sheet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'incremental' })
+    });
+    const data = await res.json();
+    if (data.success) {
+      statusEl.textContent = `更新完成: ${data.records_updated} 条记录 (${data.stocks_processed} 只股票)`;
+      statusEl.style.color = '#52c41a';
+      loadBalanceSheet();
     } else {
       statusEl.textContent = '更新失败: ' + (data.error || '未知错误');
       statusEl.style.color = '#ff4d4f';

@@ -138,6 +138,66 @@ AIGC:
 
 > 唯一约束：UNIQUE(stock_code, fiscal_year)。数据来源为东方财富 datacenter-web API，原始单位（元）入库前除以 1e8 转换为亿元。前端查询时动态计算核心利润率、净利润率、现金流利润比三个派生指标。
 
+### 3.5 balance_sheets 表结构
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | INT | PK, AUTO_INCREMENT | 主键 |
+| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
+| `fiscal_year` | INT | NOT NULL | 财年 |
+| `monetary_funds` | DECIMAL(18,4) | NULL | 货币资金（亿元） |
+| `trading_fin_assets` | DECIMAL(18,4) | NULL | 交易性金融资产（亿元） |
+| `notes_receivable` | DECIMAL(18,4) | NULL | 应收票据（亿元） |
+| `accounts_receivable` | DECIMAL(18,4) | NULL | 应收账款（亿元） |
+| `receivables_financing` | DECIMAL(18,4) | NULL | 应收款项融资（亿元） |
+| `prepayment` | DECIMAL(18,4) | NULL | 预付款项（亿元） |
+| `other_receivables` | DECIMAL(18,4) | NULL | 其他应收款（亿元） |
+| `inventory` | DECIMAL(18,4) | NULL | 存货（亿元） |
+| `noncurrent_assets_due1y` | DECIMAL(18,4) | NULL | 一年内到期非流动资产（亿元） |
+| `other_current_assets` | DECIMAL(18,4) | NULL | 其他流动资产（亿元） |
+| `total_current_assets` | DECIMAL(18,4) | NULL | 流动资产合计（亿元） |
+| `held_to_maturity_invest` | DECIMAL(18,4) | NULL | 持有至到期投资（亿元） |
+| `longterm_equity_invest` | DECIMAL(18,4) | NULL | 长期股权投资（亿元） |
+| `investment_property` | DECIMAL(18,4) | NULL | 投资性房地产（亿元） |
+| `cip` | DECIMAL(18,4) | NULL | 在建工程（亿元） |
+| `fixed_assets` | DECIMAL(18,4) | NULL | 固定资产（亿元） |
+| `right_of_use_assets` | DECIMAL(18,4) | NULL | 使用权资产（亿元） |
+| `intangible_assets` | DECIMAL(18,4) | NULL | 无形资产（亿元） |
+| `development_expenditure` | DECIMAL(18,4) | NULL | 开发支出（亿元） |
+| `goodwill` | DECIMAL(18,4) | NULL | 商誉（亿元） |
+| `longterm_prepaid_expense` | DECIMAL(18,4) | NULL | 长期待摊费用（亿元） |
+| `deferred_tax_assets` | DECIMAL(18,4) | NULL | 递延所得税资产（亿元） |
+| `other_noncurrent_assets` | DECIMAL(18,4) | NULL | 其他非流动资产（亿元） |
+| `total_noncurrent_assets` | DECIMAL(18,4) | NULL | 非流动资产合计（亿元） |
+| `total_assets` | DECIMAL(18,4) | NULL | 资产总计（亿元） |
+| `short_borrow` | DECIMAL(18,4) | NULL | 短期借款（亿元） |
+| `notes_payable` | DECIMAL(18,4) | NULL | 应付票据（亿元） |
+| `accounts_payable` | DECIMAL(18,4) | NULL | 应付账款（亿元） |
+| `advance_receipts` | DECIMAL(18,4) | NULL | 预收款项（亿元） |
+| `payroll_payable` | DECIMAL(18,4) | NULL | 应付职工薪酬（亿元） |
+| `taxes_payable` | DECIMAL(18,4) | NULL | 应交税费（亿元） |
+| `other_payables` | DECIMAL(18,4) | NULL | 其他应付款（亿元） |
+| `noncurrent_liab_due1y` | DECIMAL(18,4) | NULL | 一年内到期非流动负债（亿元） |
+| `other_current_liabilities` | DECIMAL(18,4) | NULL | 其他流动负债（亿元） |
+| `total_current_liabilities` | DECIMAL(18,4) | NULL | 流动负债合计（亿元） |
+| `long_borrow` | DECIMAL(18,4) | NULL | 长期借款（亿元） |
+| `bonds_payable` | DECIMAL(18,4) | NULL | 应付债券（亿元） |
+| `lease_liabilities` | DECIMAL(18,4) | NULL | 租赁负债（亿元） |
+| `deferred_tax_liabilities` | DECIMAL(18,4) | NULL | 递延所得税负债（亿元） |
+| `total_noncurrent_liabilities` | DECIMAL(18,4) | NULL | 非流动负债合计（亿元） |
+| `total_liabilities` | DECIMAL(18,4) | NULL | 负债合计（亿元） |
+| `paid_in_capital` | DECIMAL(18,4) | NULL | 实收资本（亿元） |
+| `capital_reserve` | DECIMAL(18,4) | NULL | 资本公积（亿元） |
+| `treasury_stock` | DECIMAL(18,4) | NULL | 库存股（亿元） |
+| `surplus_reserve` | DECIMAL(18,4) | NULL | 盈余公积（亿元） |
+| `retained_earnings` | DECIMAL(18,4) | NULL | 未分配利润（亿元） |
+| `parent_equity` | DECIMAL(18,4) | NULL | 归母股东权益（亿元） |
+| `minority_interests` | DECIMAL(18,4) | NULL | 少数股东权益（亿元） |
+| `total_equity` | DECIMAL(18,4) | NULL | 股东权益合计（亿元） |
+| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+
+> 唯一约束：UNIQUE(stock_code, fiscal_year)。数据来源为新浪财经资产负债表页面 HTML 解析，原始单位（万元）入库前除以 10000 转换为亿元。共 49 个资产负债表科目。
+
 ---
 
 ## 四、API 接口文档
@@ -156,6 +216,8 @@ AIGC:
 | POST | `/api/update-dividends` | 全量/增量更新分红与PE数据 |
 | GET | `/api/stock/<code>/financials` | 查询单只股票自定义财报数据 |
 | POST | `/api/update-financials` | 从东方财富拉取并更新财报数据 |
+| GET | `/api/stock/<code>/balance-sheet` | 查询单只股票资产负债表数据 |
+| POST | `/api/update-balance-sheet` | 从新浪财经拉取并更新资产负债表数据 |
 
 ### 4.2 接口详情
 
@@ -360,6 +422,48 @@ AIGC:
 
 **成功响应**：`200` + `{"success": true, "message": "已更新 19 条年报数据", "stock_code": "600519", "count": 19}`
 
+#### GET /api/stock/&lt;code&gt;/balance-sheet
+
+查询指定股票的历年资产负债表数据，按财年倒序排列。
+
+**响应**：
+
+```json
+[
+  {
+    "fiscal_year": 2025,
+    "monetary_funds": 516.9061,
+    "inventory": 614.2742,
+    "total_assets": 3038.3484,
+    "total_liabilities": 498.7559,
+    "total_equity": 2539.5925,
+    ...
+  }
+]
+```
+
+> 完整包含 49 个资产负债表科目字段（流动资产/非流动资产/流动负债/非流动负债/股东权益），详见 §3.5 表结构。
+
+#### POST /api/update-balance-sheet
+
+从新浪财经资产负债表页面解析并更新数据。
+
+**Query 参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `mode` | string | `full` | `full`=全量拉取所有年份，`incremental`=仅补全缺失年份 |
+
+**数据来源**：`https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_BalanceSheet/stockid/{code}/ctrl/part/displaytype/0.phtml`
+
+**处理逻辑**：
+- 解析 HTML 中所有"报表日期"表格，提取年报（-12-31）列数据
+- 中文科目名前缀匹配 49 个 DB 字段（如"货币资金"→monetary_funds、"在建工程(合计)"→cip）
+- 新浪原始单位万元，入库前 ÷ 10000 转为亿元
+- upsert 写入 balance_sheets 表（UNIQUE(stock_code, fiscal_year)）
+
+**成功响应**：`200` + `{"success": true, "records_updated": 115, "stocks_processed": 7}`
+
 ---
 
 ## 五、业务逻辑
@@ -434,6 +538,19 @@ AIGC:
 | 同比着色 | 正值红色 `.fin-yoy-up`，负值绿色 `.fin-yoy-down` |
 | 表格滚动 | 横向滚动，首列（指标名）sticky 固定 |
 | 图表弹窗 | 指标名后带小图表图标，点击弹出 ECharts 折线图模态窗（数据点标签、百分比Y轴带%号、遮罩/ESC关闭） |
+
+#### 资产负债表标签页
+
+前端横向滚动表格展示多年资产负债表对比，按 流动资产/非流动资产/流动负债/非流动负债/股东权益 分组：
+
+| 特性 | 实现方式 |
+|------|------|
+| 分组标题 | 每组第一行为蓝色背景的类别标题行（如"流动资产"） |
+| 年份排列 | 倒序（最近年份在前），SQL ORDER BY fiscal_year DESC |
+| 合计行 | 流动资产合计/非流动资产合计/资产总计等加粗显示 |
+| 表格滚动 | 横向滚动，首列（科目名）sticky 固定 |
+| 图表弹窗 | 每科目名后带小图表图标，点击弹出 ECharts 折线图弹窗（Y轴单位亿元、遮罩/ESC关闭） |
+| 数据源 | 新浪财经资产负债表页面 `displaytype/0`，覆盖上市以来全部年份 |
 
 #### PE 数据源
 
@@ -513,6 +630,16 @@ D:\stock-analysis-system\
 | MySQL | 8.4.9 | `D:\devtools\mysql`（junction to `D:\开发工具\mysql`） |
 | Git | 2.54.0 | `D:\Git\bin\git.exe` |
 
+### Git 远程与 SSH 配置
+
+> 当前网络环境 HTTPS 443 端口被阻断，已将远程地址切换为 SSH 方式。
+
+| 配置项 | 值 | 说明 |
+|------|------|------|
+| 远程地址 | `git@github.com:hawei07/stock-analysis-system.git` | SSH 协议，替代原 HTTPS 地址 |
+| SSH 密钥 | `%USERPROFILE%\.ssh\id_ed25519` | ED25519 密钥对，对应 GitHub 公钥 |
+| 本地 SSH 命令 | `core.sshCommand` 固化 | 已通过 `git config` 固化，后续直接 `git push` 即可 |
+
 ### 启动步骤
 
 ```powershell
@@ -546,9 +673,10 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 
 | 指标 | 数值 |
 |------|------|
-| 股票总数 | 16 只（SH 7 只，SZ 9 只） |
+| 股票总数 | 7 只（SH 5 只，SZ 2 只） |
 | 分红记录 | 298 条 |
 | 财报记录 | 191 条（7只股票，2016-2025） |
+| 资产负债表记录 | 115 条（7只股票，覆盖上市以来全部年份） |
 | 覆盖财年 | 完整覆盖各股票上市以来全部分红（最早 1997 年） |
 
 | 阶段 | 模块 | 说明 |
