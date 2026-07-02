@@ -768,9 +768,8 @@ def _parse_sina_bs(html, target_year=None):
 
         rows = _re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, _re.DOTALL)
 
-        # 在表头行中找年报列（-12-31）的索引
-        annual_col = None
-        annual_year = None
+        # 在表头行中找年报列（-12-31）的索引——一个表可能有多列年报
+        annual_cols = []  # [(idx, year), ...]
         for r in rows:
             cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
             cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
@@ -778,40 +777,39 @@ def _parse_sina_bs(html, target_year=None):
                 for idx, c in enumerate(cells):
                     m = _re.match(r'(\d{4})-12-31', c)
                     if m:
-                        annual_col = idx
-                        annual_year = int(m.group(1))
-                        break
+                        annual_cols.append((idx, int(m.group(1))))
                 break
 
-        if annual_col is None or annual_year is None:
+        if not annual_cols:
             continue
 
-        # 如果指定了目标年份且不匹配，跳过
-        if target_year is not None and annual_year != target_year:
-            continue
-
-        # 解析该表格中所有行的年报列数据
-        values = {}
-        for r in rows:
-            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
-            cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
-            if not cells or len(cells) <= annual_col:
+        # 对每个年报列解析数据
+        for annual_col, annual_year in annual_cols:
+            # 如果指定了目标年份且不匹配，跳过
+            if target_year is not None and annual_year != target_year:
                 continue
 
-            row_name = cells[0]
-            raw_val = cells[annual_col]
+            values = {}
+            for r in rows:
+                cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
+                cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+                if not cells or len(cells) <= annual_col:
+                    continue
 
-            for pattern, col in BS_ROW_MAP:
-                if row_name.startswith(pattern) or (pattern == "库存股" and "库存股" in row_name):
-                    if raw_val and raw_val not in ("--", "", "None"):
-                        try:
-                            values[col] = round(float(raw_val.replace(",", "")) / 10000, 4)
-                        except ValueError:
-                            pass
-                    break
+                row_name = cells[0]
+                raw_val = cells[annual_col]
 
-        if values:
-            all_year_data[annual_year] = values
+                for pattern, col in BS_ROW_MAP:
+                    if row_name.startswith(pattern) or (pattern == "库存股" and "库存股" in row_name):
+                        if raw_val and raw_val not in ("--", "", "None"):
+                            try:
+                                values[col] = round(float(raw_val.replace(",", "")) / 10000, 4)
+                            except ValueError:
+                                pass
+                        break
+
+            if values:
+                all_year_data[annual_year] = values
 
     if target_year is not None:
         return all_year_data.get(target_year)
