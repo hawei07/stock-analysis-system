@@ -89,6 +89,38 @@ def api_stock_detail(code):
     return jsonify({"error": "未找到该股票"}), 404
 
 
+@app.route("/api/stock-search")
+def api_stock_search():
+    """根据代码或名称模糊搜索股票（本地DB）"""
+    keyword = request.args.get("keyword", "").strip()
+    if not keyword:
+        return jsonify([])
+    rows = execute_query(
+        "SELECT code, name, market FROM stocks WHERE code LIKE %s OR name LIKE %s LIMIT 10",
+        (f"%{keyword}%", f"%{keyword}%")
+    )
+    results = [{"code": r["code"], "name": r["name"], "market": r["market"]} for r in rows]
+    # 本地有结果直接返回
+    if results:
+        return jsonify(results)
+    # 本地无结果，尝试东方财富搜索
+    try:
+        url = "https://searchadapter.eastmoney.com/api/suggest/get?type=14&input=" + keyword
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+        data = resp.json()
+        ext = data.get("QuotationCodeTable", {}).get("Data", [])
+        for r in ext[:8]:
+            code = r.get("Code", "")
+            name = r.get("Name", "")
+            mkt = r.get("MktNum", "")
+            market = {"0": "SZ", "1": "SH"}.get(str(mkt), "SH")
+            if code and name:
+                results.append({"code": code, "name": name, "market": market})
+    except Exception:
+        pass
+    return jsonify(results)
+
+
 @app.route("/api/stock-info/<code>")
 def api_stock_info(code):
     """根据股票代码从东方财富获取名称和市场信息"""
@@ -423,8 +455,9 @@ def _ensure_financials_columns():
 
 @app.route("/api/update-financials", methods=["POST"])
 def api_update_financials():
-    """从东方财富拉取年报财务数据并存入 custom_financials 表
-    mode: full=全量拉取, incremental=增量拉取(仅更新无数据的年份)
+    """从东方财富拉取财务数据并存入 custom_financials 表
+    mode: full=全量拉取, incremental=增量拉取(仅更新无数据的记录)
+    支持年报+季报（全部报告类型）。
     """
     mode = "full"
     if request.is_json:
@@ -434,6 +467,9 @@ def api_update_financials():
 
     # 确保新字段列存在
     _ensure_financials_columns()
+
+    # REPORT_TYPE → report_period
+    period_map = {"年报": "FY", "三季报": "Q3", "中报": "Q2", "一季报": "Q1"}
 
     try:
         stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
@@ -456,34 +492,35 @@ def api_update_financials():
                     continue
 
                 records = data["result"]["data"]
-                # 按 fiscal_year 分组，同一财年取 NOTICE_DATE 更晚的
-                year_best = {}
+                # 按 (fiscal_year, report_period) 分组，取 NOTICE_DATE 更晚的
+                key_best = {}
                 for item in records:
                     rd = item.get("REPORT_DATE", "")
-                    if not rd:
+                    rt = item.get("REPORT_TYPE", "")
+                    period = period_map.get(rt)
+                    if not rd or not period:
                         continue
                     year = int(rd[:4])
                     notice = item.get("NOTICE_DATE", "")
-                    if year not in year_best or notice > year_best[year][0]:
-                        year_best[year] = (notice, item)
+                    key = (year, period)
+                    if key not in key_best or notice > key_best[key][0]:
+                        key_best[key] = (notice, item)
 
-                # 增量模式：查询已有年份
-                existing_years = set()
+                # 增量模式：查询已有 (year, period) 组合
+                existing_keys = set()
                 if mode == "incremental":
                     existing = execute_query(
-                        "SELECT fiscal_year FROM custom_financials WHERE stock_code=%s", (code,)
+                        "SELECT fiscal_year, report_period FROM custom_financials WHERE stock_code=%s", (code,)
                     )
-                    existing_years = {r["fiscal_year"] for r in existing}
+                    existing_keys = {(r["fiscal_year"], r["report_period"]) for r in existing}
 
-                for year, (_, item) in year_best.items():
-                    if mode == "incremental" and year in existing_years:
+                for (year, period), (_, item) in key_best.items():
+                    if mode == "incremental" and (year, period) in existing_keys:
                         continue
 
                     total_share = item.get("TOTAL_SHARE")
                     total_shares_val = round(total_share / 1e8, 4) if total_share else None
 
-                    # 新增字段
-                    # 东方财富 RPT_F10_FINANCE_MAINFINADATA 中基本每股收益字段为 EPSJB
                     basic_eps = item.get("EPSJB")
                     basic_eps_val = round(float(basic_eps), 4) if basic_eps else None
 
@@ -491,14 +528,11 @@ def api_update_financials():
                     te_raw = item.get("TOTAL_EQUITY_PK", 0)
                     ta_val = round(ta_raw / 1e8, 4) if ta_raw else None
                     te_val = round(te_raw / 1e8, 4) if te_raw else None
-                    # 资产负债率 = (总资产 - 归母权益) / 总资产 * 100
                     debt_ratio_val = round((ta_raw - te_raw) / ta_raw * 100, 2) if (ta_raw and te_raw and ta_raw > 0) else None
 
-                    # 有息负债率：直接从东方财富 API 的 INTEREST_DEBT_RATIO 字段获取（%）
                     idr_raw = item.get("INTEREST_DEBT_RATIO")
                     interest_bearing_debt_ratio_val = round(float(idr_raw), 4) if idr_raw else None
 
-                    # 有息负债明细字段（API 不返回，保留为 NULL）
                     short_borrow_val = None
                     ncl_due1y_val = None
                     long_borrow_val = None
@@ -506,13 +540,13 @@ def api_update_financials():
 
                     execute_query(
                         """INSERT INTO custom_financials
-                        (stock_code, fiscal_year, total_revenue, operate_profit, parent_profit,
+                        (stock_code, fiscal_year, report_period, total_revenue, operate_profit, parent_profit,
                          deducted_profit, operate_cashflow, roe, deducted_roe, roic,
                          total_assets, total_equity, total_shares, audit_opinion,
                          basic_eps, debt_ratio,
                          short_borrow, noncurrent_liab_due1y, long_borrow, bonds_payable,
                          interest_bearing_debt_ratio)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         ON DUPLICATE KEY UPDATE
                          total_revenue=VALUES(total_revenue), operate_profit=VALUES(operate_profit),
                          parent_profit=VALUES(parent_profit), deducted_profit=VALUES(deducted_profit),
@@ -525,7 +559,7 @@ def api_update_financials():
                          long_borrow=VALUES(long_borrow), bonds_payable=VALUES(bonds_payable),
                          interest_bearing_debt_ratio=VALUES(interest_bearing_debt_ratio)""",
                         (
-                            code, year,
+                            code, year, period,
                             round(item["TOTALOPERATEREVE"] / 1e8, 4) if item.get("TOTALOPERATEREVE") else None,
                             round(item.get("OPERATE_PROFIT_PK", 0) / 1e8, 4) if item.get("OPERATE_PROFIT_PK") else None,
                             round(item["PARENTNETPROFIT"] / 1e8, 4) if item.get("PARENTNETPROFIT") else None,
@@ -537,7 +571,7 @@ def api_update_financials():
                             ta_val,
                             te_val,
                             total_shares_val,
-                            None,  # audit_opinion not available in this API
+                            None,
                             basic_eps_val,
                             debt_ratio_val,
                             short_borrow_val,
@@ -568,12 +602,29 @@ def api_update_financials():
 
 @app.route("/api/stock/<code>/financials")
 def api_stock_financials(code):
-    """查询指定股票的多年财务数据，含后端计算的派生指标"""
+    """查询指定股票的多年财务数据，含后端计算的派生指标。
+    Query params:
+      from_year, to_year: 年份范围
+      period: FY(年报,默认) / Q1 / Q2 / Q3 / all(全部)
+      view: cumulative(累计,默认) / single(单季度)
+    """
     from_year = request.args.get("from_year", 2016, type=int)
     to_year = request.args.get("to_year", 2025, type=int)
+    period = request.args.get("period", "FY")
+    view = request.args.get("view", "cumulative")
+
+    need_single = (view == "single" and period != "FY")
+    query_period = None if need_single else (None if period == "all" else period)
+
+    if query_period:
+        where_period = "AND cf.report_period = %s"
+        params = [code, query_period, from_year, to_year]
+    else:
+        where_period = ""
+        params = [code, from_year, to_year]
 
     rows = execute_query(
-        """SELECT cf.fiscal_year, cf.total_revenue, cf.operate_profit, cf.parent_profit,
+        f"""SELECT cf.fiscal_year, cf.report_period, cf.total_revenue, cf.operate_profit, cf.parent_profit,
                   cf.deducted_profit, cf.operate_cashflow, cf.roe, cf.deducted_roe, cf.roic,
                   cf.total_assets, cf.total_equity, cf.total_shares,
                   cf.basic_eps, cf.debt_ratio,
@@ -582,12 +633,13 @@ def api_stock_financials(code):
                   d.dividend_amount, d.dividend_per_share
            FROM custom_financials cf
            LEFT JOIN dividends d ON cf.stock_code = d.stock_code COLLATE utf8mb4_unicode_ci AND cf.fiscal_year = d.fiscal_year
-           WHERE cf.stock_code = %s AND cf.fiscal_year BETWEEN %s AND %s
-           ORDER BY cf.fiscal_year DESC""",
-        (code, from_year, to_year)
+           WHERE cf.stock_code = %s {where_period}
+           AND cf.fiscal_year BETWEEN %s AND %s
+           ORDER BY cf.fiscal_year DESC, FIELD(cf.report_period, 'FY','Q3','Q2','Q1') DESC""",
+        tuple(params)
     )
 
-    # 获取当前股价（用于股息率计算）
+    # 获取当前股价
     cur_price = None
     try:
         stock = execute_query("SELECT market FROM stocks WHERE code=%s", (code,))
@@ -607,8 +659,7 @@ def api_stock_financials(code):
     except Exception:
         pass
 
-    result = []
-    for r in rows:
+    def _build_item(r):
         rev = float(r["total_revenue"]) if r["total_revenue"] else 0
         op = float(r["operate_profit"]) if r["operate_profit"] else 0
         pp = float(r["parent_profit"]) if r["parent_profit"] else 0
@@ -620,11 +671,8 @@ def api_stock_financials(code):
         ta = float(r["total_assets"]) if r["total_assets"] else 0
         te = float(r["total_equity"]) if r["total_equity"] else 0
         ts = float(r["total_shares"]) if r["total_shares"] else 0
-
-        # 新增字段
         basic_eps = float(r["basic_eps"]) if r.get("basic_eps") else None
         debt_ratio_raw = float(r["debt_ratio"]) if r.get("debt_ratio") else None
-        # 动态回退：DB 中 debt_ratio 为 NULL 但 total_assets 和 total_equity 有值时计算
         debt_ratio = (
             debt_ratio_raw if debt_ratio_raw is not None
             else (round((ta - te) / ta * 100, 2) if ta > 0 else None)
@@ -635,56 +683,84 @@ def api_stock_financials(code):
         bonds_payable = float(r["bonds_payable"]) if r.get("bonds_payable") else None
         dividend_amount = float(r["dividend_amount"]) if r.get("dividend_amount") else None
         dividend_per_share = float(r["dividend_per_share"]) if r.get("dividend_per_share") else None
-
-        # 派生指标
         core_profit_rate = round(op / rev * 100, 2) if rev else None
         net_profit_rate = round(pp / rev * 100, 2) if rev else None
         cashflow_to_profit = round(ocf / pp * 100, 2) if pp and pp > 0 else None
-
-        # 分红率 = 分红金额 / 归母净利润 * 100
         dividend_payout_ratio = (
             round(dividend_amount / pp * 100, 2)
             if (dividend_amount is not None and pp and pp > 0) else None
         )
-
-        # 有息负债率：直接从 DB 读取东方财富 API 预计算值
         interest_bearing_debt_ratio = (
             round(float(r["interest_bearing_debt_ratio"]), 2)
             if r.get("interest_bearing_debt_ratio") else None
         )
-
-        # 股息率 = 每股分红 / 当前股价 * 100
         dividend_yield_fin = (
             round(dividend_per_share / cur_price * 100, 2)
             if (dividend_per_share is not None and dividend_per_share > 0
                 and cur_price and cur_price > 0) else None
         )
-
-        result.append({
+        return {
             "fiscal_year": r["fiscal_year"],
-            "total_revenue": rev,
-            "operate_profit": op,
-            "parent_profit": pp,
-            "deducted_profit": dp,
-            "operate_cashflow": ocf,
-            "roe": roe_v,
-            "deducted_roe": droe_v,
-            "roic": roic_v,
-            "total_assets": ta,
-            "total_equity": te,
-            "total_shares": ts,
-            "core_profit_rate": core_profit_rate,
-            "net_profit_rate": net_profit_rate,
+            "report_period": r.get("report_period", "FY"),
+            "total_revenue": rev, "operate_profit": op, "parent_profit": pp,
+            "deducted_profit": dp, "operate_cashflow": ocf,
+            "roe": roe_v, "deducted_roe": droe_v, "roic": roic_v,
+            "total_assets": ta, "total_equity": te, "total_shares": ts,
+            "core_profit_rate": core_profit_rate, "net_profit_rate": net_profit_rate,
             "cashflow_to_profit": cashflow_to_profit,
-            # 新增7个指标
-            "basic_eps": basic_eps,
-            "debt_ratio": debt_ratio,
-            "dividend_amount": dividend_amount,
-            "dividend_per_share": dividend_per_share,
+            "basic_eps": basic_eps, "debt_ratio": debt_ratio,
+            "dividend_amount": dividend_amount, "dividend_per_share": dividend_per_share,
             "dividend_payout_ratio": dividend_payout_ratio,
             "interest_bearing_debt_ratio": interest_bearing_debt_ratio,
             "dividend_yield_fin": dividend_yield_fin,
-        })
+        }
+
+    # 单季度模式：本期累计 - 上期累计
+    if need_single:
+        data_by_key = {}
+        for r in rows:
+            fy, rp = r["fiscal_year"], r.get("report_period", "FY")
+            data_by_key[(fy, rp)] = _build_item(r)
+
+        periods_order = ["Q1", "Q2", "Q3", "FY"]
+        prev_map = {"Q1": None, "Q2": "Q1", "Q3": "Q2", "FY": "Q3"}
+        flow_fields = ["total_revenue", "operate_profit", "parent_profit", "deducted_profit",
+                       "operate_cashflow", "dividend_amount"]
+
+        result = []
+        for (fy, rp), item in sorted(data_by_key.items(), key=lambda x: (-x[0][0], periods_order.index(x[0][1]))):
+            prev_key = (fy, prev_map[rp]) if prev_map[rp] else None
+            prev_item = data_by_key.get(prev_key) if prev_key else None
+            single = {"fiscal_year": fy, "report_period": rp}
+            for k, v in item.items():
+                if k in ("fiscal_year", "report_period"):
+                    single[k] = v
+                elif v is None:
+                    single[k] = None
+                elif k in flow_fields:
+                    if prev_item is None or prev_item.get(k) is None:
+                        single[k] = v if rp == "Q1" else None
+                    else:
+                        single[k] = round(v - prev_item[k], 4)
+                else:
+                    single[k] = v
+            # 重新计算派生指标
+            rev_s = single.get("total_revenue") or 0
+            op_s = single.get("operate_profit") or 0
+            pp_s = single.get("parent_profit") or 0
+            ocf_s = single.get("operate_cashflow") or 0
+            da_s = single.get("dividend_amount")
+            single["core_profit_rate"] = round(op_s / rev_s * 100, 2) if rev_s else None
+            single["net_profit_rate"] = round(pp_s / rev_s * 100, 2) if rev_s else None
+            single["cashflow_to_profit"] = round(ocf_s / pp_s * 100, 2) if pp_s and pp_s > 0 else None
+            single["dividend_payout_ratio"] = round(da_s / pp_s * 100, 2) if (da_s is not None and pp_s and pp_s > 0) else None
+            result.append(single)
+        # 过滤到请求的报告期
+        if period != "all":
+            result = [r for r in result if r["report_period"] == period]
+    else:
+        result = [_build_item(r) for r in rows]
+
     return jsonify(result)
 
 
@@ -752,15 +828,29 @@ BS_ROW_MAP = [
 BS_COLUMNS = [col for _, col in BS_ROW_MAP]
 
 
-def _parse_sina_bs(html, target_year=None):
-    """解析新浪资产负债表 HTML，提取每年年报科目数据（万元→亿元）。
-    如果指定 target_year，只返回该年数据；否则返回 {year: {col: val}} 字典。
+def _period_from_date(date_str):
+    """根据日期返回报告期: 03-31→Q1, 06-30→Q2, 09-30→Q3, 12-31→FY"""
+    month = int(date_str[5:7])
+    day = int(date_str[8:10])
+    if month == 3 and day == 31:
+        return "Q1"
+    elif month == 6 and day == 30:
+        return "Q2"
+    elif month == 9 and day == 30:
+        return "Q3"
+    elif month == 12 and day == 31:
+        return "FY"
+    return None
+
+
+def _parse_sina_bs(html):
+    """解析新浪资产负债表 HTML，提取各季度科目数据（万元→亿元）。
+    返回 {(year, period): {col: val}} 字典，period ∈ {FY, Q1, Q2, Q3}。
     """
     import re as _re
 
-    # 找所有包含"报表日期"的表
     all_tables = _re.findall(r'<table[^>]*>(.*?)</table>', html, _re.DOTALL)
-    all_year_data = {}  # year → {col: value}
+    all_data = {}  # (year, period) → {col: value}
 
     for table_html in all_tables:
         if '报表日期' not in table_html or '货币资金' not in table_html:
@@ -768,8 +858,8 @@ def _parse_sina_bs(html, target_year=None):
 
         rows = _re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, _re.DOTALL)
 
-        # 在表头行中找所有日期列
-        date_cols = []  # [(col_idx, year, date_str)]
+        # 在表头行中找所有日期列 → (col_idx, year, period, date_str)
+        date_cols = []
         for r in rows:
             cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
             cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
@@ -777,17 +867,17 @@ def _parse_sina_bs(html, target_year=None):
                 for idx, c in enumerate(cells):
                     m = _re.match(r'(\d{4})-(\d{2})-(\d{2})', c)
                     if m:
-                        date_cols.append((idx, int(m.group(1)), c))
+                        year, date_str = int(m.group(1)), m.group(0)
+                        period = _period_from_date(date_str)
+                        if period:
+                            date_cols.append((idx, year, period, date_str))
                 break
 
         if not date_cols:
             continue
 
-        # 对每个日期列解析数据，按年保留最新日期的数据
-        for col_idx, col_year, col_date in date_cols:
-            if target_year is not None and col_year != target_year:
-                continue
-
+        # 解析每个日期列的数据
+        for col_idx, col_year, period, date_str in date_cols:
             values = {}
             for r in rows:
                 cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
@@ -808,15 +898,15 @@ def _parse_sina_bs(html, target_year=None):
                         break
 
             if values:
-                # 已完成的财年优先保留 12-31 年报，当年取最新季度
-                existing = all_year_data.get(col_year)
-                if existing is None or col_date > (all_year_data.get(f"_max_date_{col_year}", "")):
-                    all_year_data[col_year] = values
-                    all_year_data[f"_max_date_{col_year}"] = col_date
+                key = (col_year, period)
+                # 同一年同一报告期，保留最新日期的数据
+                existing_key = all_data.get(f"_latest_{col_year}_{period}", "")
+                if key not in all_data or date_str > existing_key:
+                    all_data[key] = values
+                    all_data[f"_latest_{col_year}_{period}"] = date_str
 
-    if target_year is not None:
-        return all_year_data.get(target_year)
-    return all_year_data
+    # 清理辅助键
+    return {k: v for k, v in all_data.items() if isinstance(k, tuple)}
 
 
 @app.route("/api/update-balance-sheet", methods=["POST"])
@@ -840,19 +930,19 @@ def api_update_balance_sheet():
                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
                 resp.encoding = "gbk"
 
-                # 增量模式：查询已有年份
-                existing_years = set()
+                # 增量模式：查询已有 (year, period) 组合
+                existing_keys = set()
                 if mode == "incremental":
                     existing = execute_query(
-                        "SELECT fiscal_year FROM balance_sheets WHERE stock_code=%s", (code,)
+                        "SELECT fiscal_year, report_period FROM balance_sheets WHERE stock_code=%s", (code,)
                     )
-                    existing_years = {r["fiscal_year"] for r in existing}
+                    existing_keys = {(r["fiscal_year"], r["report_period"]) for r in existing}
 
-                # 解析全部年份的年报数据
-                all_years = _parse_sina_bs(resp.text)
+                # 解析所有季度数据
+                all_data = _parse_sina_bs(resp.text)
 
-                for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
-                    if mode == "incremental" and year in existing_years:
+                for (year, period), values in sorted(all_data.items()):
+                    if mode == "incremental" and (year, period) in existing_keys:
                         continue
 
                     columns = BS_COLUMNS
@@ -861,11 +951,11 @@ def api_update_balance_sheet():
                     update_clause = ", ".join([f"{c}=VALUES({c})" for c in columns])
 
                     sql = (
-                        f"INSERT INTO balance_sheets (stock_code, fiscal_year, {col_names}) "
-                        f"VALUES (%s, %s, {placeholders}) "
+                        f"INSERT INTO balance_sheets (stock_code, fiscal_year, report_period, {col_names}) "
+                        f"VALUES (%s, %s, %s, {placeholders}) "
                         f"ON DUPLICATE KEY UPDATE {update_clause}"
                     )
-                    params = [code, year] + [values.get(c) for c in columns]
+                    params = [code, year, period] + [values.get(c) for c in columns]
                     execute_query(sql, tuple(params), fetch=False)
                     updated_count += 1
 
@@ -887,24 +977,67 @@ def api_update_balance_sheet():
 
 @app.route("/api/stock/<code>/balance-sheet")
 def api_stock_balance_sheet(code):
-    """查询指定股票的历年资产负债表数据"""
+    """查询指定股票的资产负债表数据。
+    Query params:
+      from_year, to_year: 年份范围
+      period: FY(年报,默认) / Q1 / Q2 / Q3 / all(全部)
+      view: cumulative(累计/快照,默认) / single(单季度)
+    """
     from_year = request.args.get("from_year", 2000, type=int)
     to_year = request.args.get("to_year", 2030, type=int)
+    period = request.args.get("period", "FY")
+    view = request.args.get("view", "cumulative")
+
+    need_single = (view == "single" and period != "FY")
+    # 单季度模式下查全部报告期（用于计算差值），否则只查指定报告期
+    query_period = None if need_single else (None if period == "all" else period)
+
+    if query_period:
+        where_period = "AND report_period = %s"
+        params = [code, query_period, from_year, to_year]
+    else:
+        where_period = ""
+        params = [code, from_year, to_year]
 
     rows = execute_query(
-        """SELECT * FROM balance_sheets
-           WHERE stock_code = %s AND fiscal_year BETWEEN %s AND %s
-           ORDER BY fiscal_year DESC""",
-        (code, from_year, to_year)
+        f"""SELECT * FROM balance_sheets
+           WHERE stock_code = %s {where_period}
+           AND fiscal_year BETWEEN %s AND %s
+           ORDER BY fiscal_year DESC, FIELD(report_period, 'FY','Q3','Q2','Q1') DESC""",
+        tuple(params)
     )
 
-    result = []
+    data_by_key = {}
     for r in rows:
-        item = {"fiscal_year": r["fiscal_year"]}
+        fy, rp = r["fiscal_year"], r["report_period"]
+        item = {"fiscal_year": fy, "report_period": rp}
         for col in BS_COLUMNS:
             val = r.get(col)
             item[col] = float(val) if val is not None else None
-        result.append(item)
+        data_by_key[(fy, rp)] = item
+
+    if need_single:
+        periods_order = ["Q1", "Q2", "Q3", "FY"]
+        prev_map = {"Q1": None, "Q2": "Q1", "Q3": "Q2", "FY": "Q3"}
+        result = []
+        for (fy, rp), item in sorted(data_by_key.items(), key=lambda x: (-x[0][0], periods_order.index(x[0][1]))):
+            single = {"fiscal_year": fy, "report_period": rp}
+            prev_key = (fy, prev_map[rp]) if prev_map[rp] else None
+            prev_item = data_by_key.get(prev_key) if prev_key else None
+            for col in BS_COLUMNS:
+                cur = item.get(col)
+                if cur is None:
+                    single[col] = None
+                elif prev_item is None or prev_item.get(col) is None:
+                    single[col] = cur if rp == "Q1" else None
+                else:
+                    single[col] = round(cur - prev_item[col], 4)
+            result.append(single)
+        # 过滤到请求的报告期
+        if period != "all":
+            result = [r for r in result if r["report_period"] == period]
+    else:
+        result = sorted(data_by_key.values(), key=lambda x: (x["fiscal_year"], {"FY": 0, "Q3": 1, "Q2": 2, "Q1": 3}[x["report_period"]]), reverse=True)
 
     return jsonify(result)
 
@@ -916,4 +1049,4 @@ if __name__ == "__main__":
         print("✓ 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"⚠ 表结构检查异常: {e}")
-    app.run(host="127.0.0.1", port=5002, debug=False)
+    app.run(host="127.0.0.1", port=5002, debug=True)

@@ -227,6 +227,9 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <div class="detail-stock-info">
       <span class="stock-code" id="detailCode"></span>
       <span class="stock-name" id="detailName"></span>
+      <select id="stockSwitcher" onchange="switchStock()" style="margin-left:12px;padding:2px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;max-width:160px">
+        <option value="">切换股票...</option>
+      </select>
       <span class="market-tag" id="detailMarket"></span>
       <span class="stock-meta">
         <span id="detailIndustry"></span>
@@ -281,7 +284,22 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         <input type="number" id="finFromYear" value="2016" min="2000" max="2030" style="width:70px">
         <span style="font-size:13px">至</span>
         <input type="number" id="finToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <select id="finPeriod" onchange="onFinPeriodChange()" style="width:80px;margin-left:8px">
+          <option value="FY">年报</option>
+          <option value="all">季报</option>
+        </select>
+        <select id="finQuarter" style="width:80px;display:none" onchange="loadFinancials()">
+          <option value="all">全部</option>
+          <option value="Q1">一季报</option>
+          <option value="Q2">中报</option>
+          <option value="Q3">三季报</option>
+        </select>
+        <select id="finView" style="width:80px;display:none" onchange="loadFinancials()">
+          <option value="cumulative">累计</option>
+          <option value="single">单季度</option>
+        </select>
         <button class="btn btn-primary btn-sm" onclick="loadFinancials()">查询</button>
+        <input type="text" id="finCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadFinancials()" onchange="loadFinancials()">
         <button class="btn btn-success btn-sm" onclick="updateFinancials()">更新数据</button>
         <button class="btn btn-outline btn-sm sort-mode-toggle" id="btnToggleSort" onclick="toggleSortMode()" style="display:none">调整排序</button>
         <span id="finStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
@@ -296,7 +314,22 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         <input type="number" id="bsFromYear" value="2016" min="2000" max="2030" style="width:70px">
         <span style="font-size:13px">至</span>
         <input type="number" id="bsToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <select id="bsPeriod" onchange="onBsPeriodChange()" style="width:80px;margin-left:8px">
+          <option value="FY">年报</option>
+          <option value="all">季报</option>
+        </select>
+        <select id="bsQuarter" style="width:80px;display:none" onchange="loadBalanceSheet()">
+          <option value="all">全部</option>
+          <option value="Q1">一季报</option>
+          <option value="Q2">中报</option>
+          <option value="Q3">三季报</option>
+        </select>
+        <select id="bsView" style="width:80px;display:none" onchange="loadBalanceSheet()">
+          <option value="cumulative">累计</option>
+          <option value="single">单季度</option>
+        </select>
         <button class="btn btn-primary btn-sm" onclick="loadBalanceSheet()">查询</button>
+        <input type="text" id="bsCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadBalanceSheet()" onchange="loadBalanceSheet()">
         <button class="btn btn-success btn-sm" onclick="updateBalanceSheet()">更新数据</button>
         <span id="bsStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
@@ -318,7 +351,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       <input type="hidden" id="editCode">
       <label>股票代码 *</label>
       <div style="display:flex;gap:8px">
-        <input type="text" id="inputCode" placeholder="如 600519" maxlength="10" style="flex:1;margin-bottom:0" oninput="onCodeInput()">
+        <input type="text" id="inputCode" placeholder="输入代码或名称" maxlength="20" style="flex:1;margin-bottom:0" oninput="onCodeInput()" onkeypress="if(event.key==='Enter')lookupStock()">
         <button class="btn btn-outline btn-sm" id="btnLookup" onclick="lookupStock()" style="white-space:nowrap">查询</button>
       </div>
       <label style="margin-top:16px">股票名称</label>
@@ -439,6 +472,14 @@ async function loadDetail(code) {
     if (stock.error) { showToast(stock.error, 'error'); goList(); return; }
     document.getElementById('detailCode').textContent = stock.code;
     document.getElementById('detailName').textContent = stock.name;
+    populateStockSwitcher(stock.code);
+    const curYear = new Date().getFullYear();
+    let startYear = curYear - 9;
+    if (stock.list_date) { const listYear = parseInt(stock.list_date.substring(0,4)); if (listYear > startYear) startYear = listYear; }
+    document.getElementById('finFromYear').value = startYear;
+    document.getElementById('finToYear').value = curYear;
+    document.getElementById('bsFromYear').value = startYear;
+    document.getElementById('bsToYear').value = curYear;
     document.getElementById('detailMarket').textContent = stock.market;
     document.getElementById('detailMarket').className = 'market-tag market-' + stock.market;
     document.getElementById('detailIndustry').textContent = stock.industry ? '行业: ' + stock.industry : '';
@@ -745,6 +786,25 @@ async function lookupStock() {
   btn.disabled = true;
   btn.textContent = '查询中...';
   try {
+    // If not a 6-digit code, search first
+    if (!/^\d{6}$/.test(code)) {
+      const searchRes = await fetch('/api/stock-search?keyword=' + encodeURIComponent(code));
+      const searchData = await searchRes.json();
+      if (searchData && searchData.length > 0) {
+        const s = searchData[0];
+        document.getElementById('inputCode').value = s.code;
+        document.getElementById('inputName').value = s.name;
+        document.getElementById('inputMarket').value = s.market;
+        showToast('已识别: ' + s.name, 'success');
+        btn.disabled = false;
+        btn.textContent = '查询';
+        return;
+      }
+      showToast('未找到匹配的股票', 'error');
+      btn.disabled = false;
+      btn.textContent = '查询';
+      return;
+    }
     const res = await fetch('/api/stock-info/' + code);
     const data = await res.json();
     if (data.error) {
@@ -816,6 +876,27 @@ async function deleteStock(code, name) {
 
 // ==================== 自定义财报 ====================
 
+function switchStock() {
+  const code = document.getElementById('stockSwitcher').value;
+  if (code) navigateTo('/stock/' + code);
+}
+
+async function populateStockSwitcher(currentCode) {
+  const sel = document.getElementById('stockSwitcher');
+  sel.innerHTML = '<option value="">切换股票...</option>';
+  try {
+    const res = await fetch('/api/stocks?page=1&page_size=200');
+    const data = await res.json();
+    for (const s of data.data) {
+      const opt = document.createElement('option');
+      opt.value = s.code;
+      opt.textContent = s.name + ' (' + s.code + ')';
+      if (s.code === currentCode) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  } catch {}
+}
+
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector('[data-tab="' + name + '"]').classList.add('active');
@@ -828,53 +909,165 @@ function switchTab(name) {
   }
 }
 
+async function resolveStockCode(input) {
+  if (!input) return null;
+  if (/^\d{6}$/.test(input.trim())) return input.trim();
+  try {
+    const res = await fetch('/api/stock-search?keyword=' + encodeURIComponent(input.trim()));
+    const data = await res.json();
+    if (data && data.length > 0) return data[0].code;
+  } catch (e) {}
+  return null;
+}
+
+function onFinPeriodChange() {
+  const period = document.getElementById('finPeriod').value;
+  const qEl = document.getElementById('finQuarter');
+  const vEl = document.getElementById('finView');
+  if (period === 'all') {
+    qEl.style.display = 'inline-block';
+    vEl.style.display = 'inline-block';
+  } else {
+    qEl.style.display = 'none';
+    vEl.style.display = 'none';
+  }
+  loadFinancials();
+}
+
+function onBsPeriodChange() {
+  const period = document.getElementById('bsPeriod').value;
+  const qEl = document.getElementById('bsQuarter');
+  const vEl = document.getElementById('bsView');
+  if (period === 'all') {
+    qEl.style.display = 'inline-block';
+    vEl.style.display = 'inline-block';
+  } else {
+    qEl.style.display = 'none';
+    vEl.style.display = 'none';
+  }
+  loadBalanceSheet();
+}
+
 async function loadFinancials() {
   const code = document.getElementById('detailCode').textContent.trim();
   if (!code) return;
   const from = document.getElementById('finFromYear').value;
   const to = document.getElementById('finToYear').value;
+  const period = document.getElementById('finPeriod').value;
+  const quarter = document.getElementById('finQuarter').value;
+  const view = document.getElementById('finView').value;
+  const actualPeriod = period === 'all' ? quarter : period;
+  const cmpCodeRaw = document.getElementById('finCompare').value.trim();
+  const cmpCode = await resolveStockCode(cmpCodeRaw);
   const wrap = document.getElementById('tableFinancialsWrap');
-  const empty = document.getElementById('finEmpty');
   wrap.innerHTML = '<div class="empty">加载中...</div>';
 
   try {
-    const res = await fetch(`/api/stock/${code}/financials?from_year=${from}&to_year=${to}`);
-    const data = await res.json();
+    const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
+    const res = await fetch(`/api/stock/${code}/financials?${params}`);
+    let data = await res.json();
+
+    let cmpData = null, cmpName = '';
+    if (cmpCode && cmpCode !== code) {
+      try {
+        const cmpRes = await fetch(`/api/stock/${cmpCode}/financials?${params}`);
+        cmpData = await cmpRes.json();
+        const infoRes = await fetch('/api/stock/' + cmpCode);
+        const info = await infoRes.json();
+        if (!info.error) cmpName = info.name;
+      } catch {}
+    }
     if (!data || data.length === 0) {
       wrap.innerHTML = '<div class="empty">暂无财务数据，请点击"更新数据"拉取</div>';
       return;
     }
-    renderFinancialsTable(data);
+    renderFinancialsTable(data, cmpData, cmpCode, cmpName);
   } catch (e) {
     wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
   }
 }
 
-function renderFinancialsTable(data) {
+function renderFinancialsTable(data, cmpData, cmpCode, cmpName) {
   const wrap = document.getElementById('tableFinancialsWrap');
-  const years = data.map(d => d.fiscal_year).sort((a, b) => b - a);
 
-  // 计算同比
+  // Helper functions
+  const fmtVal = (v, ind) => {
+    if (v == null) return '-';
+    if (ind.isPercent || ind.unit === '%') return v.toFixed(2);
+    if (ind.unit === '亿元' || ind.unit === '亿股') return (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2));
+    return v.toFixed(2);
+  };
+  const yoyClass = (y) => {
+    if (y == null) return 'fin-yoy-neutral';
+    return y > 0 ? 'fin-yoy-up' : (y < 0 ? 'fin-yoy-down' : 'fin-yoy-neutral');
+  };
+  const yoyFmt = (y) => {
+    if (y == null) return '-';
+    return y.toFixed(1) + '%';
+  };
+
+  // Quarterly detection: check ALL report_periods
+  const periods = new Set(data.map(d => d.report_period || 'FY'));
+  const isQuarterly = !(periods.size === 1 && periods.has('FY'));
+
+  // Build composite key maps
+  const makeKey = (d) => {
+    const rp = d.report_period || 'FY';
+    return isQuarterly ? d.fiscal_year + '|' + rp : d.fiscal_year + '';
+  };
+  const makePrevKey = (key) => {
+    if (!isQuarterly) return (parseInt(key) - 1) + '';
+    const [year, period] = key.split('|');
+    return (parseInt(year) - 1) + '|' + period;
+  };
+
+  const keys = data.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
+  if (!isQuarterly) {
+    keys.sort((a, b) => parseInt(b) - parseInt(a));
+  }
+  const dataMap = {};
+  for (const d of data) dataMap[makeKey(d)] = d;
+  const years = [...new Set(data.map(d => d.fiscal_year))].sort((a, b) => b - a);
+
+  // YoY map
+  const fields = ['total_revenue', 'operate_profit', 'parent_profit', 'deducted_profit',
+    'operate_cashflow', 'roe', 'deducted_roe', 'roic',
+    'total_assets', 'total_equity', 'total_shares',
+    'core_profit_rate', 'net_profit_rate', 'cashflow_to_profit',
+    'dividend_amount', 'dividend_per_share', 'dividend_payout_ratio',
+    'basic_eps', 'debt_ratio', 'interest_bearing_debt_ratio'];
   const yoyMap = {};
-  for (let i = 0; i < data.length; i++) {
-    const d = data[i];
-    const prev = data.find(p => p.fiscal_year === d.fiscal_year - 1);
-    yoyMap[d.fiscal_year] = {};
-    const fields = ['total_revenue', 'operate_profit', 'parent_profit', 'deducted_profit',
-                    'operate_cashflow', 'roe', 'deducted_roe', 'roic',
-                    'total_assets', 'total_equity', 'total_shares',
-                    'core_profit_rate', 'net_profit_rate', 'cashflow_to_profit',
-                    'dividend_amount', 'dividend_per_share', 'dividend_payout_ratio',
-                    'basic_eps', 'debt_ratio', 'interest_bearing_debt_ratio'];
+  for (const key of keys) {
+    const d = dataMap[key];
+    const prevKey = makePrevKey(key);
+    const prev = dataMap[prevKey];
+    yoyMap[key] = {};
     for (const f of fields) {
       const cur = d[f];
-      if (cur == null) { yoyMap[d.fiscal_year][f] = null; continue; }
-      if (!prev || prev[f] == null || prev[f] === 0) { yoyMap[d.fiscal_year][f] = null; continue; }
-      yoyMap[d.fiscal_year][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100;
+      if (cur == null || !prev || prev[f] == null || prev[f] === 0) { yoyMap[key][f] = null; continue; }
+      yoyMap[key][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100;
     }
   }
 
-  // 指标定义：name, field, unit, isPercent, showYoy
+  // Comparison data maps
+  let cmpDataMap = {}, cmpKeys = [], cmpYoyMap = {};
+  if (cmpData && cmpData.length > 0) {
+    for (const d of cmpData) cmpDataMap[makeKey(d)] = d;
+    cmpKeys = cmpData.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
+    for (const key of cmpKeys) {
+      const d = cmpDataMap[key];
+      const prevKey = makePrevKey(key);
+      const prev = cmpDataMap[prevKey];
+      cmpYoyMap[key] = {};
+      for (const f of fields) {
+        const cur = d[f];
+        if (cur == null || !prev || prev[f] == null || prev[f] === 0) { cmpYoyMap[key][f] = null; continue; }
+        cmpYoyMap[key][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100;
+      }
+    }
+  }
+
+  // Indicators
   const indicators = [
     { name: '营业总收入', field: 'total_revenue', unit: '亿元', isPercent: false, showYoy: true },
     { name: '核心利润（营业利润）', field: 'operate_profit', unit: '亿元', isPercent: false, showYoy: true },
@@ -890,7 +1083,6 @@ function renderFinancialsTable(data) {
     { name: '总资产', field: 'total_assets', unit: '亿元', isPercent: false, showYoy: true },
     { name: '归母权益', field: 'total_equity', unit: '亿元', isPercent: false, showYoy: true },
     { name: '总股本', field: 'total_shares', unit: '亿股', isPercent: false, showYoy: true },
-    // 新增7个指标
     { name: '分红金额', field: 'dividend_amount', unit: '亿元', isPercent: false, showYoy: true },
     { name: '每股分红', field: 'dividend_per_share', unit: '元', isPercent: false, showYoy: true },
     { name: '分红率', field: 'dividend_payout_ratio', unit: '%', isPercent: true, showYoy: true },
@@ -900,7 +1092,7 @@ function renderFinancialsTable(data) {
     { name: '有息负债率', field: 'interest_bearing_debt_ratio', unit: '%', isPercent: true, showYoy: true },
   ];
 
-  // 从 localStorage 恢复排序
+  // Sort from localStorage
   const savedOrder = localStorage.getItem('financials-indicator-order');
   if (savedOrder) {
     try {
@@ -916,89 +1108,115 @@ function renderFinancialsTable(data) {
       });
     } catch (e) {}
   }
-  // 暴露到全局，供排序模式使用
   window._finIndicators = indicators;
+  window._finDataMap = dataMap;
+  window._finKeys = keys;
+  window._finYears = years;
+  window._finYoyMap = yoyMap;
+  window._finCmpDataMap = cmpDataMap;
+  window._finCmpKeys = cmpKeys;
+  window._finCmpCode = cmpCode;
+  window._finCmpName = cmpName;
 
-  // 构建表格
-  let html = '<table class="fin-table" id="finMainTable"><thead><tr>';
-  // 排序手柄列（默认隐藏）+ 指标列 + 年份
-  html += '<th class="sort-handle sticky-header" rowspan="2" style="min-width:28px;background:#f0f0f0"></th>';
+  // Build table
+  const hasCmp = cmpData && cmpData.length > 0;
+  let html = '';
+  if (hasCmp) {
+    const stockName = document.getElementById('detailName').textContent.trim();
+    html += `<div style="margin-bottom:8px;font-size:14px;font-weight:600;color:#1a1a2e">${stockName}  vs  ${cmpName} (${cmpCode})</div>`;
+  }
+  // Build display labels from keys
+  const keyLabels = keys.map(k => {
+    if (!isQuarterly) return k;
+    const [yr, rp] = k.split('|');
+    return periods.size > 1 ? yr + '-' + rp : yr;
+  });
+
+  html += '<table class="fin-table" id="finMainTable"><thead><tr>';
+
+  if (!isQuarterly) {
+    html += '<th class="sort-handle sticky-header" rowspan="2" style="min-width:28px;background:#f0f0f0"></th>';
+  }
   html += '<th class="sticky-col sticky-header" rowspan="2" style="min-width:180px">指标</th>';
-  for (const y of years) {
-    html += `<th class="sticky-header year-header" colspan="2">${y}</th>`;
+  for (const lbl of keyLabels) {
+    html += `<th class="sticky-header year-header" colspan="2">${lbl}</th>`;
   }
   html += '</tr><tr>';
-  // 第2行表头：每年两个子列（手柄列占位）
-  for (const y of years) {
+  for (const lbl of keyLabels) {
     html += '<th class="sticky-header sub-header">原值</th>';
     html += '<th class="sticky-header sub-header">同比%</th>';
   }
   html += '</tr></thead><tbody>';
 
-  // 单位行
-  html += '<tr class="unit-row"><td class="sort-handle" style="background:#fafafa"></td><td class="sticky-col" style="background:#fafafa;font-weight:500">单位</td>';
-  for (const y of years) {
-    html += `<td style="text-align:center;background:#fafafa">-</td>`;
-    html += `<td style="text-align:center;background:#fafafa">%</td>`;
+  // Unit row
+  if (!isQuarterly) {
+    html += '<tr class="unit-row"><td class="sort-handle" style="background:#fafafa"></td>';
+  } else {
+    html += '<tr class="unit-row">';
+  }
+  html += '<td class="sticky-col" style="background:#fafafa;font-weight:500">单位</td>';
+  for (const k of keys) {
+    html += '<td style="text-align:center;background:#fafafa">-</td>';
+    html += '<td style="text-align:center;background:#fafafa">%</td>';
   }
   html += '</tr>';
 
-  // 数据行
-  const dataMap = {};
-  for (const d of data) dataMap[d.fiscal_year] = d;
-  window._finDataMap = dataMap;
-  window._finYears = years;
-
+  // Data rows
   for (const ind of indicators) {
-    html += `<tr data-indicator-field="${ind.field}"><td class="sort-handle">⋮⋮</td><td class="sticky-col">${ind.name}<span class="chart-icon" data-field="${ind.field}" data-name="${esc(ind.name)}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
-    for (const y of years) {
-      const d = dataMap[y];
+    // Main stock row
+    html += `<tr data-indicator-field="${ind.field}">`;
+    if (!isQuarterly) {
+      html += '<td class="sort-handle">⋮⋮</td>';
+    }
+    html += `<td class="sticky-col"${hasCmp ? ' rowspan="2"' : ''}>${ind.name}<span class="chart-icon" data-field="${ind.field}" data-name="${esc(ind.name)}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
+    for (const k of keys) {
+      const d = dataMap[k];
       const val = d ? d[ind.field] : null;
-      const yoy = yoyMap[y] ? yoyMap[y][ind.field] : null;
-
+      const yoy = yoyMap[k] ? yoyMap[k][ind.field] : null;
       if (!ind.showYoy) {
-        // 审计意见：只显示原值
-        const display = val || '-';
-        html += `<td style="text-align:left">${display}</td><td>-</td>`;
+        html += `<td style="text-align:left">${val || '-'}</td><td>-</td>`;
       } else {
-        let display = '-';
-        if (val != null) {
-          if (ind.isPercent || ind.unit === '%') {
-            display = val.toFixed(2);
-          } else if (ind.unit === '亿元' || ind.unit === '亿股') {
-            display = val >= 100 ? val.toFixed(0) : val.toFixed(2);
-          } else {
-            display = val.toFixed(2);
-          }
-          if (ind.unit) display += ' ' + ind.unit;
-        }
+        let display = fmtVal(val, ind);
+        if (val != null && ind.unit) display += ' ' + ind.unit;
         html += `<td>${display}</td>`;
-
-        // 同比列
-        let yoyClass = 'fin-yoy-neutral';
-        let yoyDisplay = '-';
-        if (yoy != null) {
-          yoyDisplay = yoy.toFixed(1) + '%';
-          if (yoy > 0) yoyClass = 'fin-yoy-up';
-          else if (yoy < 0) yoyClass = 'fin-yoy-down';
-        }
-        html += `<td class="${yoyClass}">${yoyDisplay}</td>`;
+        html += `<td class="${yoyClass(yoy)}">${yoyFmt(yoy)}</td>`;
       }
     }
     html += '</tr>';
+
+    // Comparison row
+    if (hasCmp) {
+      html += `<tr class="cmp-row" style="background:#fff7e6;color:#fa8c16">`;
+      for (const k of keys) {
+        const d = cmpDataMap[k];
+        const val = d ? d[ind.field] : null;
+        const yoy = cmpYoyMap[k] ? cmpYoyMap[k][ind.field] : null;
+        if (!ind.showYoy) {
+          html += `<td style="text-align:left;background:#fff7e6;color:#fa8c16">${val || '-'}</td><td style="background:#fff7e6;color:#fa8c16">-</td>`;
+        } else {
+          let display = fmtVal(val, ind);
+          if (val != null && ind.unit) display += ' ' + ind.unit;
+          html += `<td style="background:#fff7e6;color:#fa8c16">${display}</td>`;
+          html += `<td class="${yoyClass(yoy)}" style="background:#fff7e6">${yoyFmt(yoy)}</td>`;
+        }
+      }
+      html += '</tr>';
+    }
   }
 
   html += '</tbody></table>';
   wrap.innerHTML = html;
 
-  // 显示排序按钮
+  // Sort button: only for annual mode
   const btnSort = document.getElementById('btnToggleSort');
-  if (btnSort) btnSort.style.display = 'inline-block';
+  if (btnSort) btnSort.style.display = (!isQuarterly) ? 'inline-block' : 'none';
 
-  // 绑定拖拽排序事件（mousedown/mousemove/mouseup 实现）
-  attachReorderEvents(wrap);
+  // Attach reorder only for annual
+  if (!isQuarterly) {
+    attachReorderEvents(wrap);
+  }
 
-  // 绑定指标图表图标点击事件
+  // Chart icons
   wrap.querySelectorAll('.chart-icon').forEach(icon => {
     icon.addEventListener('click', function(e) {
       e.stopPropagation();
@@ -1189,27 +1407,75 @@ async function loadBalanceSheet() {
   if (!code) return;
   const from = document.getElementById('bsFromYear').value;
   const to = document.getElementById('bsToYear').value;
+  const period = document.getElementById('bsPeriod').value;
+  const quarter = document.getElementById('bsQuarter').value;
+  const view = document.getElementById('bsView').value;
+  const actualPeriod = period === 'all' ? quarter : period;
+  const cmpCodeRaw = document.getElementById('bsCompare').value.trim();
+  const cmpCode = await resolveStockCode(cmpCodeRaw);
   const wrap = document.getElementById('tableBalanceSheetWrap');
   wrap.innerHTML = '<div class="empty">加载中...</div>';
 
   try {
-    const res = await fetch(`/api/stock/${code}/balance-sheet?from_year=${from}&to_year=${to}`);
-    const data = await res.json();
+    const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
+    const res = await fetch(`/api/stock/${code}/balance-sheet?${params}`);
+    let data = await res.json();
+
+    let cmpData = null, cmpName = '';
+    if (cmpCode && cmpCode !== code) {
+      try {
+        const cmpRes = await fetch(`/api/stock/${cmpCode}/balance-sheet?${params}`);
+        cmpData = await cmpRes.json();
+        const infoRes = await fetch('/api/stock/' + cmpCode);
+        const info = await infoRes.json();
+        if (!info.error) cmpName = info.name;
+      } catch {}
+    }
     if (!data || data.length === 0) {
       wrap.innerHTML = '<div class="empty">暂无资产负债表数据，请点击"更新数据"拉取</div>';
       return;
     }
-    renderBalanceSheetTable(data);
+    renderBalanceSheetTable(data, cmpData, cmpCode, cmpName);
   } catch (e) {
     wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
   }
 }
 
-function renderBalanceSheetTable(data) {
+function renderBalanceSheetTable(data, cmpData, cmpCode, cmpName) {
   const wrap = document.getElementById('tableBalanceSheetWrap');
-  const years = data.map(d => d.fiscal_year).sort((a, b) => b - a);
+
+  // Helper functions
+  const yoyClass = (y) => {
+    if (y == null) return 'fin-yoy-neutral';
+    return y > 0 ? 'fin-yoy-up' : (y < 0 ? 'fin-yoy-down' : 'fin-yoy-neutral');
+  };
+  const yoyFmt = (y) => {
+    if (y == null) return '-';
+    return y.toFixed(1) + '%';
+  };
+
+  // Quarterly detection: check ALL report_periods
+  const periods = new Set(data.map(d => d.report_period || 'FY'));
+  const isQuarterly = !(periods.size === 1 && periods.has('FY'));
+
+  // Build composite key maps
+  const makeKey = (d) => {
+    const rp = d.report_period || 'FY';
+    return isQuarterly ? d.fiscal_year + '|' + rp : d.fiscal_year + '';
+  };
+  const makePrevKey = (key) => {
+    if (!isQuarterly) return (parseInt(key) - 1) + '';
+    const [year, period] = key.split('|');
+    return (parseInt(year) - 1) + '|' + period;
+  };
+
+  const keys = data.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
+  if (!isQuarterly) {
+    keys.sort((a, b) => parseInt(b) - parseInt(a));
+  }
   const dataMap = {};
-  for (const d of data) dataMap[d.fiscal_year] = d;
+  for (const d of data) dataMap[makeKey(d)] = d;
+  const years = [...new Set(data.map(d => d.fiscal_year))].sort((a, b) => b - a);
 
   // 资产负债表科目分组
   const sections = [
@@ -1299,47 +1565,133 @@ function renderBalanceSheetTable(data) {
     }
   ];
 
-  let html = '<table class="fin-table" id="bsMainTable"><thead><tr>';
-  html += '<th class="sticky-col sticky-header" rowspan="1">科目</th>';
-  for (const y of years) {
-    html += `<th class="sticky-header year-header">${y}</th>`;
+  // Collect all BS fields for YoY calculation
+  const bsFields = [];
+  for (const section of sections) {
+    for (const item of section.items) {
+      bsFields.push(item.field);
+    }
+  }
+
+  // YoY map
+  const yoyMap = {};
+  for (const key of keys) {
+    const d = dataMap[key];
+    const prevKey = makePrevKey(key);
+    const prev = dataMap[prevKey];
+    yoyMap[key] = {};
+    for (const f of bsFields) {
+      const cur = d[f];
+      if (cur == null || !prev || prev[f] == null || prev[f] === 0) { yoyMap[key][f] = null; continue; }
+      yoyMap[key][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100;
+    }
+  }
+
+  // Comparison data maps
+  let cmpDataMap = {}, cmpKeys = [], cmpYoyMap = {};
+  if (cmpData && cmpData.length > 0) {
+    for (const d of cmpData) cmpDataMap[makeKey(d)] = d;
+    cmpKeys = cmpData.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
+    for (const key of cmpKeys) {
+      const d = cmpDataMap[key];
+      const prevKey = makePrevKey(key);
+      const prev = cmpDataMap[prevKey];
+      cmpYoyMap[key] = {};
+      for (const f of bsFields) {
+        const cur = d[f];
+        if (cur == null || !prev || prev[f] == null || prev[f] === 0) { cmpYoyMap[key][f] = null; continue; }
+        cmpYoyMap[key][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100;
+      }
+    }
+  }
+
+  const hasCmp = cmpData && cmpData.length > 0;
+  let html = '';
+  if (hasCmp) {
+    const stockName = document.getElementById('detailName').textContent.trim();
+    html += `<div style="margin-bottom:8px;font-size:14px;font-weight:600;color:#1a1a2e">${stockName}  vs  ${cmpName} (${cmpCode})</div>`;
+  }
+
+  // Build display labels from keys
+  const keyLabels = keys.map(k => {
+    if (!isQuarterly) return k;
+    const [yr, rp] = k.split('|');
+    return periods.size > 1 ? yr + '-' + rp : yr;
+  });
+
+  // Table header: rowspan="2" with colspan="2" per key
+  html += '<table class="fin-table" id="bsMainTable"><thead><tr>';
+  html += '<th class="sticky-col sticky-header" rowspan="2">科目</th>';
+  for (const lbl of keyLabels) {
+    html += `<th class="sticky-header year-header" colspan="2">${lbl}</th>`;
+  }
+  html += '</tr><tr>';
+  for (const lbl of keyLabels) {
+    html += '<th class="sticky-header sub-header">原值</th>';
+    html += '<th class="sticky-header sub-header">同比%</th>';
   }
   html += '</tr></thead><tbody>';
 
-  // 单位行
+  // Unit row
   html += '<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">单位：亿元</td>';
-  for (const y of years) {
+  for (const k of keys) {
     html += '<td style="text-align:center;background:#fafafa">亿元</td>';
+    html += '<td style="text-align:center;background:#fafafa">%</td>';
   }
   html += '</tr>';
 
   for (const section of sections) {
-    // 分组标题行
-    html += `<tr class="section-row"><td class="sticky-col" style="background:#e6f0ff;font-weight:700;font-size:13px;color:#1a1a2e" colspan="${years.length + 1}">${section.title}</td></tr>`;
+    // Section header: colspan = keys.length * 2 + 1
+    html += `<tr class="section-row"><td class="sticky-col" style="background:#e6f0ff;font-weight:700;font-size:13px;color:#1a1a2e" colspan="${keys.length * 2 + 1}">${section.title}</td></tr>`;
     for (const item of section.items) {
       const boldStyle = item.bold ? 'font-weight:600;' : '';
-      html += `<tr><td class="sticky-col" style="${boldStyle}">${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
-      for (const y of years) {
-        const d = dataMap[y];
+      // Main stock row
+      html += `<tr><td class="sticky-col" style="${boldStyle}"${hasCmp ? ' rowspan="2"' : ''}>${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
+      for (const k of keys) {
+        const d = dataMap[k];
         const val = d ? d[item.field] : null;
+        const yoy = yoyMap[k] ? yoyMap[k][item.field] : null;
         let display = '-';
         if (val != null) {
           display = Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2);
         }
         html += `<td style="text-align:right;${boldStyle}">${display}</td>`;
+        html += `<td class="${yoyClass(yoy)}" style="text-align:right">${yoyFmt(yoy)}</td>`;
       }
       html += '</tr>';
+
+      // Comparison row
+      if (hasCmp) {
+        html += '<tr style="background:#fff7e6;color:#fa8c16">';
+        for (const k of keys) {
+          const d = cmpDataMap[k];
+          const val = d ? d[item.field] : null;
+          const yoy = cmpYoyMap[k] ? cmpYoyMap[k][item.field] : null;
+          let display = '-';
+          if (val != null) {
+            display = Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2);
+          }
+          html += `<td style="text-align:right;background:#fff7e6;color:#fa8c16;${boldStyle}">${display}</td>`;
+          html += `<td class="${yoyClass(yoy)}" style="background:#fff7e6;text-align:right">${yoyFmt(yoy)}</td>`;
+        }
+        html += '</tr>';
+      }
     }
   }
 
   html += '</tbody></table>';
   wrap.innerHTML = html;
 
-  // 暴露数据供图表弹窗使用
+  // Expose data for chart modal (now uses composite keys)
   window._bsDataMap = dataMap;
+  window._bsKeys = keys;
   window._bsYears = years;
+  window._bsCmpDataMap = cmpDataMap;
+  window._bsCmpKeys = cmpKeys;
+  window._bsCmpCode = cmpCode;
+  window._bsCmpName = cmpName;
 
-  // 绑定图表图标点击事件
+  // Bind chart icon click events
   wrap.querySelectorAll('.chart-icon').forEach(icon => {
     icon.addEventListener('click', function(e) {
       e.stopPropagation();
@@ -1350,53 +1702,91 @@ function renderBalanceSheetTable(data) {
 
 function openBSChart(field, name) {
   const dataMap = window._bsDataMap;
-  const years = window._bsYears;
-  if (!dataMap || !years) return;
+  const keys = window._bsKeys;
+  const cmpDataMap = window._bsCmpDataMap;
+  const cmpCode = window._bsCmpCode;
+  const cmpName = window._bsCmpName;
+  if (!dataMap || !keys) return;
 
   const stockName = document.getElementById('detailName').textContent.trim();
-  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + name;
-  document.getElementById('chartModalOverlay').classList.add('active');
+  let title = stockName + ' - ' + name;
+  if (cmpDataMap && cmpCode) title += ' vs ' + (cmpName || cmpCode);
 
-  const sortedYears = [...years].sort((a, b) => a - b);
-  const values = sortedYears.map(y => {
-    const d = dataMap[y];
+  const sortedKeys = [...keys].sort((a, b) => a.localeCompare(b)); // oldest first
+  // Build display labels: annual shows year, quarterly shows year-period
+  const labels = sortedKeys.map(k => {
+    if (k.indexOf('|') === -1) return k;
+    const [yr, rp] = k.split('|');
+    return yr + '-' + rp;
+  });
+  const values = sortedKeys.map(k => {
+    const d = dataMap[k];
     return d && d[field] != null ? d[field] : null;
   });
+
+  // YoY line data
+  const yoyValues = sortedKeys.map((k, i) => {
+    if (i === 0) return null;
+    const cur = values[i];
+    const prev = values[i - 1];
+    if (cur == null || prev == null || prev === 0) return null;
+    return parseFloat(((cur - prev) / Math.abs(prev) * 100).toFixed(2));
+  });
+
+  // CAGR calculation
+  let cagr = null;
+  const cleanVals = values.filter(v => v != null);
+  if (cleanVals.length >= 2 && cleanVals[0] !== 0) {
+    const firstV = cleanVals[0], lastV = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1;
+    cagr = (Math.pow(lastV / firstV, 1 / n) - 1) * 100;
+    title += ' (CAGR: ' + cagr.toFixed(2) + '%)';
+  }
+
+  // Comparison data
+  let cmpValues = null;
+  if (cmpDataMap) {
+    cmpValues = sortedKeys.map(k => {
+      const d = cmpDataMap[k];
+      return d && d[field] != null ? d[field] : null;
+    });
+  }
+
+  document.getElementById('chartModalTitle').textContent = title;
+  document.getElementById('chartModalOverlay').classList.add('active');
 
   const dom = document.getElementById('chartModalBox');
   const existing = echarts.getInstanceByDom(dom);
   if (existing) existing.dispose();
 
   const chart = echarts.init(dom);
-  chart.setOption({
-    tooltip: {
-      trigger: 'axis',
-      formatter: function(params) {
-        const p = params[0];
-        if (p.value == null) return p.axisValue + '<br/>无数据';
-        return p.axisValue + '<br/>' + name + ': ' + p.value.toFixed(2) + ' 亿元';
+  const series = [];
+
+  // Main bar
+  series.push({
+    name: stockName,
+    type: 'bar',
+    data: values,
+    yAxisIndex: 0,
+    itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] },
+    label: {
+      show: true,
+      position: 'top',
+      fontSize: 11,
+      formatter: function(p) {
+        if (p.value == null) return '';
+        return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2);
       }
-    },
-    grid: { left: 60, right: 30, top: 20, bottom: 40 },
-    xAxis: {
-      type: 'category',
-      data: sortedYears,
-      name: '年份',
-      nameLocation: 'middle',
-      nameGap: 30
-    },
-    yAxis: {
-      type: 'value',
-      name: '亿元',
-    },
-    series: [{
-      type: 'line',
-      data: values,
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 6,
-      lineStyle: { color: '#4a6cf7', width: 2 },
-      itemStyle: { color: '#4a6cf7' },
+    }
+  });
+
+  // Comparison bar
+  if (cmpValues) {
+    series.push({
+      name: cmpName || cmpCode,
+      type: 'bar',
+      data: cmpValues,
+      yAxisIndex: 0,
+      itemStyle: { color: '#fa8c16', borderRadius: [4, 4, 0, 0] },
       label: {
         show: true,
         position: 'top',
@@ -1406,7 +1796,69 @@ function openBSChart(field, name) {
           return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2);
         }
       }
-    }]
+    });
+  }
+
+  // YoY line (only if not single year)
+  if (sortedYears.length > 1 && yoyValues.some(v => v != null)) {
+    series.push({
+      name: 'YoY%',
+      type: 'line',
+      data: yoyValues,
+      yAxisIndex: 1,
+      lineStyle: { color: '#52c41a', width: 2, type: 'dashed' },
+      itemStyle: { color: '#52c41a' },
+      symbol: 'circle',
+      symbolSize: 5,
+      label: {
+        show: true,
+        position: 'top',
+        fontSize: 10,
+        color: '#52c41a',
+        formatter: function(p) {
+          if (p.value == null) return '';
+          return p.value.toFixed(1) + '%';
+        }
+      }
+    });
+  }
+
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let html = '<strong>' + params[0].axisValue + '</strong><br/>';
+        for (const p of params) {
+          if (p.seriesName === 'YoY%') {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value != null ? p.value.toFixed(1) + '%' : '-') + '<br/>';
+          } else {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value != null ? p.value.toFixed(2) + ' 亿元' : '-') + '<br/>';
+          }
+        }
+        return html;
+      }
+    },
+    grid: { left: 60, right: 80, top: 20, bottom: 40 },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      name: '年份',
+      nameLocation: 'middle',
+      nameGap: 30
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '亿元',
+      },
+      {
+        type: 'value',
+        name: 'YoY%',
+        axisLabel: { formatter: '{value}%' },
+        splitLine: { show: false }
+      }
+    ],
+    series: series
   });
 
   window._chartModalInstance = chart;
@@ -1452,58 +1904,91 @@ function showToast(msg, type) {
 
 function openIndicatorChart(field, name) {
   const dataMap = window._finDataMap;
-  const years = window._finYears;
+  const keys = window._finKeys;
   const indicators = window._finIndicators;
-  if (!dataMap || !years || !indicators) return;
+  const cmpDataMap = window._finCmpDataMap;
+  const cmpCode = window._finCmpCode;
+  const cmpName = window._finCmpName;
+  if (!dataMap || !keys || !indicators) return;
   const ind = indicators.find(i => i.field === field);
   if (!ind) return;
 
   const stockName = document.getElementById('detailName').textContent.trim();
-  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + name;
-  document.getElementById('chartModalOverlay').classList.add('active');
+  let title = stockName + ' - ' + name;
+  if (cmpDataMap && cmpCode) title += ' vs ' + (cmpName || cmpCode);
 
-  const sortedYears = [...years].sort((a, b) => a - b);
-  const values = sortedYears.map(y => {
-    const d = dataMap[y];
-    return d && d[field] != null ? d[field] : null;
+  const sortedKeys = [...keys].sort((a, b) => a.localeCompare(b));
+  const vals = sortedKeys.map(k => {
+    const d = dataMap[k];
+    return d && d[ind.field] != null ? d[ind.field] : null;
+  });
+  const labels = sortedKeys;
+
+  // YoY line data
+  const yoyValues = keys.map((k, i) => {
+    if (i === 0) return null;
+    const cur = vals[i];
+    const prev = vals[i - 1];
+    if (cur == null || prev == null || prev === 0) return null;
+    return parseFloat(((cur - prev) / Math.abs(prev) * 100).toFixed(2));
   });
 
+  // CAGR
+  let cagr = null;
+  const cleanVals = vals.filter(v => v != null);
+  if (cleanVals.length >= 2 && cleanVals[0] !== 0) {
+    const firstV = cleanVals[0], lastV = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1;
+    cagr = (Math.pow(lastV / firstV, 1 / n) - 1) * 100;
+    title += ' (CAGR: ' + cagr.toFixed(2) + '%)';
+  }
+
+  // Comparison values
+  let cmpValues = null;
+  if (cmpDataMap) {
+    cmpValues = sortedKeys.map(k => {
+      const d = cmpDataMap[k];
+      return d && d[ind.field] != null ? d[ind.field] : null;
+    });
+  }
+
   const isPercent = ind.isPercent || ind.unit === '%';
+
+  document.getElementById('chartModalTitle').textContent = title;
+  document.getElementById('chartModalOverlay').classList.add('active');
+
   const dom = document.getElementById('chartModalBox');
   const existing = echarts.getInstanceByDom(dom);
   if (existing) existing.dispose();
 
   const chart = echarts.init(dom);
-  chart.setOption({
-    tooltip: {
-      trigger: 'axis',
-      formatter: function(params) {
-        const p = params[0];
-        if (p.value == null) return p.axisValue + '<br/>无数据';
-        return p.axisValue + '<br/>' + name + ': ' + (isPercent ? p.value.toFixed(2) + '%' : p.value.toFixed(2));
+  const series = [];
+
+  // Main bar
+  series.push({
+    name: stockName,
+    type: 'bar',
+    data: vals,
+    yAxisIndex: 0,
+    itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] },
+    label: {
+      show: true,
+      position: 'top',
+      fontSize: 11,
+      formatter: function(p) {
+        if (p.value == null) return '';
+        return isPercent ? p.value.toFixed(1) + '%' : p.value.toFixed(2);
       }
-    },
-    grid: { left: 60, right: 30, top: 20, bottom: 40 },
-    xAxis: {
-      type: 'category',
-      data: sortedYears,
-      name: '年份',
-      nameLocation: 'middle',
-      nameGap: 30
-    },
-    yAxis: {
-      type: 'value',
-      name: ind.unit || '',
-      axisLabel: isPercent ? { formatter: '{value}%' } : {}
-    },
-    series: [{
-      type: 'line',
-      data: values,
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 6,
-      lineStyle: { color: '#4a6cf7', width: 2 },
-      itemStyle: { color: '#4a6cf7' },
+    }
+  });
+
+  // Comparison bar
+  if (cmpValues) {
+    series.push({
+      name: cmpName || cmpCode,
+      type: 'bar',
+      data: cmpValues,
+      yAxisIndex: 0,
+      itemStyle: { color: '#fa8c16', borderRadius: [4, 4, 0, 0] },
       label: {
         show: true,
         position: 'top',
@@ -1513,10 +1998,81 @@ function openIndicatorChart(field, name) {
           return isPercent ? p.value.toFixed(1) + '%' : p.value.toFixed(2);
         }
       }
-    }]
+    });
+  }
+
+  // YoY line
+  if (keys.length > 1 && yoyValues.some(v => v != null)) {
+    series.push({
+      name: 'YoY%',
+      type: 'line',
+      data: yoyValues,
+      yAxisIndex: 1,
+      lineStyle: { color: '#52c41a', width: 2, type: 'dashed' },
+      itemStyle: { color: '#52c41a' },
+      symbol: 'circle',
+      symbolSize: 5,
+      label: {
+        show: true,
+        position: 'top',
+        fontSize: 10,
+        color: '#52c41a',
+        formatter: function(p) {
+          if (p.value == null) return '';
+          return p.value.toFixed(1) + '%';
+        }
+      }
+    });
+  }
+
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let html = '<strong>' + params[0].axisValue + '</strong><br/>';
+        for (const p of params) {
+          if (p.seriesName === 'YoY%') {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value != null ? p.value.toFixed(1) + '%' : '-') + '<br/>';
+          } else {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value != null ? (isPercent ? p.value.toFixed(2) + '%' : p.value.toFixed(2)) : '-') + '<br/>';
+          }
+        }
+        return html;
+      }
+    },
+    grid: { left: 60, right: 80, top: 20, bottom: 40 },
+    xAxis: {
+      type: 'category',
+      data: labels,
+      name: '年份',
+      nameLocation: 'middle',
+      nameGap: 30,
+      axisLabel: { rotate: isQuarterlyChart(labels) ? 30 : 0 }
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: ind.unit || '',
+        axisLabel: isPercent ? { formatter: '{value}%' } : {}
+      },
+      {
+        type: 'value',
+        name: 'YoY%',
+        axisLabel: { formatter: '{value}%' },
+        splitLine: { show: false }
+      }
+    ],
+    series: series
   });
 
   window._chartModalInstance = chart;
+}
+
+function isQuarterlyChart(labels) {
+  for (const l of labels) {
+    if (typeof l === 'string' && l.indexOf('|') > 0) return true;
+  }
+  return false;
 }
 
 function closeIndicatorChart() {
