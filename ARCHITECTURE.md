@@ -11,7 +11,7 @@ AIGC:
 
 # 股票分析系统 — 业务逻辑与技术架构总结
 
-> 版本 v1.2 | 2026-06-29 | Python Flask + MySQL 8.4
+> 版本 v2.0 | 2026-07-02 | Python Flask + MySQL 8.4
 
 ---
 
@@ -136,7 +136,7 @@ AIGC:
 | `bonds_payable` | DECIMAL(18,4) | NULL | 应付债券（亿元） |
 | `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 
-> 唯一约束：UNIQUE(stock_code, fiscal_year)。数据来源为东方财富 datacenter-web API，原始单位（元）入库前除以 1e8 转换为亿元。前端查询时动态计算核心利润率、净利润率、现金流利润比三个派生指标。
+> 唯一约束：UNIQUE(stock_code, fiscal_year, report_period)。`report_period` 为 ENUM('FY','Q1','Q2','Q3')，FY=年报、Q1=一季报、Q2=中报、Q3=三季报。数据来源为东方财富 datacenter-web API，原始单位（元）入库前除以 1e8 转换为亿元。前端查询时动态计算核心利润率、净利润率、现金流利润比三个派生指标。支持累计和单季度两种视图。
 
 ### 3.5 balance_sheets 表结构
 
@@ -196,7 +196,7 @@ AIGC:
 | `total_equity` | DECIMAL(18,4) | NULL | 股东权益合计（亿元） |
 | `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 
-> 唯一约束：UNIQUE(stock_code, fiscal_year)。数据来源为新浪财经资产负债表页面 HTML 解析，原始单位（万元）入库前除以 10000 转换为亿元。共 49 个资产负债表科目。
+> 唯一约束：UNIQUE(stock_code, fiscal_year, report_period)。`report_period` 为 ENUM('FY','Q1','Q2','Q3')。数据来源为新浪财经资产负债表页面 HTML 解析，原始单位（万元）入库前除以 10000 转换为亿元。共 49 个资产负债表科目。支持年报和季报（一季报/中报/三季报），前端可切换累计/单季度视图。
 
 ---
 
@@ -209,15 +209,19 @@ AIGC:
 | GET | `/` | 前端页面 |
 | GET | `/api/stocks` | 分页查询股票列表 |
 | GET | `/api/stock/<code>` | 查询单只股票详情 |
-| POST | `/api/stock` | 新增股票 |
+| POST | `/api/stock` | 新增股票（支持代码或名称） |
 | PUT | `/api/stock/<code>` | 更新股票 |
 | DELETE | `/api/stock/<code>` | 删除股票 |
 | GET | `/api/stats` | 统计概览 |
+| GET | `/api/stock-search` | 代码或名称搜索（本地DB+东方财富） |
+| GET | `/api/stock-info/<code>` | 从东方财富获取股票名称和市场 |
+| GET | `/api/stock/<code>/dividends` | 查询分红数据 |
 | POST | `/api/update-dividends` | 全量/增量更新分红与PE数据 |
-| GET | `/api/stock/<code>/financials` | 查询单只股票自定义财报数据 |
-| POST | `/api/update-financials` | 从东方财富拉取并更新财报数据 |
-| GET | `/api/stock/<code>/balance-sheet` | 查询单只股票资产负债表数据 |
-| POST | `/api/update-balance-sheet` | 从新浪财经拉取并更新资产负债表数据 |
+| GET | `/api/stock/<code>/financials` | 查询自定义财报（支持年报/季报/累计/单季度） |
+| POST | `/api/update-financials` | 从东方财富拉取并更新财报数据（含季报） |
+| GET | `/api/stock/<code>/balance-sheet` | 查询资产负债表（支持年报/季报/累计/单季度） |
+| POST | `/api/update-balance-sheet` | 从新浪财经拉取并更新资产负债表数据（含季报） |
+| GET | `/api/stock/<code>/realtime-quote` | 查询实时行情 |
 
 ### 4.2 接口详情
 
@@ -334,13 +338,18 @@ AIGC:
 
 #### GET /api/stock/&lt;code&gt;/financials
 
-查询单只股票的自定义财报数据，返回历年财务指标及同比变化。
+查询单只股票的自定义财报数据，支持年报/季报切换和累计/单季度视图。
 
-**Path 参数**：
+**Query 参数**：
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `code` | string | 股票代码（如 600519） |
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `from_year` | int | 2016 | 起始年份 |
+| `to_year` | int | 2025 | 结束年份 |
+| `period` | string | `FY` | 报告期：FY/Q1/Q2/Q3/all |
+| `view` | string | `cumulative` | 视图：cumulative(累计)/single(单季度) |
+
+> `period=all&view=single` 时后端自动计算单季度数据（流量指标=本期累计-上期累计）。
 
 **响应**：
 
@@ -424,7 +433,18 @@ AIGC:
 
 #### GET /api/stock/&lt;code&gt;/balance-sheet
 
-查询指定股票的历年资产负债表数据，按财年倒序排列。
+查询指定股票的资产负债表数据，支持年报/季报切换和累计/单季度（delta）视图。
+
+**Query 参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `from_year` | int | 2000 | 起始年份 |
+| `to_year` | int | 2030 | 结束年份 |
+| `period` | string | `FY` | 报告期：FY/Q1/Q2/Q3/all |
+| `view` | string | `cumulative` | 视图：cumulative(快照)/single(delta) |
+
+> `view=single` 时计算各科目环比差值（本期-上期），可用于观察资产负债表变动。
 
 **响应**：
 
@@ -464,6 +484,20 @@ AIGC:
 - upsert 写入 balance_sheets 表（UNIQUE(stock_code, fiscal_year)）
 
 **成功响应**：`200` + `{"success": true, "records_updated": 115, "stocks_processed": 7}`
+
+#### GET /api/stock-search
+
+根据代码或名称搜索股票，优先本地 DB，未命中则调用东方财富 suggest API。
+
+**Query 参数**：`keyword` — 搜索关键词（代码或名称）
+
+**响应**：`[{"code": "600519", "name": "贵州茅台", "market": "SH"}, ...]`
+
+#### GET /api/stock/&lt;code&gt;/realtime-quote
+
+返回实时行情数据（股价、PE、市值、股息率）。
+
+**响应**：`{"price": 1680.50, "pe_ttm": 22.3, "market_cap": 21100.0, "dividend_yield": 3.5}`
 
 ---
 
@@ -505,8 +539,35 @@ AIGC:
 - 编辑时 code 字段锁定（不可修改主键）
 - 删除前 `confirm()` 二次确认
 - 操作结果 Toast 提示（2.5 秒自动消失）
+- 添加股票支持输入代码或名称，自动匹配
+- 详情页顶部下拉框可切换自选股
 
-### 5.5 数据源与采集逻辑
+### 5.5 季报与同比
+
+- 自定义财报和资产负债表支持年报/季报切换
+- 季报可选择全部/Q1/Q2/Q3，视图可选累计/单季度
+- 单季度数据由后端计算：流量指标（营收/利润/现金流）= 本期累计 - 上期累计
+- 同比（YoY）：同报告期跨年比较，如 Q2 2025 vs Q2 2024
+- 表格中原值和同比%双列展示，同比正值红色、负值绿色
+
+### 5.6 股票对比
+
+- 在自定义财报和资产负债表标签页输入对比股票代码或名称
+- 表格上方显示"主股票 vs 对比股票"
+- 每个指标名占两行（rowspan=2），上行主股票、下行对比股票（橙色背景）
+- 对比股票也展示同比数据（同季度跨年）
+- 图表弹窗同时展示两支股票的柱状图 + 同比折线
+
+### 5.7 图表可视化
+
+- 点击指标旁的小图表图标弹出 ECharts 弹窗
+- 柱状图展示指标数值（蓝色主股票、橙色对比股票）
+- 折线图展示同比增速（绿色，右轴百分比）
+- 标题显示 CAGR（年化复合增长率）
+- 横轴 oldest→newest 时序排列
+- 遮罩/ESC 关闭弹窗
+
+### 5.8 数据源与采集逻辑
 
 #### 股票详情页实时行情卡片（v1.2 新增）
 
