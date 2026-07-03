@@ -185,7 +185,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   <div class="toolbar">
     <input type="text" id="keyword" placeholder="搜索代码或名称..." onkeyup="debounceSearch()">
     <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
-    <button class="btn btn-success" id="btnUpdate" onclick="updateDividends()">⟳ 更新数据</button>
+    <button class="btn btn-success" id="btnUpdate" onclick="updateAll()">⟳ 更新数据</button>
   </div>
 
   <div class="content">
@@ -304,7 +304,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         </select>
         <button class="btn btn-primary btn-sm" onclick="loadFinancials()">查询</button>
         <input type="text" id="finCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadFinancials()" onchange="loadFinancials()">
-        <button class="btn btn-success btn-sm" onclick="updateFinancials()">更新数据</button>
         <button class="btn btn-outline btn-sm sort-mode-toggle" id="btnToggleSort" onclick="toggleSortMode()" style="display:none">调整排序</button>
         <span id="finStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
@@ -334,7 +333,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         </select>
         <button class="btn btn-primary btn-sm" onclick="loadBalanceSheet()">查询</button>
         <input type="text" id="bsCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadBalanceSheet()" onchange="loadBalanceSheet()">
-        <button class="btn btn-success btn-sm" onclick="updateBalanceSheet()">更新数据</button>
         <span id="bsStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
       <div class="fin-table-wrap" id="tableBalanceSheetWrap">
@@ -363,7 +361,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         </select>
         <button class="btn btn-primary btn-sm" onclick="loadIncome()">查询</button>
         <input type="text" id="incCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadIncome()" onchange="loadIncome()">
-        <button class="btn btn-success btn-sm" onclick="updateIncome()">更新数据</button>
         <span id="incStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
       <div class="fin-table-wrap" id="tableIncomeWrap">
@@ -392,7 +389,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         </select>
         <button class="btn btn-primary btn-sm" onclick="loadCashflow()">查询</button>
         <input type="text" id="cfCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadCashflow()" onchange="loadCashflow()">
-        <button class="btn btn-success btn-sm" onclick="updateCashflow()">更新数据</button>
         <span id="cfStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
       <div class="fin-table-wrap" id="tableCashflowWrap">
@@ -2485,57 +2481,35 @@ document.addEventListener('keydown', function(e) {
 
 // ==================== 数据更新 ====================
 
-function updateDividends() {
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay active';
-  overlay.innerHTML = `
-    <div class="modal" style="width:360px">
-      <div class="modal-header">
-        <h3>选择更新模式</h3>
-        <button class="modal-close">&times;</button>
-      </div>
-      <div class="modal-body" style="text-align:center;padding:32px 24px">
-        <p style="margin-bottom:20px;color:#666;font-size:14px">增量更新：仅补全缺失年份的数据（快速）<br>全量更新：重新获取所有历史数据（较慢）</p>
-      </div>
-      <div class="modal-footer" style="justify-content:center;gap:16px">
-        <button class="btn btn-outline" id="btnIncremental">增量更新</button>
-        <button class="btn btn-primary" id="btnFull">全量更新</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const close = () => overlay.remove();
-  overlay.querySelector('.modal-close').onclick = close;
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-
-  overlay.querySelector('#btnIncremental').onclick = () => { close(); doUpdate('incremental'); };
-  overlay.querySelector('#btnFull').onclick = () => { close(); doUpdate('full'); };
-}
-
-async function doUpdate(mode) {
-  const modeLabel = mode === 'incremental' ? '增量更新' : '全量更新';
+async function updateAll() {
   const btn = document.getElementById('btnUpdate');
   btn.disabled = true;
-  btn.textContent = '⟳ 更新中...';
-  showToast(`正在${modeLabel}，请稍候...`, 'success');
-  try {
-    const res = await fetch('/api/update-dividends', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(`${modeLabel}完成: ${data.message}（${data.stocks_processed} 只股票）`, 'success');
-    } else {
-      showToast('更新失败: ' + (data.error || '未知错误'), 'error');
+  btn.textContent = '\u27f3 更新中...';
+  const apis = [
+    { name: '\u5206\u7ea2', url: '/api/update-dividends' },
+    { name: '\u8d22\u62a5', url: '/api/update-financials' },
+    { name: '\u8d44\u4ea7\u8d1f\u503a\u8868', url: '/api/update-balance-sheet' },
+    { name: '\u5229\u6da6\u8868', url: '/api/update-income' },
+    { name: '\u73b0\u91d1\u6d41\u91cf\u8868', url: '/api/update-cashflow' },
+  ];
+  let msgs = [];
+  for (const api of apis) {
+    try {
+      const res = await fetch(api.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'incremental' })
+      });
+      const data = await res.json();
+      if (data.success) msgs.push(api.name + ': ' + (data.records_updated || data.message || 'OK'));
+      else msgs.push(api.name + ': \u5931\u8d25');
+    } catch (e) {
+      msgs.push(api.name + ': \u7f51\u7edc\u9519\u8bef');
     }
-  } catch (e) {
-    showToast('网络请求失败', 'error');
   }
+  showToast('\u66f4\u65b0\u5b8c\u6210: ' + msgs.join(' | '), 'success');
   btn.disabled = false;
-  btn.textContent = '⟳ 更新数据';
+  btn.textContent = '\u27f3 \u66f4\u65b0\u6570\u636e';
 }
 
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
