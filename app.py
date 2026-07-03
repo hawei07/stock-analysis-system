@@ -1042,6 +1042,83 @@ def api_stock_balance_sheet(code):
     return jsonify(result)
 
 
+# ==================== 估值分析 API ====================
+
+@app.route("/api/stock/<code>/valuation")
+def api_stock_valuation(code):
+    """PE-TTM 历史 + 股价 + 分位点"""
+    try:
+        # 1. 获取历年摊薄每股收益（年报），用于计算 PE-TTM
+        pe_data = []
+        url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
+               "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
+               f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22%E5%B9%B4%E6%8A%A5%22)"
+               "&pageSize=50&sortColumns=REPORT_DATE&sortTypes=-1")
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        data = resp.json()
+        eps_by_date = {}
+        if data.get("success"):
+            for item in data["result"]["data"]:
+                rd = item.get("REPORT_DATE", "")
+                eps = item.get("EPSJB")  # 基本每股收益
+                if rd and eps and float(eps) > 0:
+                    eps_by_date[rd[:10]] = float(eps)
+
+        # 2. 获取股价（前复权）
+        market = "sh" if code.startswith(("6", "5", "9")) else "sz"
+        symbol = f"{market}{code}"
+        price_data = []
+        try:
+            url2 = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,1000,qfq"
+            resp2 = requests.get(url2, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            d2 = resp2.json()
+            stock_data = d2.get("data", {})
+            if isinstance(stock_data, dict):
+                stock_data = stock_data.get(symbol, {})
+                raw = stock_data.get("day") or stock_data.get("qfqday") or []
+            else:
+                raw = []
+            for row in raw:
+                price_data.append({"date": row[0], "close": float(row[2])})
+        except Exception:
+            pass
+
+        # 3. 计算 PE-TTM = 股价 / EPS（每年年报日）
+        if price_data:
+            price_map = {p["date"]: p["close"] for p in price_data}
+            for date_str, eps in sorted(eps_by_date.items()):
+                price = price_map.get(date_str)
+                if price and eps > 0:
+                    pe = round(price / eps, 2)
+                    pe_data.append({"date": date_str, "pe": pe, "eps": eps, "price": price})
+
+        # 3. 计算分位点
+        pe_values = [p["pe"] for p in pe_data if p["pe"] > 0]
+        pe_values.sort()
+        if pe_values:
+            n = len(pe_values)
+            p80 = pe_values[int(n * 0.8)] if n > 0 else None
+            p50 = pe_values[int(n * 0.5)] if n > 0 else None
+            p20 = pe_values[int(n * 0.2)] if n > 0 else None
+            cur_pe = pe_values[-1]
+            cur_pct = round(sum(1 for v in pe_values if v <= cur_pe) / n * 100, 2) if n > 0 else None
+        else:
+            p80 = p50 = p20 = cur_pe = cur_pct = None
+
+        return jsonify({
+            "pe_data": pe_data,
+            "price_data": price_data,
+            "current_pe": cur_pe,
+            "current_pct": cur_pct,
+            "p80": p80, "p50": p50, "p20": p20,
+            "max_pe": max(pe_values) if pe_values else None,
+            "min_pe": min(pe_values) if pe_values else None,
+            "avg_pe": round(sum(pe_values) / len(pe_values), 2) if pe_values else None,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ==================== K线图 API ====================
 
 @app.route("/api/stock/<code>/kline")

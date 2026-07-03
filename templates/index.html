@@ -247,6 +247,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="chart" onclick="switchTab('chart')">走势</button>
+    <button class="tab-btn" data-tab="valuation" onclick="switchTab('valuation')">估值</button>
     <button class="tab-btn" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
     <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
@@ -267,6 +268,21 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <div class="chart-container">
         <div class="chart-box" id="chartKline" style="height:500px"></div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-valuation" style="display:none">
+      <div class="toolbar-row">
+        <button class="btn btn-sm" onclick="loadValuation(3650)" style="background:#f0f0f0">上市以来</button>
+        <button class="btn btn-sm" onclick="loadValuation(7300)">20年</button>
+        <button class="btn btn-sm active-val-btn" onclick="loadValuation(3650)">10年</button>
+        <button class="btn btn-sm" onclick="loadValuation(1825)">5年</button>
+        <button class="btn btn-sm" onclick="loadValuation(1095)">3年</button>
+        <button class="btn btn-sm" onclick="loadValuation(365)">1年</button>
+        <span id="valStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div style="display:flex;gap:16px">
+        <div id="valSidebar" style="width:160px;flex-shrink:0;background:#f7f9fc;border-radius:8px;padding:12px;font-size:13px"></div>
+        <div class="chart-box" id="chartValuation" style="flex:1;height:450px"></div>
       </div>
     </div>
     <div class="tab-panel" id="panel-dividends" style="display:none">
@@ -810,6 +826,84 @@ async function loadKline() {
   }
 }
 
+// ==================== 估值分析 ====================
+
+let valInstance = null;
+
+async function loadValuation(days) {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const dom = document.getElementById('chartValuation');
+  const sidebar = document.getElementById('valSidebar');
+  const statusEl = document.getElementById('valStatus');
+  statusEl.textContent = '加载中...';
+
+  // Highlight active button
+  document.querySelectorAll('#panel-valuation .btn-sm').forEach(b => {
+    b.style.background = b.onclick && b.onclick.toString().includes(days) ? '#333' : '#f0f0f0';
+    b.style.color = b.onclick && b.onclick.toString().includes(days) ? '#fff' : '#333';
+  });
+
+  try {
+    const res = await fetch(`/api/stock/${code}/valuation`);
+    const data = await res.json();
+    if (data.error) { statusEl.textContent = data.error; return; }
+
+    // Filter by days
+    const cutoff = days > 3650 ? '2000-01-01' : new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const peFiltered = data.pe_data.filter(p => p.date >= cutoff);
+    const priceFiltered = data.price_data.filter(p => p.date >= cutoff);
+
+    // Build chart
+    const peDates = peFiltered.map(p => p.date);
+    const peValues = peFiltered.map(p => p.pe);
+    const priceDates = priceFiltered.map(p => p.date);
+    const priceValues = priceFiltered.map(p => p.close);
+
+    // Percentile lines (constant across the date range)
+    const p80Line = peDates.map(() => data.p80);
+    const p50Line = peDates.map(() => data.p50);
+    const p20Line = peDates.map(() => data.p20);
+
+    if (valInstance) valInstance.dispose();
+    valInstance = echarts.init(dom);
+    valInstance.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['PE-TTM', '80%分位', '50%分位', '20%分位', '股价(前复权)'], top: 4 },
+      grid: { left: 60, right: 80, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: priceDates, axisLabel: { formatter: v => v.slice(0, 7) } },
+      yAxis: [
+        { type: 'value', name: 'PE', min: 0 },
+        { type: 'value', name: '股价(元)', splitLine: { show: false } }
+      ],
+      series: [
+        { name: 'PE-TTM', type: 'line', data: peValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', markLine: { silent: true, data: [{ yAxis: data.current_pe, label: { formatter: data.current_pe + '', position: 'end' }, lineStyle: { color: '#4a6cf7', type: 'dashed' } }] } },
+        { name: '80%分位', type: 'line', data: p80Line, yAxisIndex: 0, lineStyle: { color: '#cf1322', type: 'dashed', width: 1 }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
+        { name: '50%分位', type: 'line', data: p50Line, yAxisIndex: 0, lineStyle: { color: '#666', type: 'dashed', width: 1 }, itemStyle: { color: '#666' }, symbol: 'none' },
+        { name: '20%分位', type: 'line', data: p20Line, yAxisIndex: 0, lineStyle: { color: '#389e0d', type: 'dashed', width: 1 }, itemStyle: { color: '#389e0d' }, symbol: 'none' },
+        { name: '股价(前复权)', type: 'line', data: priceValues, yAxisIndex: 1, lineStyle: { color: '#fa8c16', width: 1.5 }, itemStyle: { color: '#fa8c16' }, symbol: 'none' },
+      ]
+    });
+
+    // Sidebar
+    sidebar.innerHTML = `
+      <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">PE-TTM</div>
+      <div style="margin-bottom:4px">当前值: <b style="color:#4a6cf7">${data.current_pe || '-'}</b></div>
+      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${data.current_pct != null ? data.current_pct + '%' : '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">80%: <b>${data.p80 || '-'}</b></div>
+      <div style="color:#666;margin-bottom:2px">50%: <b>${data.p50 || '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:8px">20%: <b>${data.p20 || '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">最大: <b>${data.max_pe || '-'}</b></div>
+      <div style="color:#333;margin-bottom:2px">平均: <b>${data.avg_pe || '-'}</b></div>
+      <div style="color:#389e0d">最小: <b>${data.min_pe || '-'}</b></div>`;
+    statusEl.textContent = `${peFiltered.length} 个数据点`;
+    statusEl.style.color = '#52c41a';
+  } catch (e) {
+    statusEl.textContent = '加载失败';
+    statusEl.style.color = '#ff4d4f';
+  }
+}
+
 // ==================== 列表页 ====================
 
 function debounceSearch() {
@@ -1027,6 +1121,8 @@ function switchTab(name) {
     loadFinancials();
   } else if (name === 'chart') {
     loadKline();
+  } else if (name === 'valuation') {
+    loadValuation(3650);
   } else if (name === 'balance') {
     loadBalanceSheet();
   } else if (name === 'income') {
