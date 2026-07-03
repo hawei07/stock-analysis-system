@@ -1750,7 +1750,7 @@ function openBSChart(field, name) {
   }
 
   // Comparison stock CAGR
-  if (cmpValues) {
+  if (cmpValues && cmpValues.some(v => v != null)) {
     title += ' vs ' + (cmpName || cmpCode);
     const cmpClean = cmpValues.filter(v => v != null);
     if (cmpClean.length >= 2 && cmpClean[0] !== 0) {
@@ -1959,7 +1959,7 @@ function openIndicatorChart(field, name) {
   }
 
   // Comparison stock CAGR
-  if (cmpValues) {
+  if (cmpValues && cmpValues.some(v => v != null)) {
     title += ' vs ' + (cmpName || cmpCode);
     const cmpClean = cmpValues.filter(v => v != null);
     if (cmpClean.length >= 2 && cmpClean[0] !== 0) {
