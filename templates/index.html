@@ -1924,7 +1924,6 @@ function openIndicatorChart(field, name) {
 
   const stockName = document.getElementById('detailName').textContent.trim();
   let title = stockName + ' - ' + name;
-  if (cmpDataMap && cmpCode) title += ' vs ' + (cmpName || cmpCode);
 
   const sortedKeys = [...keys].sort((a, b) => a.localeCompare(b));
   const vals = sortedKeys.map(k => {
@@ -1942,12 +1941,11 @@ function openIndicatorChart(field, name) {
     return parseFloat(((cur - prev) / Math.abs(prev) * 100).toFixed(2));
   });
 
-  // CAGR
-  let cagr = null;
+  // CAGR for main stock
   const cleanVals = vals.filter(v => v != null);
   if (cleanVals.length >= 2 && cleanVals[0] !== 0) {
     const firstV = cleanVals[0], lastV = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1;
-    cagr = (Math.pow(lastV / firstV, 1 / n) - 1) * 100;
+    const cagr = (Math.pow(lastV / firstV, 1 / n) - 1) * 100;
     title += ' (CAGR: ' + cagr.toFixed(2) + '%)';
   }
 
@@ -1958,6 +1956,17 @@ function openIndicatorChart(field, name) {
       const d = cmpDataMap[k];
       return d && d[ind.field] != null ? d[ind.field] : null;
     });
+  }
+
+  // Comparison stock CAGR
+  if (cmpValues) {
+    title += ' vs ' + (cmpName || cmpCode);
+    const cmpClean = cmpValues.filter(v => v != null);
+    if (cmpClean.length >= 2 && cmpClean[0] !== 0) {
+      const firstV = cmpClean[0], lastV = cmpClean[cmpClean.length - 1], n = cmpClean.length - 1;
+      const cmpCagr = (Math.pow(lastV / firstV, 1 / n) - 1) * 100;
+      title += ' (CAGR: ' + cmpCagr.toFixed(2) + '%)';
+    }
   }
 
   const isPercent = ind.isPercent || ind.unit === '%';
