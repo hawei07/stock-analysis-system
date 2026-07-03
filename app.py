@@ -1042,6 +1042,271 @@ def api_stock_balance_sheet(code):
     return jsonify(result)
 
 
+# ==================== 利润表 & 现金流量表 API（数据源：新浪财经） ====================
+
+# 利润表行映射
+INCOME_ROW_MAP = [
+    ("营业总收入", "total_revenue"),
+    ("营业收入", "operating_revenue"),
+    ("营业总成本", "operating_cost"),
+    ("营业成本", "cost_of_revenue"),
+    ("营业税金及附加", "tax_surcharge"),
+    ("销售费用", "selling_expense"),
+    ("管理费用", "admin_expense"),
+    ("财务费用", "finance_expense"),
+    ("研发费用", "rd_expense"),
+    ("公允价值变动收益", "fair_value_change"),
+    ("投资收益", "invest_income"),
+    ("营业利润", "operating_profit"),
+    ("营业外收入", "nonop_income"),          # 匹配"加:营业外收入"
+    ("减：营业外支出", "nonop_expense"),
+    ("利润总额", "total_profit"),
+    ("所得税费用", "income_tax"),
+    ("净利润", "net_profit"),
+    ("归属于母公司所有者的净利润", "parent_net_profit"),
+    ("少数股东损益", "minority_profit"),
+    ("基本每股收益", "basic_eps"),
+    ("稀释每股收益", "diluted_eps"),
+    ("其他综合收益", "other_comprehensive"),
+    ("综合收益总额", "total_comprehensive"),
+    ("归属于母公司所有者的综合收益总额", "parent_comprehensive"),
+]
+INCOME_COLUMNS = [c for _, c in INCOME_ROW_MAP]
+
+# 现金流量表行映射
+CASHFLOW_ROW_MAP = [
+    ("销售商品、提供劳务收到的现金", "cf_sales_goods"),
+    ("收到的税费返还", "cf_tax_refund"),
+    ("收到的其他与经营活动有关的现金", "cf_other_oper_in"),
+    ("经营活动现金流入小计", "cf_oper_inflow"),
+    ("购买商品、接受劳务支付的现金", "cf_buy_goods"),
+    ("支付给职工以及为职工支付的现金", "cf_payroll"),
+    ("支付的各项税费", "cf_tax_pay"),
+    ("支付的其他与经营活动有关的现金", "cf_other_oper_out"),
+    ("经营活动现金流出小计", "cf_oper_outflow"),
+    ("经营活动产生的现金流量净额", "cf_oper_net"),
+    ("收回投资所收到的现金", "cf_invest_withdraw"),
+    ("取得投资收益所收到的现金", "cf_invest_income"),
+    ("处置固定资产、无形资产和其他长期资产所收回的现金净额", "cf_dispose_assets"),
+    ("收到的其他与投资活动有关的现金", "cf_other_invest_in"),
+    ("投资活动现金流入小计", "cf_invest_inflow"),
+    ("购建固定资产、无形资产和其他长期资产所支付的现金", "cf_buy_assets"),
+    ("投资所支付的现金", "cf_invest_pay"),
+    ("支付的其他与投资活动有关的现金", "cf_other_invest_out"),
+    ("投资活动现金流出小计", "cf_invest_outflow"),
+    ("投资活动产生的现金流量净额", "cf_invest_net"),
+    ("吸收投资收到的现金", "cf_finance_in"),
+    ("取得借款收到的现金", "cf_borrow"),
+    ("发行债券收到的现金", "cf_bond"),
+    ("收到其他与筹资活动有关的现金", "cf_other_finance_in"),
+    ("筹资活动现金流入小计", "cf_finance_inflow"),
+    ("偿还债务支付的现金", "cf_repay_debt"),
+    ("分配股利、利润或偿付利息所支付的现金", "cf_dividend_interest"),
+    ("支付其他与筹资活动有关的现金", "cf_other_finance_out"),
+    ("筹资活动现金流出小计", "cf_finance_outflow"),
+    ("筹资活动产生的现金流量净额", "cf_finance_net"),
+]
+CASHFLOW_COLUMNS = [c for _, c in CASHFLOW_ROW_MAP]
+
+
+def _parse_sina_finance(html, row_map, target_year=None):
+    """通用新浪财报HTML解析（资产负债表/利润表/现金流量表共用）。
+    返回 {year: {col: val}} 或指定 target_year 时返回单年 dict。
+    """
+    import re as _re
+
+    all_tables = _re.findall(r'<table[^>]*>(.*?)</table>', html, _re.DOTALL)
+    all_year_data = {}
+
+    for table_html in all_tables:
+        if '报表日期' not in table_html:
+            continue
+
+        # 检查是否有匹配的行——取第一个非表头的行名来验证
+        rows = _re.findall(r'<tr[^>]*>(.*?)</tr>', table_html, _re.DOTALL)
+        has_match = False
+        for r in rows:
+            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
+            cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+            if cells:
+                for pattern, _ in row_map:
+                    if cells[0].startswith(pattern) or pattern in cells[0]:
+                        has_match = True
+                        break
+            if has_match:
+                break
+        if not has_match:
+            continue
+
+        # 找所有日期列
+        date_cols = []
+        for r in rows:
+            cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
+            cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+            if any('报表日期' in c for c in cells):
+                for idx, c in enumerate(cells):
+                    m = _re.match(r'(\d{4})-(\d{2})-(\d{2})', c)
+                    if m:
+                        date_cols.append((idx, int(m.group(1)), c))
+                break
+
+        if not date_cols:
+            continue
+
+        for col_idx, col_year, col_date in date_cols:
+            if target_year is not None and col_year != target_year:
+                continue
+
+            values = {}
+            for r in rows:
+                cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
+                cells = [_re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+                if not cells or len(cells) <= col_idx:
+                    continue
+
+                row_name = cells[0]
+                raw_val = cells[col_idx]
+
+                for pattern, col in row_map:
+                    if row_name.startswith(pattern) or pattern in row_name:
+                        if raw_val and raw_val not in ("--", "", "None"):
+                            try:
+                                values[col] = round(float(raw_val.replace(",", "")) / 10000, 4)
+                            except ValueError:
+                                pass
+                        break
+
+            if values:
+                existing = all_year_data.get(col_year)
+                if existing is None or col_date > (all_year_data.get(f"_max_date_{col_year}", "")):
+                    all_year_data[col_year] = values
+                    all_year_data[f"_max_date_{col_year}"] = col_date
+
+    if target_year is not None:
+        return all_year_data.get(target_year)
+    return all_year_data
+
+
+def _upsert_finance(stock_code, all_years, columns, table):
+    """通用财报数据写入"""
+    for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
+        placeholders = ", ".join(["%s"] * len(columns))
+        col_names = ", ".join(columns)
+        update_clause = ", ".join([f"{c}=VALUES({c})" for c in columns])
+
+        sql = (
+            f"INSERT INTO {table} (stock_code, fiscal_year, report_period, {col_names}) "
+            f"VALUES (%s, %s, %s, {placeholders}) "
+            f"ON DUPLICATE KEY UPDATE {update_clause}"
+        )
+        params = [stock_code, year, 'FY'] + [values.get(c) for c in columns]
+        execute_query(sql, tuple(params), fetch=False)
+
+
+# ── 利润表 API ──
+
+@app.route("/api/stock/<code>/income")
+def api_stock_income(code):
+    rows = execute_query(
+        "SELECT * FROM income_statements WHERE stock_code=%s ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC",
+        (code,)
+    )
+    result = []
+    for r in rows:
+        item = {"fiscal_year": r["fiscal_year"], "report_period": r["report_period"]}
+        for col in INCOME_COLUMNS:
+            item[col] = float(r[col]) if r.get(col) is not None else None
+        result.append(item)
+    return jsonify(result)
+
+
+@app.route("/api/update-income", methods=["POST"])
+def api_update_income():
+    mode = request.get_json(silent=True).get("mode", "full") if request.is_json else "full"
+    if request.args.get("mode"):
+        mode = request.args["mode"]
+
+    stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+    updated = 0
+    errors = []
+
+    for s in stocks:
+        code = s["code"]
+        try:
+            url = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_ProfitStatement/stockid/{code}/ctrl/part/displaytype/0.phtml"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            resp.encoding = "gbk"
+            all_years = _parse_sina_finance(resp.text, INCOME_ROW_MAP)
+
+            existing = set()
+            if mode == "incremental":
+                for r in execute_query("SELECT fiscal_year FROM income_statements WHERE stock_code=%s", (code,)):
+                    existing.add(r["fiscal_year"])
+
+            for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
+                if mode == "incremental" and year in existing:
+                    continue
+                _upsert_finance(code, {year: values}, INCOME_COLUMNS, "income_statements")
+                updated += 1
+        except Exception as e:
+            errors.append(f"{code}: {str(e)}")
+        time.sleep(0.3)
+
+    return jsonify({"success": True, "records_updated": updated, "stocks_processed": len(stocks), "mode": mode, "errors": errors[:5] if errors else []})
+
+
+# ── 现金流量表 API ──
+
+@app.route("/api/stock/<code>/cashflow")
+def api_stock_cashflow(code):
+    rows = execute_query(
+        "SELECT * FROM cash_flows WHERE stock_code=%s ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC",
+        (code,)
+    )
+    result = []
+    for r in rows:
+        item = {"fiscal_year": r["fiscal_year"], "report_period": r["report_period"]}
+        for col in CASHFLOW_COLUMNS:
+            item[col] = float(r[col]) if r.get(col) is not None else None
+        result.append(item)
+    return jsonify(result)
+
+
+@app.route("/api/update-cashflow", methods=["POST"])
+def api_update_cashflow():
+    mode = request.get_json(silent=True).get("mode", "full") if request.is_json else "full"
+    if request.args.get("mode"):
+        mode = request.args["mode"]
+
+    stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+    updated = 0
+    errors = []
+
+    for s in stocks:
+        code = s["code"]
+        try:
+            url = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_CashFlow/stockid/{code}/ctrl/part/displaytype/0.phtml"
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            resp.encoding = "gbk"
+            all_years = _parse_sina_finance(resp.text, CASHFLOW_ROW_MAP)
+
+            existing = set()
+            if mode == "incremental":
+                for r in execute_query("SELECT fiscal_year FROM cash_flows WHERE stock_code=%s", (code,)):
+                    existing.add(r["fiscal_year"])
+
+            for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
+                if mode == "incremental" and year in existing:
+                    continue
+                _upsert_finance(code, {year: values}, CASHFLOW_COLUMNS, "cash_flows")
+                updated += 1
+        except Exception as e:
+            errors.append(f"{code}: {str(e)}")
+        time.sleep(0.3)
+
+    return jsonify({"success": True, "records_updated": updated, "stocks_processed": len(stocks), "mode": mode, "errors": errors[:5] if errors else []})
+
+
 if __name__ == "__main__":
     print("股票分析系统 Web 服务启动: http://127.0.0.1:5002")
     try:

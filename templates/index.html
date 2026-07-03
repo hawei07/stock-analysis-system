@@ -249,6 +249,8 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <button class="tab-btn active" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
     <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
+    <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
+    <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
   </div>
 
   <div class="detail-content">
@@ -322,6 +324,36 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <div class="fin-table-wrap" id="tableBalanceSheetWrap">
         <div class="empty" id="bsEmpty">请点击"查询"加载资产负债表数据</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-income" style="display:none">
+      <div class="toolbar-row">
+        <label>年份范围：</label>
+        <input type="number" id="incFromYear" value="2016" min="2000" max="2030" style="width:70px">
+        <span style="font-size:13px">至</span>
+        <input type="number" id="incToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <button class="btn btn-primary btn-sm" onclick="loadIncome()">查询</button>
+        <input type="text" id="incCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadIncome()" onchange="loadIncome()">
+        <button class="btn btn-success btn-sm" onclick="updateIncome()">更新数据</button>
+        <span id="incStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="fin-table-wrap" id="tableIncomeWrap">
+        <div class="empty" id="incEmpty">请点击"查询"加载利润表数据</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-cashflow" style="display:none">
+      <div class="toolbar-row">
+        <label>年份范围：</label>
+        <input type="number" id="cfFromYear" value="2016" min="2000" max="2030" style="width:70px">
+        <span style="font-size:13px">至</span>
+        <input type="number" id="cfToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <button class="btn btn-primary btn-sm" onclick="loadCashflow()">查询</button>
+        <input type="text" id="cfCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadCashflow()" onchange="loadCashflow()">
+        <button class="btn btn-success btn-sm" onclick="updateCashflow()">更新数据</button>
+        <span id="cfStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="fin-table-wrap" id="tableCashflowWrap">
+        <div class="empty" id="cfEmpty">请点击"查询"加载现金流量表数据</div>
       </div>
     </div>
   </div>
@@ -866,6 +898,10 @@ function switchTab(name) {
     loadFinancials();
   } else if (name === 'balance') {
     loadBalanceSheet();
+  } else if (name === 'income') {
+    loadIncome();
+  } else if (name === 'cashflow') {
+    loadCashflow();
   }
 }
 
@@ -1858,6 +1894,228 @@ async function updateBalanceSheet() {
     statusEl.textContent = '请求失败: ' + e.message;
     statusEl.style.color = '#ff4d4f';
   }
+}
+
+// ==================== 利润表 ====================
+
+async function loadIncome() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const wrap = document.getElementById('tableIncomeWrap');
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+
+  try {
+    const res = await fetch(`/api/stock/${code}/income`);
+    const data = await res.json();
+    if (!data || data.length === 0) {
+      wrap.innerHTML = '<div class="empty">暂无利润表数据，请点击"更新数据"拉取</div>';
+      return;
+    }
+    // Build dataMap with fiscal_year keys
+    const dataMap = {}; const years = [];
+    for (const d of data) { dataMap[d.fiscal_year] = d; years.push(d.fiscal_year); }
+    years.sort((a, b) => b - a);
+    window._incDataMap = dataMap; window._incYears = years;
+    renderISCFTable(wrap, dataMap, years, getIncomeSections(), 'incMainTable');
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function getIncomeSections() {
+  return [
+    { title: '收入', items: [
+      { name: '营业总收入', field: 'total_revenue', bold: true },
+      { name: '营业收入', field: 'operating_revenue' },
+    ]},
+    { title: '成本与费用', items: [
+      { name: '营业总成本', field: 'operating_cost', bold: true },
+      { name: '营业成本', field: 'cost_of_revenue' },
+      { name: '营业税金及附加', field: 'tax_surcharge' },
+      { name: '销售费用', field: 'selling_expense' },
+      { name: '管理费用', field: 'admin_expense' },
+      { name: '财务费用', field: 'finance_expense' },
+      { name: '研发费用', field: 'rd_expense' },
+    ]},
+    { title: '其他收益', items: [
+      { name: '公允价值变动收益', field: 'fair_value_change' },
+      { name: '投资收益', field: 'invest_income' },
+    ]},
+    { title: '利润', items: [
+      { name: '营业利润', field: 'operating_profit', bold: true },
+      { name: '营业外收入', field: 'nonop_income' },
+      { name: '营业外支出', field: 'nonop_expense' },
+      { name: '利润总额', field: 'total_profit', bold: true },
+      { name: '所得税费用', field: 'income_tax' },
+      { name: '净利润', field: 'net_profit', bold: true },
+      { name: '归母净利润', field: 'parent_net_profit', bold: true },
+      { name: '少数股东损益', field: 'minority_profit' },
+    ]},
+    { title: '每股指标', items: [
+      { name: '基本每股收益(元)', field: 'basic_eps' },
+      { name: '稀释每股收益(元)', field: 'diluted_eps' },
+    ]},
+    { title: '综合收益', items: [
+      { name: '其他综合收益', field: 'other_comprehensive' },
+      { name: '综合收益总额', field: 'total_comprehensive', bold: true },
+      { name: '归母综合收益', field: 'parent_comprehensive' },
+    ]},
+  ];
+}
+
+async function updateIncome() {
+  const statusEl = document.getElementById('incStatus');
+  statusEl.textContent = '正在更新数据，请稍候...'; statusEl.style.color = '#1890ff';
+  try {
+    const res = await fetch('/api/update-income', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'incremental' }) });
+    const data = await res.json();
+    if (data.success) { statusEl.textContent = `更新完成: ${data.records_updated} 条`; statusEl.style.color = '#52c41a'; loadIncome(); }
+    else { statusEl.textContent = '更新失败: ' + (data.error || '未知错误'); statusEl.style.color = '#ff4d4f'; }
+  } catch (e) { statusEl.textContent = '请求失败: ' + e.message; statusEl.style.color = '#ff4d4f'; }
+}
+
+// ==================== 现金流量表 ====================
+
+async function loadCashflow() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const wrap = document.getElementById('tableCashflowWrap');
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+
+  try {
+    const res = await fetch(`/api/stock/${code}/cashflow`);
+    const data = await res.json();
+    if (!data || data.length === 0) {
+      wrap.innerHTML = '<div class="empty">暂无现金流量表数据，请点击"更新数据"拉取</div>';
+      return;
+    }
+    const dataMap = {}; const years = [];
+    for (const d of data) { dataMap[d.fiscal_year] = d; years.push(d.fiscal_year); }
+    years.sort((a, b) => b - a);
+    window._cfDataMap = dataMap; window._cfYears = years;
+    renderISCFTable(wrap, dataMap, years, getCashflowSections(), 'cfMainTable');
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function getCashflowSections() {
+  return [
+    { title: '经营活动现金流', items: [
+      { name: '销售商品提供劳务收到的现金', field: 'cf_sales_goods' },
+      { name: '收到的税费返还', field: 'cf_tax_refund' },
+      { name: '收到其他与经营活动有关的现金', field: 'cf_other_oper_in' },
+      { name: '经营活动现金流入小计', field: 'cf_oper_inflow', bold: true },
+      { name: '购买商品接受劳务支付的现金', field: 'cf_buy_goods' },
+      { name: '支付给职工以及为职工支付的现金', field: 'cf_payroll' },
+      { name: '支付的各项税费', field: 'cf_tax_pay' },
+      { name: '支付其他与经营活动有关的现金', field: 'cf_other_oper_out' },
+      { name: '经营活动现金流出小计', field: 'cf_oper_outflow', bold: true },
+      { name: '经营活动现金流量净额', field: 'cf_oper_net', bold: true },
+    ]},
+    { title: '投资活动现金流', items: [
+      { name: '收回投资所收到的现金', field: 'cf_invest_withdraw' },
+      { name: '取得投资收益所收到的现金', field: 'cf_invest_income' },
+      { name: '处置固定资产等收回的现金', field: 'cf_dispose_assets' },
+      { name: '收到其他与投资活动有关的现金', field: 'cf_other_invest_in' },
+      { name: '投资活动现金流入小计', field: 'cf_invest_inflow', bold: true },
+      { name: '购建固定资产等支付的现金', field: 'cf_buy_assets' },
+      { name: '投资所支付的现金', field: 'cf_invest_pay' },
+      { name: '支付其他与投资活动有关的现金', field: 'cf_other_invest_out' },
+      { name: '投资活动现金流出小计', field: 'cf_invest_outflow', bold: true },
+      { name: '投资活动现金流量净额', field: 'cf_invest_net', bold: true },
+    ]},
+    { title: '筹资活动现金流', items: [
+      { name: '吸收投资收到的现金', field: 'cf_finance_in' },
+      { name: '取得借款收到的现金', field: 'cf_borrow' },
+      { name: '发行债券收到的现金', field: 'cf_bond' },
+      { name: '收到其他与筹资活动有关的现金', field: 'cf_other_finance_in' },
+      { name: '筹资活动现金流入小计', field: 'cf_finance_inflow', bold: true },
+      { name: '偿还债务支付的现金', field: 'cf_repay_debt' },
+      { name: '分配股利利润或偿付利息', field: 'cf_dividend_interest' },
+      { name: '支付其他与筹资活动有关的现金', field: 'cf_other_finance_out' },
+      { name: '筹资活动现金流出小计', field: 'cf_finance_outflow', bold: true },
+      { name: '筹资活动现金流量净额', field: 'cf_finance_net', bold: true },
+    ]},
+  ];
+}
+
+function renderISCFTable(wrap, dataMap, years, sections, tableId) {
+  let html = `<table class="fin-table" id="${tableId}"><thead><tr>`;
+  html += '<th class="sticky-col sticky-header" rowspan="1">科目</th>';
+  for (const y of years) html += `<th class="sticky-header year-header">${y}</th>`;
+  html += '</tr></thead><tbody>';
+  html += '<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">单位：亿元</td>';
+  for (const y of years) html += '<td style="text-align:center;background:#fafafa">亿元</td>';
+  html += '</tr>';
+
+  for (const section of sections) {
+    html += `<tr class="section-row"><td class="sticky-col" style="background:#e6f0ff;font-weight:700;font-size:13px;color:#1a1a2e" colspan="${years.length + 1}">${section.title}</td></tr>`;
+    for (const item of section.items) {
+      const boldStyle = item.bold ? 'font-weight:600;' : '';
+      html += `<tr><td class="sticky-col" style="${boldStyle}">${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" data-table="${tableId}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
+      for (const y of years) {
+        const d = dataMap[y]; const val = d ? d[item.field] : null;
+        let display = '-';
+        if (val != null) display = Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2);
+        html += `<td style="text-align:right;${boldStyle}">${display}</td>`;
+      }
+      html += '</tr>';
+    }
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.chart-icon').forEach(icon => {
+    icon.addEventListener('click', function(e) {
+      e.stopPropagation();
+      openFinanceChart(this.dataset.field, this.dataset.name, this.dataset.table);
+    });
+  });
+}
+
+function openFinanceChart(field, name, tableId) {
+  let dataMap, years;
+  if (tableId === 'incMainTable') { dataMap = window._incDataMap; years = window._incYears; }
+  else if (tableId === 'cfMainTable') { dataMap = window._cfDataMap; years = window._cfYears; }
+  if (!dataMap || !years) return;
+
+  const stockName = document.getElementById('detailName').textContent.trim();
+  let title = stockName + ' - ' + name;
+  const sortedYears = [...years].sort((a, b) => a - b);
+  const values = sortedYears.map(y => { const d = dataMap[y]; return d && d[field] != null ? d[field] : null; });
+
+  const cleanVals = values.filter(v => v != null);
+  if (cleanVals.length >= 2 && cleanVals[0] !== 0) {
+    const firstV = cleanVals[0], lastV = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1;
+    title += ' (CAGR: ' + ((Math.pow(lastV / firstV, 1 / n) - 1) * 100).toFixed(2) + '%)';
+  }
+
+  document.getElementById('chartModalTitle').textContent = title;
+  document.getElementById('chartModalOverlay').classList.add('active');
+  const dom = document.getElementById('chartModalBox');
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) existing.dispose();
+  const chart = echarts.init(dom);
+  chart.setOption({
+    tooltip: { trigger: 'axis', formatter: function(params) { const p = params[0]; return p.value == null ? p.axisValue + '<br/>无数据' : p.axisValue + '<br/>' + name + ': ' + p.value.toFixed(2) + ' 亿元'; } },
+    grid: { left: 60, right: 30, top: 20, bottom: 40 },
+    xAxis: { type: 'category', data: sortedYears, name: '年份', nameLocation: 'middle', nameGap: 30 },
+    yAxis: { type: 'value', name: '亿元' },
+    series: [{ type: 'line', data: values, smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, label: { show: true, position: 'top', fontSize: 11, formatter: function(p) { if (p.value == null) return ''; return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2); } } }]
+  });
+  window._chartModalInstance = chart;
+}
+
+async function updateCashflow() {
+  const statusEl = document.getElementById('cfStatus');
+  statusEl.textContent = '正在更新数据，请稍候...'; statusEl.style.color = '#1890ff';
+  try {
+    const res = await fetch('/api/update-cashflow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'incremental' }) });
+    const data = await res.json();
+    if (data.success) { statusEl.textContent = `更新完成: ${data.records_updated} 条`; statusEl.style.color = '#52c41a'; loadCashflow(); }
+    else { statusEl.textContent = '更新失败: ' + (data.error || '未知错误'); statusEl.style.color = '#ff4d4f'; }
+  } catch (e) { statusEl.textContent = '请求失败: ' + e.message; statusEl.style.color = '#ff4d4f'; }
 }
 
 // ==================== 工具函数 ====================
