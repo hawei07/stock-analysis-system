@@ -184,18 +184,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 <div class="view active" id="view-list">
   <div class="toolbar">
     <input type="text" id="keyword" placeholder="搜索代码或名称..." onkeyup="debounceSearch()">
-    <select id="filterMarket" onchange="loadStocks()">
-      <option value="">全部市场</option>
-      <option value="SH">上海 (SH)</option>
-      <option value="SZ">深圳 (SZ)</option>
-      <option value="BJ">北京 (BJ)</option>
-    </select>
-    <select id="filterStatus" onchange="loadStocks()">
-      <option value="">全部状态</option>
-      <option value="正常">正常</option>
-      <option value="ST">ST</option>
-      <option value="*ST">*ST</option>
-    </select>
     <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
     <button class="btn btn-success" id="btnUpdate" onclick="updateDividends()">⟳ 更新数据</button>
   </div>
@@ -207,7 +195,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
           <tr>
             <th>代码</th>
             <th>名称</th>
-            <th>行业</th>
             <th>PE(TTM)</th>
             <th>股息率</th>
             <th>操作</th>
@@ -356,18 +343,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <label style="margin-top:16px">股票名称</label>
       <input type="text" id="inputName" placeholder="自动获取" maxlength="50" readonly style="background:#f5f5f5">
-      <label>市场</label>
-      <input type="text" id="inputMarket" readonly style="background:#f5f5f5">
-      <div class="row">
-        <div>
-          <label>状态</label>
-          <select id="inputStatus"><option value="正常">正常</option><option value="ST">ST</option><option value="*ST">*ST</option></select>
-        </div>
-        <div>
-          <label>行业</label>
-          <input type="text" id="inputIndustry" placeholder="如 白酒">
-        </div>
-      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
@@ -683,11 +658,7 @@ function debounceSearch() {
 
 async function loadStocks() {
   const keyword = document.getElementById('keyword').value.trim();
-  const market = document.getElementById('filterMarket').value;
-  const status = document.getElementById('filterStatus').value;
   const params = new URLSearchParams({ page: currentPage, page_size: 15 });
-  if (market) params.append('market', market);
-  if (status) params.append('status', status);
   if (keyword) params.append('keyword', keyword);
 
   try {
@@ -708,7 +679,6 @@ function renderTable(stocks) {
     <tr>
       <td><span class="code">${esc(s.code)}</span></td>
       <td><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
-      <td>${esc(s.industry || '-')}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
       <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
       <td>
@@ -750,9 +720,6 @@ function openAddModal() {
   document.getElementById('inputCode').value = '';
   document.getElementById('inputCode').disabled = false;
   document.getElementById('inputName').value = '';
-  document.getElementById('inputMarket').value = '';
-  document.getElementById('inputStatus').value = '正常';
-  document.getElementById('inputIndustry').value = '';
   document.getElementById('btnLookup').style.display = 'inline-block';
   document.getElementById('modal').classList.add('active');
 }
@@ -767,9 +734,6 @@ async function openEditModal(code) {
     document.getElementById('inputCode').value = s.code;
     document.getElementById('inputCode').disabled = true;
     document.getElementById('inputName').value = s.name;
-    document.getElementById('inputMarket').value = s.market;
-    document.getElementById('inputStatus').value = s.status;
-    document.getElementById('inputIndustry').value = s.industry || '';
     document.getElementById('btnLookup').style.display = 'none';
     document.getElementById('modal').classList.add('active');
   } catch (e) { showToast('获取股票信息失败', 'error'); }
@@ -777,7 +741,6 @@ async function openEditModal(code) {
 
 function onCodeInput() {
   document.getElementById('inputName').value = '';
-  document.getElementById('inputMarket').value = '';
 }
 
 async function lookupStock() {
@@ -795,7 +758,6 @@ async function lookupStock() {
         const s = searchData[0];
         document.getElementById('inputCode').value = s.code;
         document.getElementById('inputName').value = s.name;
-        document.getElementById('inputMarket').value = s.market;
         showToast('已识别: ' + s.name, 'success');
         btn.disabled = false;
         btn.textContent = '查询';
@@ -812,7 +774,6 @@ async function lookupStock() {
       showToast(data.error, 'error');
     } else {
       document.getElementById('inputName').value = data.name;
-      document.getElementById('inputMarket').value = data.market;
       showToast('已识别: ' + data.name, 'success');
     }
   } catch (e) {
@@ -832,15 +793,12 @@ async function saveStock() {
 
   const code = document.getElementById('inputCode').value.trim();
   const name = document.getElementById('inputName').value.trim();
-  const market = document.getElementById('inputMarket').value.trim();
-  const status = document.getElementById('inputStatus').value;
-  const industry = document.getElementById('inputIndustry').value.trim();
 
   if (!code) {
     showToast('请输入股票代码', 'error'); return;
   }
 
-  const body = { code, name, market, status, industry: industry || null };
+  const body = { code, name };
   const url = isEdit ? '/api/stock/' + editCode : '/api/stock';
   const method = isEdit ? 'PUT' : 'POST';
 
