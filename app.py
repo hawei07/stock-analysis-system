@@ -1064,22 +1064,34 @@ def api_stock_valuation(code):
                 if rd and eps and float(eps) > 0:
                     eps_by_date[rd[:10]] = float(eps)
 
-        # 2. 获取股价（前复权）
+        # 2. 获取股价（前复权）—— 分批拉取以覆盖更长历史
         market = "sh" if code.startswith(("6", "5", "9")) else "sz"
         symbol = f"{market}{code}"
         price_data = []
         try:
-            url2 = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,1000,qfq"
-            resp2 = requests.get(url2, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-            d2 = resp2.json()
-            stock_data = d2.get("data", {})
-            if isinstance(stock_data, dict):
-                stock_data = stock_data.get(symbol, {})
-                raw = stock_data.get("day") or stock_data.get("qfqday") or []
-            else:
-                raw = []
-            for row in raw:
-                price_data.append({"date": row[0], "close": float(row[2])})
+            # 第一段：最近数据
+            urls = [f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,640,qfq"]
+            # 追加更早的批次（每批约2-3年）
+            for y in range(2023, 2000, -3):
+                urls.append(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{y-3}-01-01,{y}-12-31,640,qfq")
+            seen = set()
+            for u in urls[:8]:  # 最多8批 ≈ 20年
+                try:
+                    r = requests.get(u, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                    d2 = r.json()
+                    stock_data = d2.get("data", {})
+                    if isinstance(stock_data, dict):
+                        stock_data = stock_data.get(symbol, {})
+                        raw = stock_data.get("day") or stock_data.get("qfqday") or []
+                    else:
+                        raw = []
+                    for row in raw:
+                        if row[0] not in seen:
+                            seen.add(row[0])
+                            price_data.append({"date": row[0], "close": float(row[2])})
+                except Exception:
+                    pass
+            price_data.sort(key=lambda x: x["date"])
         except Exception:
             pass
 
