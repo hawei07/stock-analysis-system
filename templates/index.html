@@ -1990,8 +1990,8 @@ function onCfPeriodChange() {
 
 // Generic load: prefix → {fromId, toId, periodId, quarterId, viewId, cmpId, wrapId, api, sectionsFn, tableId, statusId}
 const _financeTables = {
-  inc: { fromId:'incFromYear', toId:'incToYear', periodId:'incPeriod', quarterId:'incQuarter', viewId:'incView', cmpId:'incCompare', wrapId:'tableIncomeWrap', api:'income', sectionsFn:getIncomeSections, tableId:'incMainTable', statusId:'incStatus', dataVar:'_incDataMap', keysVar:'_incKeys', cmpDataVar:'_incCmpDataMap', cmpKeysVar:'_incCmpKeys', cmpCodeVar:'_incCmpCode', cmpNameVar:'_incCmpName' },
-  cf:  { fromId:'cfFromYear', toId:'cfToYear', periodId:'cfPeriod', quarterId:'cfQuarter', viewId:'cfView', cmpId:'cfCompare', wrapId:'tableCashflowWrap', api:'cashflow', sectionsFn:getCashflowSections, tableId:'cfMainTable', statusId:'cfStatus', dataVar:'_cfDataMap', keysVar:'_cfKeys', cmpDataVar:'_cfCmpDataMap', cmpKeysVar:'_cfCmpKeys', cmpCodeVar:'_cfCmpCode', cmpNameVar:'_cfCmpName' },
+  inc: { prefix:'inc', fromId:'incFromYear', toId:'incToYear', periodId:'incPeriod', quarterId:'incQuarter', viewId:'incView', cmpId:'incCompare', wrapId:'tableIncomeWrap', api:'income', sectionsFn:getIncomeSections, tableId:'incMainTable', statusId:'incStatus', dataVar:'_incDataMap', keysVar:'_incKeys', cmpDataVar:'_incCmpDataMap', cmpKeysVar:'_incCmpKeys', cmpCodeVar:'_incCmpCode', cmpNameVar:'_incCmpName' },
+  cf:  { prefix:'cf', fromId:'cfFromYear', toId:'cfToYear', periodId:'cfPeriod', quarterId:'cfQuarter', viewId:'cfView', cmpId:'cfCompare', wrapId:'tableCashflowWrap', api:'cashflow', sectionsFn:getCashflowSections, tableId:'cfMainTable', statusId:'cfStatus', dataVar:'_cfDataMap', keysVar:'_cfKeys', cmpDataVar:'_cfCmpDataMap', cmpKeysVar:'_cfCmpKeys', cmpCodeVar:'_cfCmpCode', cmpNameVar:'_cfCmpName' },
 };
 
 async function loadFinanceTable(prefix) {
@@ -2086,7 +2086,7 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
     html += `<tr class="section-row"><td class="sticky-col" style="background:#e6f0ff;font-weight:700;font-size:13px;color:#1a1a2e" colspan="${keys.length * 2 + 1}">${section.title}</td></tr>`;
     for (const item of section.items) {
       const bs = item.bold ? 'font-weight:600;' : '';
-      html += `<tr><td class="sticky-col" style="${bs}"${hasCmp ? ' rowspan="2"' : ''}>${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" data-prefix="${prefix}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
+      html += `<tr><td class="sticky-col" style="${bs}"${hasCmp ? ' rowspan="2"' : ''}>${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" data-prefix="${t.prefix}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
       for (const k of keys) { const d = dataMap[k]; const val = d ? d[item.field] : null; const yoy = yoyMap[k] ? yoyMap[k][item.field] : null; html += `<td style="text-align:right;${bs}">${val != null ? (Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2)) : '-'}</td>`; html += `<td class="${yoyClass(yoy)}" style="text-align:right">${yoyFmt(yoy)}</td>`; }
       html += '</tr>';
       if (hasCmp) {
