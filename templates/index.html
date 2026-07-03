@@ -329,9 +329,9 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <div class="tab-panel" id="panel-income" style="display:none">
       <div class="toolbar-row">
         <label>年份范围：</label>
-        <input type="number" id="incFromYear" value="2016" min="2000" max="2030" style="width:70px">
+        <input type="number" id="incFromYear" min="2000" max="2030" style="width:70px">
         <span style="font-size:13px">至</span>
-        <input type="number" id="incToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <input type="number" id="incToYear" min="2000" max="2030" style="width:70px">
         <select id="incPeriod" onchange="onIncPeriodChange()" style="width:80px;margin-left:8px">
           <option value="FY">年报</option>
           <option value="all">季报</option>
@@ -358,9 +358,9 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <div class="tab-panel" id="panel-cashflow" style="display:none">
       <div class="toolbar-row">
         <label>年份范围：</label>
-        <input type="number" id="cfFromYear" value="2016" min="2000" max="2030" style="width:70px">
+        <input type="number" id="cfFromYear" min="2000" max="2030" style="width:70px">
         <span style="font-size:13px">至</span>
-        <input type="number" id="cfToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <input type="number" id="cfToYear" min="2000" max="2030" style="width:70px">
         <select id="cfPeriod" onchange="onCfPeriodChange()" style="width:80px;margin-left:8px">
           <option value="FY">年报</option>
           <option value="all">季报</option>
@@ -1996,6 +1996,11 @@ const _financeTables = {
 
 async function loadFinanceTable(prefix) {
   const t = _financeTables[prefix]; if (!t) return;
+  // Auto-set year range to last 10 years including current
+  const fy = document.getElementById(t.fromId), ty = document.getElementById(t.toId);
+  if (!fy.value) fy.value = new Date().getFullYear() - 9;
+  if (!ty.value) ty.value = new Date().getFullYear();
+
   const code = document.getElementById('detailCode').textContent.trim(); if (!code) return;
   const from = document.getElementById(t.fromId).value;
   const to = document.getElementById(t.toId).value;
