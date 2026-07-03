@@ -1115,6 +1115,29 @@ def api_stock_valuation(code):
         else:
             p80 = p50 = p20 = cur_pe = cur_pct = None
 
+        # 5. 获取实时 PE-TTM（qt.gtimg.cn，比计算值更精确）
+        realtime_pe = None
+        try:
+            prefix = "sh" if code.startswith(("6", "5", "9")) else "sz"
+            url3 = f"https://qt.gtimg.cn/q={prefix}{code}"
+            resp3 = requests.get(url3, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+            resp3.encoding = "gbk"
+            text = resp3.text
+            if text.startswith("v_"):
+                parts = text.split("~")
+                if len(parts) >= 40:
+                    pe_str = parts[39].strip()
+                    if pe_str and pe_str not in ("", "-"):
+                        realtime_pe = float(pe_str)
+        except Exception:
+            pass
+
+        # 若实时 PE 可用则覆盖计算值，并重新计算分位
+        if realtime_pe and realtime_pe > 0:
+            cur_pe = realtime_pe
+            if pe_values:
+                cur_pct = round(sum(1 for v in pe_values if v <= cur_pe) / len(pe_values) * 100, 2)
+
         return jsonify({
             "pe_data": pe_data,
             "price_data": price_data,
