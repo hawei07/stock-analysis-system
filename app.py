@@ -1101,7 +1101,7 @@ def api_stock_valuation(code):
                     if 0 < pe < 9999:  # 过滤异常值
                         pe_data.append({"date": p_date, "pe": pe})
 
-        # 3. 计算分位点
+        # 4. 计算分位点
         pe_values = [p["pe"] for p in pe_data if p["pe"] > 0]
         pe_values.sort()
         if pe_values:
@@ -1109,8 +1109,9 @@ def api_stock_valuation(code):
             p80 = pe_values[int(n * 0.8)] if n > 0 else None
             p50 = pe_values[int(n * 0.5)] if n > 0 else None
             p20 = pe_values[int(n * 0.2)] if n > 0 else None
-            cur_pe = pe_values[-1]
-            cur_pct = round(sum(1 for v in pe_values if v <= cur_pe) / n * 100, 2) if n > 0 else None
+            # 当前 PE 取最新日期值，非排序后最大值
+            cur_pe = pe_data[-1]["pe"] if pe_data else None
+            cur_pct = round(sum(1 for v in pe_values if v <= cur_pe) / n * 100, 2) if cur_pe and n > 0 else None
         else:
             p80 = p50 = p20 = cur_pe = cur_pct = None
 
