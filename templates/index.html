@@ -1809,7 +1809,7 @@ function openBSChart(field, name) {
   }
 
   // YoY line (only if not single year)
-  if (sortedYears.length > 1 && yoyValues.some(v => v != null)) {
+  if (sortedKeys.length > 1 && yoyValues.some(v => v != null)) {
     series.push({
       name: 'YoY%',
       type: 'line',
