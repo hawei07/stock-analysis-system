@@ -860,10 +860,22 @@ async function loadValuation(days) {
     const peValues = dates.map(d => peMap[d] != null ? peMap[d] : null);
     const priceValues = priceFiltered.map(p => p.close);
 
+    // Recalculate percentiles & stats from filtered PE data
+    const filteredPeVals = peValues.filter(v => v != null).sort((a, b) => a - b);
+    const n = filteredPeVals.length;
+    const fp80 = n > 0 ? filteredPeVals[Math.floor(n * 0.8)] : null;
+    const fp50 = n > 0 ? filteredPeVals[Math.floor(n * 0.5)] : null;
+    const fp20 = n > 0 ? filteredPeVals[Math.floor(n * 0.2)] : null;
+    const fmax = n > 0 ? filteredPeVals[n - 1] : null;
+    const fmin = n > 0 ? filteredPeVals[0] : null;
+    const favg = n > 0 ? +(filteredPeVals.reduce((a, b) => a + b, 0) / n).toFixed(2) : null;
+    // Current PE and its percentile (based on real-time PE from backend)
+    const fpct = data.current_pe && n > 0 ? +(filteredPeVals.filter(v => v <= data.current_pe).length / n * 100).toFixed(2) : null;
+
     // Percentile lines
-    const p80Line = dates.map(() => data.p80);
-    const p50Line = dates.map(() => data.p50);
-    const p20Line = dates.map(() => data.p20);
+    const p80Line = dates.map(() => fp80);
+    const p50Line = dates.map(() => fp50);
+    const p20Line = dates.map(() => fp20);
 
     if (valInstance) valInstance.dispose();
     valInstance = echarts.init(dom);
@@ -889,13 +901,13 @@ async function loadValuation(days) {
     sidebar.innerHTML = `
       <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">PE-TTM</div>
       <div style="margin-bottom:4px">当前值: <b style="color:#4a6cf7">${data.current_pe || '-'}</b></div>
-      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${data.current_pct != null ? data.current_pct + '%' : '-'}</b></div>
-      <div style="color:#cf1322;margin-bottom:2px">80%: <b>${data.p80 || '-'}</b></div>
-      <div style="color:#666;margin-bottom:2px">50%: <b>${data.p50 || '-'}</b></div>
-      <div style="color:#389e0d;margin-bottom:8px">20%: <b>${data.p20 || '-'}</b></div>
-      <div style="color:#cf1322;margin-bottom:2px">最大: <b>${data.max_pe || '-'}</b></div>
-      <div style="color:#333;margin-bottom:2px">平均: <b>${data.avg_pe || '-'}</b></div>
-      <div style="color:#389e0d">最小: <b>${data.min_pe || '-'}</b></div>`;
+      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${fpct != null ? fpct + '%' : '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">80%: <b>${fp80 || '-'}</b></div>
+      <div style="color:#666;margin-bottom:2px">50%: <b>${fp50 || '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:8px">20%: <b>${fp20 || '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">最大: <b>${fmax || '-'}</b></div>
+      <div style="color:#333;margin-bottom:2px">平均: <b>${favg || '-'}</b></div>
+      <div style="color:#389e0d">最小: <b>${fmin || '-'}</b></div>`;
     statusEl.textContent = `${peFiltered.length} 个数据点`;
     statusEl.style.color = '#52c41a';
   } catch (e) {
