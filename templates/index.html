@@ -246,7 +246,8 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
+    <button class="tab-btn active" data-tab="chart" onclick="switchTab('chart')">走势</button>
+    <button class="tab-btn" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
     <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
@@ -254,7 +255,21 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   </div>
 
   <div class="detail-content">
-    <div class="tab-panel active" id="panel-dividends">
+    <div class="tab-panel active" id="panel-chart">
+      <div class="toolbar-row">
+        <select id="chartPeriod" onchange="loadKline()" style="width:100px">
+          <option value="365">近一年</option>
+          <option value="730">近两年</option>
+          <option value="1825">近五年</option>
+          <option value="3650">全部</option>
+        </select>
+        <span id="chartStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="chart-container">
+        <div class="chart-box" id="chartKline" style="height:500px"></div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-dividends" style="display:none">
       <div class="toolbar-row">
         <label>年份范围：</label>
         <select id="divFromYear" onchange="onDivYearChange()" style="width:90px"><option value="">全部</option></select>
@@ -432,7 +447,7 @@ let totalPages = 1;
 let searchTimer = null;
 let chartInstance = null;
 
-let currentTab = 'dividends';
+let currentTab = 'chart';
 
 // ==================== 路由 ====================
 
@@ -539,6 +554,8 @@ async function loadDetail(code) {
     mcEl.textContent = rt.market_cap != null ? rt.market_cap.toFixed(2) + ' 亿' : '--';
     mcEl.className = 'value';
 
+    // 加载K线图
+    loadKline();
     // 加载分红数据并渲染图表
     loadDividends(code);
   } catch (e) {
@@ -707,6 +724,87 @@ function renderDividendsChart(data) {
   };
   chartInstance.setOption(option);
   window.addEventListener('resize', () => chartInstance && chartInstance.resize());
+}
+
+// ==================== K线图 ====================
+
+let klineInstance = null;
+
+async function loadKline() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const days = document.getElementById('chartPeriod').value;
+  const dom = document.getElementById('chartKline');
+  const statusEl = document.getElementById('chartStatus');
+  statusEl.textContent = '加载中...';
+
+  try {
+    const res = await fetch(`/api/stock/${code}/kline?days=${days}`);
+    const data = await res.json();
+    if (data.error) { statusEl.textContent = data.error; return; }
+    if (!data || data.length === 0) { statusEl.textContent = '无数据'; return; }
+
+    const dates = data.map(d => d.date);
+    const ohlc = data.map(d => [d.open, d.close, d.low, d.high]);
+    const volumes = data.map(d => d.volume);
+
+    if (klineInstance) klineInstance.dispose();
+    klineInstance = echarts.init(dom);
+
+    klineInstance.setOption({
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' },
+        formatter: function(params) {
+          const d = data[params[0].dataIndex];
+          return `<strong>${d.date}</strong><br/>
+            开盘: ${d.open.toFixed(2)}<br/>
+            收盘: ${d.close.toFixed(2)}<br/>
+            最高: ${d.high.toFixed(2)}<br/>
+            最低: ${d.low.toFixed(2)}<br/>
+            成交量: ${(d.volume / 10000).toFixed(0)} 万手`;
+        }
+      },
+      grid: [
+        { left: '8%', right: '3%', top: '5%', height: '65%' },
+        { left: '8%', right: '3%', top: '78%', height: '15%' }
+      ],
+      xAxis: [
+        { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 1, axisLabel: { formatter: v => v.slice(5) } }
+      ],
+      yAxis: [
+        { type: 'value', gridIndex: 0, scale: true, splitArea: { show: true } },
+        { type: 'value', gridIndex: 1, axisLabel: { formatter: v => (v / 10000).toFixed(0) + '万' } }
+      ],
+      series: [
+        {
+          name: 'K线',
+          type: 'candlestick',
+          data: ohlc,
+          xAxisIndex: 0, yAxisIndex: 0,
+          itemStyle: { color: '#cf1322', color0: '#389e0d', borderColor: '#cf1322', borderColor0: '#389e0d' },
+        },
+        {
+          name: '成交量',
+          type: 'bar',
+          data: volumes,
+          xAxisIndex: 1, yAxisIndex: 1,
+          itemStyle: {
+            color: function(p) {
+              const d = data[p.dataIndex];
+              return d.close >= d.open ? '#cf1322' : '#389e0d';
+            }
+          }
+        }
+      ]
+    });
+    statusEl.textContent = `${data.length} 条数据`;
+    statusEl.style.color = '#52c41a';
+  } catch (e) {
+    statusEl.textContent = '加载失败';
+    statusEl.style.color = '#ff4d4f';
+  }
 }
 
 // ==================== 列表页 ====================
@@ -924,6 +1022,8 @@ function switchTab(name) {
   document.getElementById('panel-' + name).style.display = 'block';
   if (name === 'financials') {
     loadFinancials();
+  } else if (name === 'chart') {
+    loadKline();
   } else if (name === 'balance') {
     loadBalanceSheet();
   } else if (name === 'income') {

@@ -1042,6 +1042,38 @@ def api_stock_balance_sheet(code):
     return jsonify(result)
 
 
+# ==================== K线图 API ====================
+
+@app.route("/api/stock/<code>/kline")
+def api_stock_kline(code):
+    """获取股票日K线数据（腾讯API，前复权）"""
+    days = request.args.get("days", 365, type=int)
+    market = "sh" if code.startswith(("6", "5", "9")) else "sz"
+    symbol = f"{market}{code}"
+
+    try:
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,{days},qfq"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        data = resp.json()
+        stock_data = data.get("data", {}).get(symbol, {})
+        raw = stock_data.get("day") or stock_data.get("qfqday") or []
+
+        result = []
+        for row in raw:
+            # row: [date, open, close, high, low, volume]
+            result.append({
+                "date": row[0],
+                "open": float(row[1]),
+                "close": float(row[2]),
+                "high": float(row[3]),
+                "low": float(row[4]),
+                "volume": float(row[5]) if len(row) > 5 else 0,
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ==================== 利润表 & 现金流量表 API（数据源：新浪财经） ====================
 
 # 利润表行映射
