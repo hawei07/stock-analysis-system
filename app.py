@@ -1083,14 +1083,23 @@ def api_stock_valuation(code):
         except Exception:
             pass
 
-        # 3. 计算 PE-TTM = 股价 / EPS（每年年报日）
+        # 3. 计算每日 PE-TTM：前复权股价 / 最新年报 EPS（向前填充）
+        pe_data = []
         if price_data:
-            price_map = {p["date"]: p["close"] for p in price_data}
-            for date_str, eps in sorted(eps_by_date.items()):
-                price = price_map.get(date_str)
-                if price and eps > 0:
-                    pe = round(price / eps, 2)
-                    pe_data.append({"date": date_str, "pe": pe, "eps": eps, "price": price})
+            eps_dates = sorted(eps_by_date.items())  # [(date, eps), ...]
+            for p in price_data:
+                p_date = p["date"]
+                # 找到 p_date 当天或之前的最新 EPS
+                latest_eps = None
+                for ed, eps in eps_dates:
+                    if ed <= p_date:
+                        latest_eps = eps
+                    else:
+                        break
+                if latest_eps and latest_eps > 0:
+                    pe = round(p["close"] / latest_eps, 2)
+                    if 0 < pe < 9999:  # 过滤异常值
+                        pe_data.append({"date": p_date, "pe": pe})
 
         # 3. 计算分位点
         pe_values = [p["pe"] for p in pe_data if p["pe"] > 0]
