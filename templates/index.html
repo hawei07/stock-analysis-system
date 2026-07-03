@@ -332,6 +332,20 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         <input type="number" id="incFromYear" value="2016" min="2000" max="2030" style="width:70px">
         <span style="font-size:13px">至</span>
         <input type="number" id="incToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <select id="incPeriod" onchange="onIncPeriodChange()" style="width:80px;margin-left:8px">
+          <option value="FY">年报</option>
+          <option value="all">季报</option>
+        </select>
+        <select id="incQuarter" style="width:80px;display:none" onchange="loadIncome()">
+          <option value="all">全部</option>
+          <option value="Q1">一季报</option>
+          <option value="Q2">中报</option>
+          <option value="Q3">三季报</option>
+        </select>
+        <select id="incView" style="width:80px;display:none" onchange="loadIncome()">
+          <option value="cumulative">累计</option>
+          <option value="single">单季度</option>
+        </select>
         <button class="btn btn-primary btn-sm" onclick="loadIncome()">查询</button>
         <input type="text" id="incCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadIncome()" onchange="loadIncome()">
         <button class="btn btn-success btn-sm" onclick="updateIncome()">更新数据</button>
@@ -347,6 +361,20 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         <input type="number" id="cfFromYear" value="2016" min="2000" max="2030" style="width:70px">
         <span style="font-size:13px">至</span>
         <input type="number" id="cfToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <select id="cfPeriod" onchange="onCfPeriodChange()" style="width:80px;margin-left:8px">
+          <option value="FY">年报</option>
+          <option value="all">季报</option>
+        </select>
+        <select id="cfQuarter" style="width:80px;display:none" onchange="loadCashflow()">
+          <option value="all">全部</option>
+          <option value="Q1">一季报</option>
+          <option value="Q2">中报</option>
+          <option value="Q3">三季报</option>
+        </select>
+        <select id="cfView" style="width:80px;display:none" onchange="loadCashflow()">
+          <option value="cumulative">累计</option>
+          <option value="single">单季度</option>
+        </select>
         <button class="btn btn-primary btn-sm" onclick="loadCashflow()">查询</button>
         <input type="text" id="cfCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadCashflow()" onchange="loadCashflow()">
         <button class="btn btn-success btn-sm" onclick="updateCashflow()">更新数据</button>
@@ -1896,229 +1924,250 @@ async function updateBalanceSheet() {
   }
 }
 
-// ==================== 利润表 ====================
-
-async function loadIncome() {
-  const code = document.getElementById('detailCode').textContent.trim();
-  if (!code) return;
-  const wrap = document.getElementById('tableIncomeWrap');
-  wrap.innerHTML = '<div class="empty">加载中...</div>';
-
-  try {
-    const res = await fetch(`/api/stock/${code}/income`);
-    const data = await res.json();
-    if (!data || data.length === 0) {
-      wrap.innerHTML = '<div class="empty">暂无利润表数据，请点击"更新数据"拉取</div>';
-      return;
-    }
-    // Build dataMap with fiscal_year keys
-    const dataMap = {}; const years = [];
-    for (const d of data) { dataMap[d.fiscal_year] = d; years.push(d.fiscal_year); }
-    years.sort((a, b) => b - a);
-    window._incDataMap = dataMap; window._incYears = years;
-    renderISCFTable(wrap, dataMap, years, getIncomeSections(), 'incMainTable');
-  } catch (e) {
-    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
-  }
-}
+// ==================== 利润表 & 现金流量表 (共享投资产负债表逻辑) ====================
 
 function getIncomeSections() {
   return [
-    { title: '收入', items: [
-      { name: '营业总收入', field: 'total_revenue', bold: true },
-      { name: '营业收入', field: 'operating_revenue' },
-    ]},
+    { title: '收入', items: [{ name: '营业总收入', field: 'total_revenue', bold: true }, { name: '营业收入', field: 'operating_revenue' }] },
     { title: '成本与费用', items: [
-      { name: '营业总成本', field: 'operating_cost', bold: true },
-      { name: '营业成本', field: 'cost_of_revenue' },
-      { name: '营业税金及附加', field: 'tax_surcharge' },
-      { name: '销售费用', field: 'selling_expense' },
-      { name: '管理费用', field: 'admin_expense' },
-      { name: '财务费用', field: 'finance_expense' },
-      { name: '研发费用', field: 'rd_expense' },
+      { name: '营业总成本', field: 'operating_cost', bold: true }, { name: '营业成本', field: 'cost_of_revenue' },
+      { name: '营业税金及附加', field: 'tax_surcharge' }, { name: '销售费用', field: 'selling_expense' },
+      { name: '管理费用', field: 'admin_expense' }, { name: '财务费用', field: 'finance_expense' }, { name: '研发费用', field: 'rd_expense' }
     ]},
-    { title: '其他收益', items: [
-      { name: '公允价值变动收益', field: 'fair_value_change' },
-      { name: '投资收益', field: 'invest_income' },
-    ]},
+    { title: '其他收益', items: [{ name: '公允价值变动收益', field: 'fair_value_change' }, { name: '投资收益', field: 'invest_income' }] },
     { title: '利润', items: [
-      { name: '营业利润', field: 'operating_profit', bold: true },
-      { name: '营业外收入', field: 'nonop_income' },
-      { name: '营业外支出', field: 'nonop_expense' },
-      { name: '利润总额', field: 'total_profit', bold: true },
-      { name: '所得税费用', field: 'income_tax' },
-      { name: '净利润', field: 'net_profit', bold: true },
-      { name: '归母净利润', field: 'parent_net_profit', bold: true },
-      { name: '少数股东损益', field: 'minority_profit' },
+      { name: '营业利润', field: 'operating_profit', bold: true }, { name: '营业外收入', field: 'nonop_income' },
+      { name: '营业外支出', field: 'nonop_expense' }, { name: '利润总额', field: 'total_profit', bold: true },
+      { name: '所得税费用', field: 'income_tax' }, { name: '净利润', field: 'net_profit', bold: true },
+      { name: '归母净利润', field: 'parent_net_profit', bold: true }, { name: '少数股东损益', field: 'minority_profit' }
     ]},
-    { title: '每股指标', items: [
-      { name: '基本每股收益(元)', field: 'basic_eps' },
-      { name: '稀释每股收益(元)', field: 'diluted_eps' },
-    ]},
+    { title: '每股指标', items: [{ name: '基本每股收益(元)', field: 'basic_eps' }, { name: '稀释每股收益(元)', field: 'diluted_eps' }] },
     { title: '综合收益', items: [
-      { name: '其他综合收益', field: 'other_comprehensive' },
-      { name: '综合收益总额', field: 'total_comprehensive', bold: true },
-      { name: '归母综合收益', field: 'parent_comprehensive' },
+      { name: '其他综合收益', field: 'other_comprehensive' }, { name: '综合收益总额', field: 'total_comprehensive', bold: true },
+      { name: '归母综合收益', field: 'parent_comprehensive' }
     ]},
   ];
-}
-
-async function updateIncome() {
-  const statusEl = document.getElementById('incStatus');
-  statusEl.textContent = '正在更新数据，请稍候...'; statusEl.style.color = '#1890ff';
-  try {
-    const res = await fetch('/api/update-income', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'incremental' }) });
-    const data = await res.json();
-    if (data.success) { statusEl.textContent = `更新完成: ${data.records_updated} 条`; statusEl.style.color = '#52c41a'; loadIncome(); }
-    else { statusEl.textContent = '更新失败: ' + (data.error || '未知错误'); statusEl.style.color = '#ff4d4f'; }
-  } catch (e) { statusEl.textContent = '请求失败: ' + e.message; statusEl.style.color = '#ff4d4f'; }
-}
-
-// ==================== 现金流量表 ====================
-
-async function loadCashflow() {
-  const code = document.getElementById('detailCode').textContent.trim();
-  if (!code) return;
-  const wrap = document.getElementById('tableCashflowWrap');
-  wrap.innerHTML = '<div class="empty">加载中...</div>';
-
-  try {
-    const res = await fetch(`/api/stock/${code}/cashflow`);
-    const data = await res.json();
-    if (!data || data.length === 0) {
-      wrap.innerHTML = '<div class="empty">暂无现金流量表数据，请点击"更新数据"拉取</div>';
-      return;
-    }
-    const dataMap = {}; const years = [];
-    for (const d of data) { dataMap[d.fiscal_year] = d; years.push(d.fiscal_year); }
-    years.sort((a, b) => b - a);
-    window._cfDataMap = dataMap; window._cfYears = years;
-    renderISCFTable(wrap, dataMap, years, getCashflowSections(), 'cfMainTable');
-  } catch (e) {
-    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
-  }
 }
 
 function getCashflowSections() {
   return [
     { title: '经营活动现金流', items: [
-      { name: '销售商品提供劳务收到的现金', field: 'cf_sales_goods' },
-      { name: '收到的税费返还', field: 'cf_tax_refund' },
-      { name: '收到其他与经营活动有关的现金', field: 'cf_other_oper_in' },
-      { name: '经营活动现金流入小计', field: 'cf_oper_inflow', bold: true },
-      { name: '购买商品接受劳务支付的现金', field: 'cf_buy_goods' },
-      { name: '支付给职工以及为职工支付的现金', field: 'cf_payroll' },
-      { name: '支付的各项税费', field: 'cf_tax_pay' },
-      { name: '支付其他与经营活动有关的现金', field: 'cf_other_oper_out' },
-      { name: '经营活动现金流出小计', field: 'cf_oper_outflow', bold: true },
-      { name: '经营活动现金流量净额', field: 'cf_oper_net', bold: true },
+      { name: '销售商品提供劳务收到的现金', field: 'cf_sales_goods' }, { name: '收到的税费返还', field: 'cf_tax_refund' },
+      { name: '收到其他与经营活动有关的现金', field: 'cf_other_oper_in' }, { name: '经营活动现金流入小计', field: 'cf_oper_inflow', bold: true },
+      { name: '购买商品接受劳务支付的现金', field: 'cf_buy_goods' }, { name: '支付给职工以及为职工支付的现金', field: 'cf_payroll' },
+      { name: '支付的各项税费', field: 'cf_tax_pay' }, { name: '支付其他与经营活动有关的现金', field: 'cf_other_oper_out' },
+      { name: '经营活动现金流出小计', field: 'cf_oper_outflow', bold: true }, { name: '经营活动现金流量净额', field: 'cf_oper_net', bold: true }
     ]},
     { title: '投资活动现金流', items: [
-      { name: '收回投资所收到的现金', field: 'cf_invest_withdraw' },
-      { name: '取得投资收益所收到的现金', field: 'cf_invest_income' },
-      { name: '处置固定资产等收回的现金', field: 'cf_dispose_assets' },
-      { name: '收到其他与投资活动有关的现金', field: 'cf_other_invest_in' },
-      { name: '投资活动现金流入小计', field: 'cf_invest_inflow', bold: true },
-      { name: '购建固定资产等支付的现金', field: 'cf_buy_assets' },
-      { name: '投资所支付的现金', field: 'cf_invest_pay' },
-      { name: '支付其他与投资活动有关的现金', field: 'cf_other_invest_out' },
-      { name: '投资活动现金流出小计', field: 'cf_invest_outflow', bold: true },
-      { name: '投资活动现金流量净额', field: 'cf_invest_net', bold: true },
+      { name: '收回投资所收到的现金', field: 'cf_invest_withdraw' }, { name: '取得投资收益所收到的现金', field: 'cf_invest_income' },
+      { name: '处置固定资产等收回的现金', field: 'cf_dispose_assets' }, { name: '收到其他与投资活动有关的现金', field: 'cf_other_invest_in' },
+      { name: '投资活动现金流入小计', field: 'cf_invest_inflow', bold: true }, { name: '购建固定资产等支付的现金', field: 'cf_buy_assets' },
+      { name: '投资所支付的现金', field: 'cf_invest_pay' }, { name: '支付其他与投资活动有关的现金', field: 'cf_other_invest_out' },
+      { name: '投资活动现金流出小计', field: 'cf_invest_outflow', bold: true }, { name: '投资活动现金流量净额', field: 'cf_invest_net', bold: true }
     ]},
     { title: '筹资活动现金流', items: [
-      { name: '吸收投资收到的现金', field: 'cf_finance_in' },
-      { name: '取得借款收到的现金', field: 'cf_borrow' },
-      { name: '发行债券收到的现金', field: 'cf_bond' },
-      { name: '收到其他与筹资活动有关的现金', field: 'cf_other_finance_in' },
-      { name: '筹资活动现金流入小计', field: 'cf_finance_inflow', bold: true },
-      { name: '偿还债务支付的现金', field: 'cf_repay_debt' },
-      { name: '分配股利利润或偿付利息', field: 'cf_dividend_interest' },
-      { name: '支付其他与筹资活动有关的现金', field: 'cf_other_finance_out' },
-      { name: '筹资活动现金流出小计', field: 'cf_finance_outflow', bold: true },
-      { name: '筹资活动现金流量净额', field: 'cf_finance_net', bold: true },
+      { name: '吸收投资收到的现金', field: 'cf_finance_in' }, { name: '取得借款收到的现金', field: 'cf_borrow' },
+      { name: '发行债券收到的现金', field: 'cf_bond' }, { name: '收到其他与筹资活动有关的现金', field: 'cf_other_finance_in' },
+      { name: '筹资活动现金流入小计', field: 'cf_finance_inflow', bold: true }, { name: '偿还债务支付的现金', field: 'cf_repay_debt' },
+      { name: '分配股利利润或偿付利息', field: 'cf_dividend_interest' }, { name: '支付其他与筹资活动有关的现金', field: 'cf_other_finance_out' },
+      { name: '筹资活动现金流出小计', field: 'cf_finance_outflow', bold: true }, { name: '筹资活动现金流量净额', field: 'cf_finance_net', bold: true }
     ]},
   ];
 }
 
-function renderISCFTable(wrap, dataMap, years, sections, tableId) {
-  let html = `<table class="fin-table" id="${tableId}"><thead><tr>`;
-  html += '<th class="sticky-col sticky-header" rowspan="1">科目</th>';
-  for (const y of years) html += `<th class="sticky-header year-header">${y}</th>`;
+function onIncPeriodChange() {
+  const p = document.getElementById('incPeriod').value;
+  document.getElementById('incQuarter').style.display = p === 'all' ? 'inline-block' : 'none';
+  document.getElementById('incView').style.display = p === 'all' ? 'inline-block' : 'none';
+  loadIncome();
+}
+function onCfPeriodChange() {
+  const p = document.getElementById('cfPeriod').value;
+  document.getElementById('cfQuarter').style.display = p === 'all' ? 'inline-block' : 'none';
+  document.getElementById('cfView').style.display = p === 'all' ? 'inline-block' : 'none';
+  loadCashflow();
+}
+
+// Generic load: prefix → {fromId, toId, periodId, quarterId, viewId, cmpId, wrapId, api, sectionsFn, tableId, statusId}
+const _financeTables = {
+  inc: { fromId:'incFromYear', toId:'incToYear', periodId:'incPeriod', quarterId:'incQuarter', viewId:'incView', cmpId:'incCompare', wrapId:'tableIncomeWrap', api:'income', sectionsFn:getIncomeSections, tableId:'incMainTable', statusId:'incStatus', dataVar:'_incDataMap', keysVar:'_incKeys', cmpDataVar:'_incCmpDataMap', cmpKeysVar:'_incCmpKeys', cmpCodeVar:'_incCmpCode', cmpNameVar:'_incCmpName' },
+  cf:  { fromId:'cfFromYear', toId:'cfToYear', periodId:'cfPeriod', quarterId:'cfQuarter', viewId:'cfView', cmpId:'cfCompare', wrapId:'tableCashflowWrap', api:'cashflow', sectionsFn:getCashflowSections, tableId:'cfMainTable', statusId:'cfStatus', dataVar:'_cfDataMap', keysVar:'_cfKeys', cmpDataVar:'_cfCmpDataMap', cmpKeysVar:'_cfCmpKeys', cmpCodeVar:'_cfCmpCode', cmpNameVar:'_cfCmpName' },
+};
+
+async function loadFinanceTable(prefix) {
+  const t = _financeTables[prefix]; if (!t) return;
+  const code = document.getElementById('detailCode').textContent.trim(); if (!code) return;
+  const from = document.getElementById(t.fromId).value;
+  const to = document.getElementById(t.toId).value;
+  const period = document.getElementById(t.periodId).value;
+  const quarter = document.getElementById(t.quarterId).value;
+  const view = document.getElementById(t.viewId).value;
+  const actualPeriod = period === 'all' ? quarter : period;
+  const cmpCodeRaw = document.getElementById(t.cmpId).value.trim();
+  const cmpCode = await resolveStockCode(cmpCodeRaw);
+  const wrap = document.getElementById(t.wrapId);
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+
+  try {
+    const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
+    const res = await fetch(`/api/stock/${code}/${t.api}?${params}`);
+    let data = await res.json();
+
+    let cmpData = null, cmpName = '';
+    if (cmpCode && cmpCode !== code) {
+      try {
+        const cmpRes = await fetch(`/api/stock/${cmpCode}/${t.api}?${params}`);
+        cmpData = await cmpRes.json();
+        const infoRes = await fetch('/api/stock/' + cmpCode);
+        const info = await infoRes.json();
+        if (!info.error) cmpName = info.name;
+      } catch {}
+    }
+    if (!data || data.length === 0) {
+      wrap.innerHTML = '<div class="empty">暂无数据，请点击"更新数据"拉取</div>';
+      return;
+    }
+    renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t);
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
+  const yoyClass = (y) => { if (y == null) return 'fin-yoy-neutral'; return y > 0 ? 'fin-yoy-up' : (y < 0 ? 'fin-yoy-down' : 'fin-yoy-neutral'); };
+  const yoyFmt = (y) => { if (y == null) return '-'; return y.toFixed(1) + '%'; };
+
+  const periods = new Set(data.map(d => d.report_period || 'FY'));
+  const isQuarterly = !(periods.size === 1 && periods.has('FY'));
+
+  const makeKey = (d) => { const rp = d.report_period || 'FY'; return isQuarterly ? d.fiscal_year + '|' + rp : d.fiscal_year + ''; };
+  const makePrevKey = (key) => { if (!isQuarterly) return (parseInt(key) - 1) + ''; const [yr, rp] = key.split('|'); return (parseInt(yr) - 1) + '|' + rp; };
+
+  const keys = data.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
+  if (!isQuarterly) keys.sort((a, b) => parseInt(b) - parseInt(a));
+  const dataMap = {}; for (const d of data) dataMap[makeKey(d)] = d;
+  const years = [...new Set(data.map(d => d.fiscal_year))].sort((a, b) => b - a);
+
+  const sections = t.sectionsFn();
+  const allFields = []; for (const sec of sections) for (const it of sec.items) allFields.push(it.field);
+
+  // YoY
+  const yoyMap = {};
+  for (const key of keys) { const d = dataMap[key]; const prevKey = makePrevKey(key); const prev = dataMap[prevKey]; yoyMap[key] = {}; for (const f of allFields) { const cur = d[f]; if (cur == null || !prev || prev[f] == null || prev[f] === 0) { yoyMap[key][f] = null; continue; } yoyMap[key][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100; } }
+
+  // Comparison
+  let cmpDataMap = {}, cmpKeys = [], cmpYoyMap = {};
+  if (cmpData && cmpData.length > 0) {
+    for (const d of cmpData) cmpDataMap[makeKey(d)] = d;
+    cmpKeys = cmpData.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
+    for (const key of cmpKeys) { const d = cmpDataMap[key]; const prevKey = makePrevKey(key); const prev = cmpDataMap[prevKey]; cmpYoyMap[key] = {}; for (const f of allFields) { const cur = d[f]; if (cur == null || !prev || prev[f] == null || prev[f] === 0) { cmpYoyMap[key][f] = null; continue; } cmpYoyMap[key][f] = (cur - prev[f]) / Math.abs(prev[f]) * 100; } }
+  }
+
+  const hasCmp = cmpData && cmpData.length > 0;
+  let html = '';
+  if (hasCmp) {
+    const sn = document.getElementById('detailName').textContent.trim();
+    html += `<div style="margin-bottom:8px;font-size:14px;font-weight:600;color:#1a1a2e">${sn}  vs  ${cmpName} (${cmpCode})</div>`;
+  }
+  const keyLabels = keys.map(k => { if (!isQuarterly) return k; const [yr, rp] = k.split('|'); return periods.size > 1 ? yr + '-' + rp : yr; });
+
+  html += `<table class="fin-table" id="${t.tableId}"><thead><tr>`;
+  html += '<th class="sticky-col sticky-header" rowspan="2">科目</th>';
+  for (const lbl of keyLabels) html += `<th class="sticky-header year-header" colspan="2">${lbl}</th>`;
+  html += '</tr><tr>';
+  for (const lbl of keyLabels) { html += '<th class="sticky-header sub-header">原值</th>'; html += '<th class="sticky-header sub-header">同比%</th>'; }
   html += '</tr></thead><tbody>';
+
   html += '<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">单位：亿元</td>';
-  for (const y of years) html += '<td style="text-align:center;background:#fafafa">亿元</td>';
+  for (const k of keys) { html += '<td style="text-align:center;background:#fafafa">亿元</td>'; html += '<td style="text-align:center;background:#fafafa">%</td>'; }
   html += '</tr>';
 
   for (const section of sections) {
-    html += `<tr class="section-row"><td class="sticky-col" style="background:#e6f0ff;font-weight:700;font-size:13px;color:#1a1a2e" colspan="${years.length + 1}">${section.title}</td></tr>`;
+    html += `<tr class="section-row"><td class="sticky-col" style="background:#e6f0ff;font-weight:700;font-size:13px;color:#1a1a2e" colspan="${keys.length * 2 + 1}">${section.title}</td></tr>`;
     for (const item of section.items) {
-      const boldStyle = item.bold ? 'font-weight:600;' : '';
-      html += `<tr><td class="sticky-col" style="${boldStyle}">${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" data-table="${tableId}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
-      for (const y of years) {
-        const d = dataMap[y]; const val = d ? d[item.field] : null;
-        let display = '-';
-        if (val != null) display = Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2);
-        html += `<td style="text-align:right;${boldStyle}">${display}</td>`;
-      }
+      const bs = item.bold ? 'font-weight:600;' : '';
+      html += `<tr><td class="sticky-col" style="${bs}"${hasCmp ? ' rowspan="2"' : ''}>${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" data-prefix="${prefix}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
+      for (const k of keys) { const d = dataMap[k]; const val = d ? d[item.field] : null; const yoy = yoyMap[k] ? yoyMap[k][item.field] : null; html += `<td style="text-align:right;${bs}">${val != null ? (Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2)) : '-'}</td>`; html += `<td class="${yoyClass(yoy)}" style="text-align:right">${yoyFmt(yoy)}</td>`; }
       html += '</tr>';
+      if (hasCmp) {
+        html += '<tr style="background:#fff7e6;color:#fa8c16">';
+        for (const k of keys) { const d = cmpDataMap[k]; const val = d ? d[item.field] : null; const yoy = cmpYoyMap[k] ? cmpYoyMap[k][item.field] : null; html += `<td style="text-align:right;background:#fff7e6;color:#fa8c16;${bs}">${val != null ? (Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2)) : '-'}</td>`; html += `<td class="${yoyClass(yoy)}" style="background:#fff7e6;text-align:right">${yoyFmt(yoy)}</td>`; }
+        html += '</tr>';
+      }
     }
   }
   html += '</tbody></table>';
   wrap.innerHTML = html;
 
+  window[t.dataVar] = dataMap; window[t.keysVar] = keys;
+  window[t.cmpDataVar] = cmpDataMap; window[t.cmpKeysVar] = cmpKeys;
+  window[t.cmpCodeVar] = cmpCode; window[t.cmpNameVar] = cmpName;
+
   wrap.querySelectorAll('.chart-icon').forEach(icon => {
     icon.addEventListener('click', function(e) {
       e.stopPropagation();
-      openFinanceChart(this.dataset.field, this.dataset.name, this.dataset.table);
+      openFinanceChart(this.dataset.field, this.dataset.name, this.dataset.prefix);
     });
   });
 }
 
-function openFinanceChart(field, name, tableId) {
-  let dataMap, years;
-  if (tableId === 'incMainTable') { dataMap = window._incDataMap; years = window._incYears; }
-  else if (tableId === 'cfMainTable') { dataMap = window._cfDataMap; years = window._cfYears; }
-  if (!dataMap || !years) return;
+function openFinanceChart(field, name, prefix) {
+  const t = _financeTables[prefix]; if (!t) return;
+  const dataMap = window[t.dataVar]; const keys = window[t.keysVar];
+  const cmpDataMap = window[t.cmpDataVar]; const cmpCode = window[t.cmpCodeVar]; const cmpName = window[t.cmpNameVar];
+  if (!dataMap || !keys) return;
 
   const stockName = document.getElementById('detailName').textContent.trim();
   let title = stockName + ' - ' + name;
-  const sortedYears = [...years].sort((a, b) => a - b);
-  const values = sortedYears.map(y => { const d = dataMap[y]; return d && d[field] != null ? d[field] : null; });
+  const sortedKeys = [...keys].sort((a, b) => a.localeCompare(b));
+  const labels = sortedKeys.map(k => { if (k.indexOf('|') === -1) return k; const [yr, rp] = k.split('|'); return yr + '-' + rp; });
+  const values = sortedKeys.map(k => { const d = dataMap[k]; return d && d[field] != null ? d[field] : null; });
+  const yoyValues = sortedKeys.map((k, i) => { if (i === 0) return null; const cur = values[i]; const prev = values[i - 1]; if (cur == null || prev == null || prev === 0) return null; return parseFloat(((cur - prev) / Math.abs(prev) * 100).toFixed(2)); });
 
   const cleanVals = values.filter(v => v != null);
-  if (cleanVals.length >= 2 && cleanVals[0] !== 0) {
-    const firstV = cleanVals[0], lastV = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1;
-    title += ' (CAGR: ' + ((Math.pow(lastV / firstV, 1 / n) - 1) * 100).toFixed(2) + '%)';
-  }
+  if (cleanVals.length >= 2 && cleanVals[0] !== 0) { const fv = cleanVals[0], lv = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1; title += ' (CAGR: ' + ((Math.pow(lv / fv, 1 / n) - 1) * 100).toFixed(2) + '%)'; }
+
+  let cmpValues = null;
+  if (cmpDataMap) cmpValues = sortedKeys.map(k => { const d = cmpDataMap[k]; return d && d[field] != null ? d[field] : null; });
+  if (cmpValues && cmpValues.some(v => v != null)) { title += ' vs ' + (cmpName || cmpCode); const cc = cmpValues.filter(v => v != null); if (cc.length >= 2 && cc[0] !== 0) { const fv = cc[0], lv = cc[cc.length - 1], n = cc.length - 1; title += ' (CAGR: ' + ((Math.pow(lv / fv, 1 / n) - 1) * 100).toFixed(2) + '%)'; } }
 
   document.getElementById('chartModalTitle').textContent = title;
   document.getElementById('chartModalOverlay').classList.add('active');
   const dom = document.getElementById('chartModalBox');
-  const existing = echarts.getInstanceByDom(dom);
-  if (existing) existing.dispose();
-  const chart = echarts.init(dom);
+  const existing = echarts.getInstanceByDom(dom); if (existing) existing.dispose();
+  const chart = echarts.init(dom); const series = [];
+  series.push({ name: stockName, type: 'bar', data: values, yAxisIndex: 0, itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] }, label: { show: true, position: 'top', fontSize: 11, formatter(p) { if (p.value == null) return ''; return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2); } } });
+  if (cmpValues) series.push({ name: cmpName || cmpCode, type: 'bar', data: cmpValues, yAxisIndex: 0, itemStyle: { color: '#fa8c16', borderRadius: [4, 4, 0, 0] }, label: { show: true, position: 'top', fontSize: 11, formatter(p) { if (p.value == null) return ''; return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2); } } });
+  if (sortedKeys.length > 1 && yoyValues.some(v => v != null)) series.push({ name: 'YoY%', type: 'line', data: yoyValues, yAxisIndex: 1, lineStyle: { color: '#52c41a', width: 2, type: 'dashed' }, itemStyle: { color: '#52c41a' }, symbol: 'circle', symbolSize: 5, label: { show: true, position: 'top', fontSize: 10, color: '#52c41a', formatter(p) { if (p.value == null) return ''; return p.value.toFixed(1) + '%'; } } });
   chart.setOption({
-    tooltip: { trigger: 'axis', formatter: function(params) { const p = params[0]; return p.value == null ? p.axisValue + '<br/>无数据' : p.axisValue + '<br/>' + name + ': ' + p.value.toFixed(2) + ' 亿元'; } },
-    grid: { left: 60, right: 30, top: 20, bottom: 40 },
-    xAxis: { type: 'category', data: sortedYears, name: '年份', nameLocation: 'middle', nameGap: 30 },
-    yAxis: { type: 'value', name: '亿元' },
-    series: [{ type: 'line', data: values, smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, label: { show: true, position: 'top', fontSize: 11, formatter: function(p) { if (p.value == null) return ''; return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2); } } }]
+    tooltip: { trigger: 'axis', formatter(ps) { let h = '<strong>' + ps[0].axisValue + '</strong><br/>'; for (const p of ps) { h += p.marker + ' ' + p.seriesName + ': ' + (p.value != null ? (p.seriesName === 'YoY%' ? p.value.toFixed(1) + '%' : p.value.toFixed(2) + ' 亿元') : '-') + '<br/>'; } return h; } },
+    grid: { left: 60, right: 80, top: 20, bottom: 40 },
+    xAxis: { type: 'category', data: labels, name: '年份', nameLocation: 'middle', nameGap: 30 },
+    yAxis: [{ type: 'value', name: '亿元' }, { type: 'value', name: '%', axisLabel: { formatter: '{value}%' } }],
+    series
   });
   window._chartModalInstance = chart;
 }
 
-async function updateCashflow() {
-  const statusEl = document.getElementById('cfStatus');
+async function loadIncome() { loadFinanceTable('inc'); }
+async function loadCashflow() { loadFinanceTable('cf'); }
+
+async function updateIncome() { updateFinanceTable('inc', '/api/update-income'); }
+async function updateCashflow() { updateFinanceTable('cf', '/api/update-cashflow'); }
+
+async function updateFinanceTable(prefix, apiUrl) {
+  const t = _financeTables[prefix]; if (!t) return;
+  const statusEl = document.getElementById(t.statusId);
   statusEl.textContent = '正在更新数据，请稍候...'; statusEl.style.color = '#1890ff';
   try {
-    const res = await fetch('/api/update-cashflow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'incremental' }) });
+    const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'incremental' }) });
     const data = await res.json();
-    if (data.success) { statusEl.textContent = `更新完成: ${data.records_updated} 条`; statusEl.style.color = '#52c41a'; loadCashflow(); }
-    else { statusEl.textContent = '更新失败: ' + (data.error || '未知错误'); statusEl.style.color = '#ff4d4f'; }
+    if (data.success) { statusEl.textContent = `更新完成: ${data.records_updated} 条`; statusEl.style.color = '#52c41a'; loadFinanceTable(prefix); }
+    else { statusEl.textContent = '更新失败'; statusEl.style.color = '#ff4d4f'; }
   } catch (e) { statusEl.textContent = '请求失败: ' + e.message; statusEl.style.color = '#ff4d4f'; }
 }
 
-// ==================== 工具函数 ====================
+// ==================== 指标趋势图弹窗 ====================
 
 function showToast(msg, type) {
   const t = document.getElementById('toast');

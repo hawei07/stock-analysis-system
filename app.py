@@ -1207,9 +1207,22 @@ def _upsert_finance(stock_code, all_years, columns, table):
 
 @app.route("/api/stock/<code>/income")
 def api_stock_income(code):
+    period = request.args.get("period", "FY")
+    view = request.args.get("view", "cumulative")
+    from_year = request.args.get("from_year", 2000, type=int)
+    to_year = request.args.get("to_year", 2030, type=int)
+
+    where_period = "AND report_period = %s"
+    if period == "all":
+        where_period = ""
+    elif period != "FY":
+        where_period = "AND report_period = %s"
+
     rows = execute_query(
-        "SELECT * FROM income_statements WHERE stock_code=%s ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC",
-        (code,)
+        f"""SELECT * FROM income_statements
+           WHERE stock_code=%s AND fiscal_year BETWEEN %s AND %s {where_period}
+           ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC""",
+        (code, from_year, to_year, period) if where_period else (code, from_year, to_year)
     )
     result = []
     for r in rows:
@@ -1259,9 +1272,22 @@ def api_update_income():
 
 @app.route("/api/stock/<code>/cashflow")
 def api_stock_cashflow(code):
+    period = request.args.get("period", "FY")
+    view = request.args.get("view", "cumulative")
+    from_year = request.args.get("from_year", 2000, type=int)
+    to_year = request.args.get("to_year", 2030, type=int)
+
+    where_period = "AND report_period = %s"
+    if period == "all":
+        where_period = ""
+    elif period != "FY":
+        where_period = "AND report_period = %s"
+
     rows = execute_query(
-        "SELECT * FROM cash_flows WHERE stock_code=%s ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC",
-        (code,)
+        f"""SELECT * FROM cash_flows
+           WHERE stock_code=%s AND fiscal_year BETWEEN %s AND %s {where_period}
+           ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC""",
+        (code, from_year, to_year, period) if where_period else (code, from_year, to_year)
     )
     result = []
     for r in rows:
