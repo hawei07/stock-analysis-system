@@ -2488,35 +2488,58 @@ document.addEventListener('keydown', function(e) {
 
 // ==================== 数据更新 ====================
 
-async function updateAll() {
+function updateAll() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="width:360px">
+      <div class="modal-header">
+        <h3>选择更新模式</h3>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="text-align:center;padding:32px 24px">
+        <p style="margin-bottom:20px;color:#666;font-size:14px">增量更新：仅补全缺失年份的数据（快速）<br>全量更新：重新获取所有历史数据（较慢）</p>
+      </div>
+      <div class="modal-footer" style="justify-content:center;gap:16px">
+        <button class="btn btn-outline" id="btnIncremental">增量更新</button>
+        <button class="btn btn-primary" id="btnFull">全量更新</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-close').onclick = close;
+  overlay.onclick = e => { if (e.target === overlay) close(); };
+  overlay.querySelector('#btnIncremental').onclick = () => { close(); doUpdateAll('incremental'); };
+  overlay.querySelector('#btnFull').onclick = () => { close(); doUpdateAll('full'); };
+}
+
+async function doUpdateAll(mode) {
   const btn = document.getElementById('btnUpdate');
   btn.disabled = true;
   btn.textContent = '\u27f3 更新中...';
+  const label = mode === 'incremental' ? '增量' : '全量';
+  showToast('正在' + label + '更新全部数据，请稍候...', 'success');
   const apis = [
-    { name: '\u5206\u7ea2', url: '/api/update-dividends' },
-    { name: '\u8d22\u62a5', url: '/api/update-financials' },
-    { name: '\u8d44\u4ea7\u8d1f\u503a\u8868', url: '/api/update-balance-sheet' },
-    { name: '\u5229\u6da6\u8868', url: '/api/update-income' },
-    { name: '\u73b0\u91d1\u6d41\u91cf\u8868', url: '/api/update-cashflow' },
+    { name: '分红', url: '/api/update-dividends' },
+    { name: '财报', url: '/api/update-financials' },
+    { name: '资产负债表', url: '/api/update-balance-sheet' },
+    { name: '利润表', url: '/api/update-income' },
+    { name: '现金流量表', url: '/api/update-cashflow' },
   ];
   let msgs = [];
   for (const api of apis) {
     try {
-      const res = await fetch(api.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'incremental' })
-      });
+      const res = await fetch(api.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
       const data = await res.json();
       if (data.success) msgs.push(api.name + ': ' + (data.records_updated || data.message || 'OK'));
-      else msgs.push(api.name + ': \u5931\u8d25');
+      else msgs.push(api.name + ': 失败');
     } catch (e) {
-      msgs.push(api.name + ': \u7f51\u7edc\u9519\u8bef');
+      msgs.push(api.name + ': 网络错误');
     }
   }
-  showToast('\u66f4\u65b0\u5b8c\u6210: ' + msgs.join(' | '), 'success');
+  showToast(label + '更新完成: ' + msgs.join(' | '), 'success');
   btn.disabled = false;
-  btn.textContent = '\u27f3 \u66f4\u65b0\u6570\u636e';
+  btn.textContent = '\u27f3 更新数据';
 }
 
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
