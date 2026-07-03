@@ -889,7 +889,7 @@ async function loadValuation(days) {
         { type: 'value', name: '股价(元)', splitLine: { show: false } }
       ],
       series: [
-        { name: 'PE-TTM', type: 'line', data: peValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', markPoint: { data: [{ type: 'max', name: '当前', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#4a6cf7' }, label: { formatter: '{c}' } }] } },
+        { name: 'PE-TTM', type: 'line', data: peValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', markPoint: { data: [{ type: 'max', name: '最高', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#4a6cf7' }, label: { formatter: '{c}' } }, { type: 'min', name: '最低', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#389e0d' }, label: { formatter: '{c}' } }] } },
         { name: '80%分位', type: 'line', data: p80Line, yAxisIndex: 0, lineStyle: { color: '#cf1322', type: 'dashed', width: 1 }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
         { name: '50%分位', type: 'line', data: p50Line, yAxisIndex: 0, lineStyle: { color: '#666', type: 'dashed', width: 1 }, itemStyle: { color: '#666' }, symbol: 'none' },
         { name: '20%分位', type: 'line', data: p20Line, yAxisIndex: 0, lineStyle: { color: '#389e0d', type: 'dashed', width: 1 }, itemStyle: { color: '#389e0d' }, symbol: 'none' },
