@@ -1157,6 +1157,13 @@ def _parse_sina_finance(html, row_map, target_year=None):
             if target_year is not None and col_year != target_year:
                 continue
 
+            # Map month to report_period: 12→FY, 09→Q3, 06→Q2, 03→Q1, else→FY
+            m = _re.match(r'\d{4}-(\d{2})-\d{2}', col_date)
+            month = int(m.group(1)) if m else 12
+            rp_map = {12: 'FY', 9: 'Q3', 6: 'Q2', 3: 'Q1'}
+            rp = rp_map.get(month, 'FY')
+            composite_key = (col_year, rp)
+
             values = {}
             for r in rows:
                 cells = _re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', r, _re.DOTALL)
@@ -1177,19 +1184,16 @@ def _parse_sina_finance(html, row_map, target_year=None):
                         break
 
             if values:
-                existing = all_year_data.get(col_year)
-                if existing is None or col_date > (all_year_data.get(f"_max_date_{col_year}", "")):
-                    all_year_data[col_year] = values
-                    all_year_data[f"_max_date_{col_year}"] = col_date
+                all_year_data[composite_key] = values
 
     if target_year is not None:
-        return all_year_data.get(target_year)
+        return {k: v for k, v in all_year_data.items() if k[0] == target_year}
     return all_year_data
 
 
 def _upsert_finance(stock_code, all_years, columns, table):
-    """通用财报数据写入"""
-    for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
+    """通用财报数据写入。all_years: {(year, report_period): {col: val}}"""
+    for (year, rp), values in sorted(all_years.items()):
         placeholders = ", ".join(["%s"] * len(columns))
         col_names = ", ".join(columns)
         update_clause = ", ".join([f"{c}=VALUES({c})" for c in columns])
@@ -1199,7 +1203,7 @@ def _upsert_finance(stock_code, all_years, columns, table):
             f"VALUES (%s, %s, %s, {placeholders}) "
             f"ON DUPLICATE KEY UPDATE {update_clause}"
         )
-        params = [stock_code, year, 'FY'] + [values.get(c) for c in columns]
+        params = [stock_code, year, rp] + [values.get(c) for c in columns]
         execute_query(sql, tuple(params), fetch=False)
 
 
@@ -1256,10 +1260,10 @@ def api_update_income():
                 for r in execute_query("SELECT fiscal_year FROM income_statements WHERE stock_code=%s", (code,)):
                     existing.add(r["fiscal_year"])
 
-            for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
+            for (year, rp), values in sorted(all_years.items()):
                 if mode == "incremental" and year in existing:
                     continue
-                _upsert_finance(code, {year: values}, INCOME_COLUMNS, "income_statements")
+                _upsert_finance(code, {(year, rp): values}, INCOME_COLUMNS, "income_statements")
                 updated += 1
         except Exception as e:
             errors.append(f"{code}: {str(e)}")
@@ -1321,10 +1325,10 @@ def api_update_cashflow():
                 for r in execute_query("SELECT fiscal_year FROM cash_flows WHERE stock_code=%s", (code,)):
                     existing.add(r["fiscal_year"])
 
-            for year, values in sorted((k, v) for k, v in all_years.items() if isinstance(k, int)):
+            for (year, rp), values in sorted(all_years.items()):
                 if mode == "incremental" and year in existing:
                     continue
-                _upsert_finance(code, {year: values}, CASHFLOW_COLUMNS, "cash_flows")
+                _upsert_finance(code, {(year, rp): values}, CASHFLOW_COLUMNS, "cash_flows")
                 updated += 1
         except Exception as e:
             errors.append(f"{code}: {str(e)}")
