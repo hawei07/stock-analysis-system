@@ -397,6 +397,8 @@ let totalPages = 1;
 let searchTimer = null;
 let chartInstance = null;
 
+let currentTab = 'dividends';
+
 // ==================== 路由 ====================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -445,8 +447,7 @@ function showDetailView(code) {
   document.getElementById('view-list').classList.remove('active');
   document.getElementById('view-detail').classList.add('active');
   document.getElementById('btnBack').style.display = 'inline-block';
-  // 重置到分红标签
-  switchTab('dividends');
+  switchTab(currentTab);
   loadDetail(code);
 }
 
@@ -898,6 +899,7 @@ async function populateStockSwitcher(currentCode) {
 }
 
 function switchTab(name) {
+  currentTab = name;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector('[data-tab="' + name + '"]').classList.add('active');
   document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
