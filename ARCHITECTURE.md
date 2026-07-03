@@ -11,7 +11,7 @@ AIGC:
 
 # 股票分析系统 — 业务逻辑与技术架构总结
 
-> 版本 v2.0 | 2026-07-02 | Python Flask + MySQL 8.4
+> 版本 v2.2 | 2026-07-02 | Python Flask + MySQL 8.4
 
 ---
 
@@ -235,9 +235,8 @@ AIGC:
 |------|------|------|------|
 | `page` | int | 1 | 页码 |
 | `page_size` | int | 15 | 每页条数 |
-| `market` | string | — | 市场筛选：SH / SZ / BJ |
-| `status` | string | — | 状态筛选 |
-| `keyword` | string | — | 代码或名称模糊搜索 |
+| `keyword` | string | — | 代码或名称模糊搜索（支持名称拼音/汉字搜索） |
+| `search_type` | string | `code` | 搜索模式：`code`=代码搜索、`name`=名称搜索 |
 
 **响应**：
 
@@ -267,22 +266,19 @@ AIGC:
 
 #### POST /api/stock
 
-新增股票。必填字段：`code`、`name`、`market`。
+新增股票。只需提供 `code`，名称和市场通过东方财富 API 自动获取。
 
 **请求体**：
 
 ```json
 {
-  "code": "600000",
-  "name": "浦发银行",
-  "market": "SH",
-  "industry": "银行",
-  "list_date": "1999-11-10",
-  "status": "正常"
+  "code": "600000"
 }
 ```
 
-**成功响应**：`201` + `{"success": true, "message": "添加成功"}`
+> 支持输入 6 位代码或股票名称，后端自动匹配并填充 name/market。
+
+**成功响应**：`201` + `{"success": true, "message": "添加成功: 浦发银行(600000)"}`
 
 #### PUT /api/stock/<code>
 
@@ -506,13 +502,13 @@ AIGC:
 ### 5.1 股票管理核心流程
 
 ```
-添加 → 前端表单 → POST /api/stock → 参数校验(market ∈ {SH,SZ,BJ})
+添加 → 前端表单(仅需输入代码) → POST /api/stock → 后端自动获取名称/市场
                                          → Stock.add() → INSERT
                                          → 返回 201
 
-查询 → 列表页加载 → GET /api/stocks?page=&keyword=&market=&status=
+查询 → 列表页加载 → GET /api/stocks?page=&keyword=
                      → 动态拼接 WHERE + LIMIT/OFFSET
-                     → 返回分页数据
+                     → 返回分页数据（关键字支持代码/名称模糊搜索）
 
 编辑 → 点击编辑 → GET /api/stock/<code> 获取详情 → 修改字段
                   → PUT /api/stock/<code> → 白名单字段校验
@@ -523,22 +519,21 @@ AIGC:
 
 ### 5.2 数据过滤规则
 
-- **市场**：精确匹配，SH=上海、SZ=深圳、BJ=北京
-- **关键字搜索**：同时对 `code` 和 `name` 做模糊匹配（LIKE %xxx%）
-- **状态**：精确匹配 ENUM 值
+- **关键字搜索**：同时对 `code` 和 `name` 做模糊匹配（LIKE %xxx%），支持股票名称拼音搜索
 - **分页**：默认每页 15 条，超范围页码自动由 `total_pages` 限制
 
-### 5.3 连接的线程安全
+### 5.3 添加股票
 
-- 每次请求从连接池获取连接，`try-finally` 确保归还
-- 连接池大小 `pool_size=5`，适合单机小规模并发
+- 弹窗只需输入股票代码（支持 6 位代码或名称搜索），名称和市-场通过东方财富 API 自动获取
+- 编辑时 code 字段锁定（不可修改主键）
+- 操作结果 Toast 提示（2.5 秒自动消失）
 
 ### 5.4 前端交互逻辑
 
 - 搜索框 400ms 防抖，减少无效请求
-- 编辑时 code 字段锁定（不可修改主键）
+- 详情页切换股票时保留当前标签页（分红/自定义财报/资产负债表）
+- 图表弹窗复用共享模态窗，对比股票时显示双方 CAGR
 - 删除前 `confirm()` 二次确认
-- 操作结果 Toast 提示（2.5 秒自动消失）
 - 添加股票支持输入代码或名称，自动匹配
 - 详情页顶部下拉框可切换自选股
 
