@@ -854,16 +854,16 @@ async function loadValuation(days) {
     const peFiltered = data.pe_data.filter(p => p.date >= cutoff);
     const priceFiltered = data.price_data.filter(p => p.date >= cutoff);
 
-    // Build chart
-    const peDates = peFiltered.map(p => p.date);
-    const peValues = peFiltered.map(p => p.pe);
-    const priceDates = priceFiltered.map(p => p.date);
+    // Build chart - use price dates as unified x-axis, align PE via date map
+    const peMap = {}; peFiltered.forEach(p => peMap[p.date] = p.pe);
+    const dates = priceFiltered.map(p => p.date);
+    const peValues = dates.map(d => peMap[d] != null ? peMap[d] : null);
     const priceValues = priceFiltered.map(p => p.close);
 
-    // Percentile lines (constant across the date range)
-    const p80Line = peDates.map(() => data.p80);
-    const p50Line = peDates.map(() => data.p50);
-    const p20Line = peDates.map(() => data.p20);
+    // Percentile lines
+    const p80Line = dates.map(() => data.p80);
+    const p50Line = dates.map(() => data.p50);
+    const p20Line = dates.map(() => data.p20);
 
     if (valInstance) valInstance.dispose();
     valInstance = echarts.init(dom);
@@ -871,10 +871,10 @@ async function loadValuation(days) {
       tooltip: { trigger: 'axis' },
       legend: { data: ['PE-TTM', '80%分位', '50%分位', '20%分位', '股价(前复权)'], top: 4 },
       grid: { left: 60, right: 80, top: 40, bottom: 30 },
-      xAxis: { type: 'category', data: priceDates, axisLabel: { formatter: v => v.slice(0, 7) } },
+      xAxis: { type: 'category', data: dates, axisLabel: { formatter: v => v.slice(0, 7) } },
       yAxis: [
-        { type: 'value', name: 'PE', min: 0 },
-        { type: 'value', name: '股价(元)', splitLine: { show: false } }
+        { type: 'value', name: 'PE', scale: true },
+        { type: 'value', name: '股价(元)', scale: true, splitLine: { show: false } }
       ],
       series: [
         { name: 'PE-TTM', type: 'line', data: peValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', markLine: { silent: true, data: [{ yAxis: data.current_pe, label: { formatter: data.current_pe + '', position: 'end' }, lineStyle: { color: '#4a6cf7', type: 'dashed' } }] } },
