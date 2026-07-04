@@ -512,7 +512,9 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <div style="margin-bottom:16px">
         <label style="font-size:13px;font-weight:600">关联股票（可选）</label>
-        <input type="text" id="stickyStock" style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;margin-top:4px" placeholder="如 600519">
+        <select id="stickyStock" style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;margin-top:4px">
+          <option value="">不关联</option>
+        </select>
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn" onclick="closeStickyModal()" style="background:#f5f5f5;color:#333">取消</button>
@@ -3038,8 +3040,17 @@ function openStickyModal(id, title, content) {
   document.getElementById('stickyModalTitle').textContent = id ? '编辑便利贴' : '新建便利贴';
   document.getElementById('stickyTitle').value = title || '';
   document.getElementById('stickyContent').value = content || '';
-  const code = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
-  document.getElementById('stickyStock').value = code;
+  // 填充股票下拉 + 选中当前股票
+  const sel = document.getElementById('stickyStock');
+  const curCode = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
+  if (sel.options.length <= 1) {
+    fetch('/api/stocks?page=1&page_size=200').then(r => r.json()).then(d => {
+      d.data.forEach(s => { const o = document.createElement('option'); o.value = s.code; o.textContent = s.code + ' ' + s.name; sel.appendChild(o); });
+      sel.value = curCode;
+    });
+  } else {
+    sel.value = curCode;
+  }
   document.getElementById('stickyModalOverlay').classList.add('active');
 }
 
