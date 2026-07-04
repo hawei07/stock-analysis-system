@@ -5,9 +5,10 @@ import sys
 import re
 import time
 import requests
-sys.path.insert(0, r"D:\stock-analysis-system")
+sys.path.insert(0, r"E:\stock-analysis-system")
 from models import Stock
 from db import execute_query
+from config_manager import get_all_config, set_config, get_deepseek_api_key
 
 app = Flask(__name__)
 
@@ -21,6 +22,23 @@ def index(code=None):
 
 
 # ==================== API 路由 ====================
+
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    """获取系统配置（API key 掩码）"""
+    return jsonify(get_all_config())
+
+
+@app.route("/api/config", methods=["PUT"])
+def api_config_put():
+    """更新系统配置"""
+    data = request.get_json(force=True)
+    updated = []
+    for k, v in data.items():
+        set_config(k, str(v))
+        updated.append(k)
+    return jsonify({"ok": True, "updated": updated})
+
 
 @app.route("/api/stocks")
 def api_stocks():
