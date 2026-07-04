@@ -290,7 +290,7 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
     try:
         client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
         resp = client.chat.completions.create(
-            model="deepseek-chat",
+            model="deepseek-v4-pro",
             messages=[
                 {"role": "system", "content": MUNGER_SYSTEM},
                 {"role": "user", "content": user_prompt},
@@ -328,7 +328,7 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
 
 # ── 缓存（含版本号，代码升级自动失效） ─────────────────────────────────────
 
-CACHE_VERSION = "v2.2"  # 改代码时递增此版本，旧缓存自动失效
+CACHE_VERSION = "v2.3"  # 改代码时递增此版本，旧缓存自动失效
 
 def _cache_get(stock_code: str) -> dict | None:
     rows = execute_query(
