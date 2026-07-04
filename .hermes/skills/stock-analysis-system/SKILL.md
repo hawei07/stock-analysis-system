@@ -58,15 +58,35 @@ cd /e/stock-analysis-system && git fetch origin && git reset --hard origin/main
 
 **前端**: 股票详情页「💬 对话芒格」标签 → 气泡聊天（芒格左灰底 🧠，用户右蓝底 👤）+ Markdown 渲染 + ✕ 悬浮删除 + 发送时加载动画
 
-## 开发流程约定
+## 开发流程约定（强制执行）
+
+> **核心规则：所有开发任务必须通过 Agency Agents 五专家流程执行。Hermes 主会话仅负责流程调度，不直接写代码。**
+
+### 强制工作流
+
+```
+用户提出需求
+  ↓
+1. UI Designer     → agency_agents_load agent=ui-designer    → 设计页面与交互
+2. Frontend Developer → agency_agents_load agent=frontend-developer → 实现前端
+3. API Tester       → agency_agents_load agent=api-tester     → 测试所有端点
+4. Code Reviewer    → agency_agents_load agent=code-reviewer  → 审查代码
+5. Git Workflow Master → agency_agents_load agent=git-workflow-master → 分支策略+提交
+```
 
 ### 新功能开发：先给方案再看
 
-在动手写任何代码前，先用文字描述：API 设计、数据流、前端布局、交互规格。用户确认后再实现。反面案例：用户说"先别开始做，给我个方案"——说明之前跳过设计直接写代码的冲动需要抑制。
+在动手写任何代码前，先用文字描述：API 设计、数据流、前端布局、交互规格。用户确认后再实现。
 
-### Agency Agents 5 专家强制流程
+### 主会话职责边界
 
-设计 → 前端 → 测试 → 审查 → 分支。每个阶段加载对应专家后执行。
+- ✅ 加载专家（`agency_agents_load`）
+- ✅ 流程调度（决定先加载哪个专家）
+- ✅ 结果汇报
+- ❌ 直接写 HTML/CSS/JS
+- ❌ 直接写 Python 路由/模型
+- ❌ 直接用 `patch()` 改代码
+- ❌ 用 `execute_code` 跑临时脚本代替专家执行
 
 ## System Config (API Keys)
 
