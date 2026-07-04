@@ -372,3 +372,146 @@ def analyze(stock_code: str, force_refresh: bool = False) -> dict[str, Any]:
     if result["source"] == "deepseek":
         _cache_set(stock_code, result)
     return result
+
+
+# ── 对话芒格 ─────────────────────────────────────────────────────────────────
+
+CHAT_SYSTEM = MUNGER_SYSTEM + """
+## 对话模式
+
+你现在处于对话模式，正与一位投资者讨论他关注的股票。注意：
+- 用「你」直接称呼对方
+- 主动指出对方可能忽略的盲区
+- 如果对方给了链接，认真分析链接内容
+- 如果问具体数据而你手头不足，诚实说明
+- 用短句，像日常对话
+- 每次回复 150-300 字
+- 如果没什么要补充的，说「我没什么要补充的」
+"""
+
+
+def _fetch_url_content(url: str) -> str:
+    """抓取 URL 内容，提取纯文本。仅允许 http/https 公网URL。"""
+    if not re.match(r'^https?://[^\s]+', url):
+        return "(无效链接)"
+    # SSRF 防护：禁止内网/本地地址
+    forbidden = ('127.', 'localhost', '0.0.0.0', '10.', '172.16.', '192.168.')
+    if any(url.lower().startswith(f'http://{p}') or f'://{p}' in url.lower() for p in forbidden):
+        return "(不允许访问内网地址)"
+    try:
+        resp = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }, timeout=10)
+        text = resp.text
+        text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text[:6000]
+    except Exception:
+        return "(无法抓取链接)"
+
+
+def get_chat_history(stock_code: str) -> list[dict]:
+    """获取对话历史。"""
+    rows = execute_query(
+        "SELECT id, role, content FROM munger_chats WHERE stock_code=%s ORDER BY id ASC LIMIT 100",
+        (stock_code,),
+    )
+    return [{"id": r["id"], "role": r["role"], "content": r["content"]} for r in rows]
+
+
+def delete_chat_msg(msg_id: int) -> bool:
+    """删除单条消息。返回是否删除成功。"""
+    return execute_update("DELETE FROM munger_chats WHERE id=%s", (msg_id,)) > 0
+
+
+def clear_chat_history(stock_code: str) -> int:
+    """清空对话。返回删除行数。"""
+    return execute_update("DELETE FROM munger_chats WHERE stock_code=%s", (stock_code,))
+
+
+def chat_send(stock_code: str, message: str) -> dict[str, Any]:
+    """发送消息，返回芒格回复。"""
+    if not message.strip():
+        return {"reply": "你说什么？我年纪大了听不清。", "role": "munger"}
+
+    execute_update(
+        "INSERT INTO munger_chats (stock_code, role, content) VALUES (%s,%s,%s)",
+        (stock_code, "user", message),
+    )
+
+    # 检测 URL
+    urls = re.findall(r'https?://[^\s\u4e00-\u9fff]+', message)
+    url_text = ""
+    if urls:
+        url_text = "\n".join(f"## 链接: {u}\n{_fetch_url_content(u)}" for u in urls[:2])
+
+    # 智能搜索触发
+    search_triggers = ("?", "？", "怎么", "为什么", "搜索", "查", "找", "最近",
+                       "最新", "现在", "消息", "新闻", "公告", "报告", "行业")
+    need_search = not urls and any(k in message for k in search_triggers)
+    search_text = ""
+    if need_search:
+        stock = execute_query("SELECT name FROM stocks WHERE code=%s", (stock_code,))
+        name = stock[0]["name"] if stock else stock_code
+        search_text = "\n\n## Web 搜索结果\n" + _web_search(f"{name} {stock_code} {message[:40]}")
+
+    # 最近 10 条历史
+    hist_rows = execute_query(
+        "SELECT role, content FROM munger_chats WHERE stock_code=%s ORDER BY id DESC LIMIT 10",
+        (stock_code,),
+    )
+    hist_rows.reverse()
+    hist_text = ""
+    if len(hist_rows) > 1:
+        hist_text = "## 对话历史\n" + "\n".join(
+            f"{'投资者' if r['role']=='user' else '芒格'}: {r['content'][:300]}"
+            for r in hist_rows[:-1]
+        )
+
+    # 财务摘要
+    fin = _gather_financials(stock_code)
+    latest = fin.get("latest", {})
+    info = fin.get("info", {})
+    fin_text = (
+        f"## 当前数据\n"
+        f"PE(TTM): {info.get('pe_ttm','N/A')}\n"
+        f"ROE(5Y均值): {fin.get('roe_avg_5y','N/A')}% | ROIC: {latest.get('roic','N/A')}%\n"
+        f"负债率: {latest.get('debt_ratio','N/A')}% | EPS: {latest.get('basic_eps','N/A')}\n"
+    )
+
+    user_prompt = (
+        f"{fin_text}\n{hist_text}\n{url_text}\n{search_text}\n"
+        f"## 投资者提问\n{message}\n\n请用查理·芒格的风格直接回答。"
+    )
+
+    try:
+        key = get_deepseek_api_key()
+        if not key:
+            reply = "你得先在系统设置里配好 DeepSeek API Key，我才能开口。"
+        else:
+            client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
+            resp = client.chat.completions.create(
+                model="deepseek-v4-pro",
+                messages=[
+                    {"role": "system", "content": CHAT_SYSTEM},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=600,
+            )
+            reply = resp.choices[0].message.content.strip()
+
+        execute_update(
+            "INSERT INTO munger_chats (stock_code, role, content) VALUES (%s,%s,%s)",
+            (stock_code, "munger", reply),
+        )
+        return {"reply": reply, "role": "munger"}
+    except Exception as e:
+        err_reply = f"我暂时说不了话——{e}"
+        execute_update(
+            "INSERT INTO munger_chats (stock_code, role, content) VALUES (%s,%s,%s)",
+            (stock_code, "munger", err_reply),
+        )
+        return {"reply": err_reply, "role": "munger", "error": True}

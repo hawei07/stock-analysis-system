@@ -173,6 +173,36 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .basket-no{background:#fff1f0;color:#e74c3c;border:1px solid #ffa39e}
 .basket-hard{background:#fffbe6;color:#fa8c16;border:1px solid #ffe58f}
 .munger-meta{font-size:12px;color:#999;margin-top:10px}
+/* 对话芒格聊天界面 */
+.chat-panel{display:flex;flex-direction:column;height:calc(100vh - 240px);min-height:420px}
+.chat-header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid #f0f0f0;flex-shrink:0}
+.chat-messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+.chat-empty{text-align:center;color:#bbb;padding:60px 20px;font-size:14px}
+.chat-msg{display:flex;align-items:flex-end;gap:10px;animation:fadeInUp .3s}
+.chat-msg.munger{justify-content:flex-start;padding-right:60px}
+.chat-msg.user{justify-content:flex-end;padding-left:60px}
+.chat-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.munger .chat-avatar{background:#f0e6ff}
+.user .chat-avatar{background:#e6f0ff}
+.chat-bubble{max-width:100%;padding:10px 16px;border-radius:14px;font-size:14px;line-height:1.6;position:relative;word-break:break-word}
+.munger .chat-bubble{background:#f5f5f5;color:#333;border-bottom-left-radius:4px}
+.user .chat-bubble{background:#4a6cf7;color:#fff;border-bottom-right-radius:4px}
+.chat-bubble h3{font-size:15px;margin:8px 0 4px;color:#1a1a2e}.user .chat-bubble h3{color:#fff}
+.chat-bubble strong{font-weight:600;color:#1a1a2e}.user .chat-bubble strong{color:#fff}
+.chat-bubble li{margin:4px 0 4px 16px}
+.chat-delete{position:absolute;top:2px;right:6px;opacity:0;cursor:pointer;background:none;border:none;color:#bbb;font-size:12px;padding:2px 4px;border-radius:4px;transition:all .2s}
+.chat-bubble:hover .chat-delete{opacity:1}
+.chat-delete:hover{color:#e74c3c;background:#fff0f0}
+.chat-input-bar{display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid #e8e8e8;background:#fff;flex-shrink:0}
+.chat-input-bar input{flex:1;padding:10px 16px;border:1px solid #d9d9d9;border-radius:20px;font-size:13px;outline:none;transition:border-color .2s}
+.chat-input-bar input:focus{border-color:#4a6cf7}
+.chat-input-bar input:disabled{background:#f5f5f5;cursor:not-allowed}
+.chat-typing{display:flex;align-items:center;gap:4px;padding:8px 0}
+.chat-typing span{width:6px;height:6px;border-radius:50%;background:#bbb;animation:typingDot 1.4s infinite}
+.chat-typing span:nth-child(2){animation-delay:.2s}
+.chat-typing span:nth-child(3){animation-delay:.4s}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes typingDot{0%,80%,100%{opacity:.2}40%{opacity:1}}
 
 @media (max-width:768px){
   .fin-table .sticky-col{min-width:140px}
@@ -266,6 +296,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
     <button class="tab-btn" data-tab="munger" onclick="switchTab('munger')">🧠 芒格视角</button>
+    <button class="tab-btn" data-tab="munger-chat" onclick="switchTab('munger-chat')">💬 对话芒格</button>
   </div>
 
   <div class="detail-content">
@@ -430,6 +461,22 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <div id="mungerContent">
         <div class="empty" id="mungerEmpty">点击"芒格视角"标签加载分析</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-munger-chat" style="display:none">
+      <div class="chat-panel">
+        <div class="chat-header">
+          <span style="font-weight:600;font-size:15px">🧠 对话芒格</span>
+          <button class="btn btn-sm" onclick="clearMungerChat()" style="font-size:11px;color:#999">🗑 清空全部</button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-empty" id="chatEmpty">向芒格提问，开始分析这只股票。</div>
+        </div>
+        <div class="chat-input-bar">
+          <input type="text" id="chatInput" placeholder="输入问题或粘贴链接，按 Enter 发送..."
+            onkeypress="if(event.key==='Enter')sendMungerChat()">
+          <button class="btn btn-primary" onclick="sendMungerChat()" id="chatSendBtn">发送</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1164,6 +1211,8 @@ function switchTab(name) {
     loadCashflow();
   } else if (name === 'munger') {
     loadMunger(false);
+  } else if (name === 'munger-chat') {
+    loadMungerChat();
   }
 }
 
@@ -2763,6 +2812,128 @@ async function loadMunger(forceRefresh) {
   } catch (e) {
     content.innerHTML = '<div class="munger-card"><p style="color:#e74c3c">网络错误: ' + esc(String(e)) + '</p></div>';
   }
+}
+
+// ── 对话芒格 ──────────────────────────────────────────────────────────────
+
+let chatLoaded = false;
+
+async function loadMungerChat() {
+  const code = document.getElementById('detailCode').textContent;
+  if (!code) return;
+  const container = document.getElementById('chatMessages');
+
+  try {
+    const res = await fetch('/api/stock/' + code + '/munger-chat');
+    const msgs = await res.json();
+    container.innerHTML = '';
+    if (!msgs.length) {
+      container.innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
+    } else {
+      msgs.forEach(m => appendMsg(m.role, m.content, m.id));
+    }
+    chatLoaded = true;
+    scrollChatBottom();
+  } catch(e) {
+    container.innerHTML = '<div class="chat-empty" style="color:#e74c3c">加载失败</div>';
+  }
+}
+
+function appendMsg(role, content, msgId) {
+  const container = document.getElementById('chatMessages');
+  const empty = document.getElementById('chatEmpty');
+  if (empty) empty.remove();
+
+  const cls = role === 'munger' ? 'munger' : 'user';
+  const avatar = role === 'munger' ? '🧠' : '👤';
+
+  // Simple markdown render
+  let html = esc(content);
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\n\n/g, '<br><br>');
+
+  const delBtn = msgId ? `<button class="chat-delete" onclick="deleteChatMsg(${msgId},this)" title="删除">✕</button>` : '';
+
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  div.innerHTML = `
+    <div class="chat-avatar">${avatar}</div>
+    <div class="chat-bubble">${html}${delBtn}</div>`;
+  container.appendChild(div);
+}
+
+async function sendMungerChat() {
+  const code = document.getElementById('detailCode').textContent;
+  const input = document.getElementById('chatInput');
+  const btn = document.getElementById('chatSendBtn');
+  const msg = input.value.trim();
+  if (!msg || !code) return;
+
+  // Show user message immediately
+  appendMsg('user', msg);
+  input.value = '';
+  input.disabled = true;
+  btn.disabled = true;
+  scrollChatBottom();
+
+  // Typing indicator
+  const container = document.getElementById('chatMessages');
+  const typing = document.createElement('div');
+  typing.className = 'chat-msg munger';
+  typing.id = 'chatTyping';
+  typing.innerHTML = '<div class="chat-avatar">🧠</div><div class="chat-bubble"><div class="chat-typing"><span></span><span></span><span></span></div></div>';
+  container.appendChild(typing);
+  scrollChatBottom();
+
+  try {
+    const res = await fetch('/api/stock/' + code + '/munger-chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: msg})
+    });
+    const data = await res.json();
+    // Remove typing
+    const t = document.getElementById('chatTyping');
+    if (t) t.remove();
+    appendMsg('munger', data.reply || data.error || '...');
+  } catch(e) {
+    const t = document.getElementById('chatTyping');
+    if (t) t.remove();
+    appendMsg('munger', '网络错误，请重试。');
+  }
+  input.disabled = false;
+  btn.disabled = false;
+  input.focus();
+  scrollChatBottom();
+}
+
+async function deleteChatMsg(msgId, btn) {
+  if (!confirm('删除这条消息？')) return;
+  try {
+    await fetch('/api/stock/' + document.getElementById('detailCode').textContent + '/munger-chat?msg_id=' + msgId, {method: 'DELETE'});
+    btn.closest('.chat-msg').remove();
+    // Show empty if no messages left
+    if (!document.querySelector('.chat-msg')) {
+      document.getElementById('chatMessages').innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
+    }
+  } catch(e) {}
+}
+
+async function clearMungerChat() {
+  const code = document.getElementById('detailCode').textContent;
+  if (!confirm('确定清空全部对话？')) return;
+  try {
+    await fetch('/api/stock/' + code + '/munger-chat', {method: 'DELETE'});
+    document.getElementById('chatMessages').innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
+  } catch(e) {}
+}
+
+function scrollChatBottom() {
+  const el = document.getElementById('chatMessages');
+  if (el) setTimeout(() => el.scrollTop = el.scrollHeight, 100);
 }
 
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

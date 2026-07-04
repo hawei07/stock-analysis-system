@@ -9,7 +9,7 @@ sys.path.insert(0, r"E:\stock-analysis-system")
 from models import Stock
 from db import execute_query
 from config_manager import get_all_config, set_config, get_deepseek_api_key
-from munger import analyze as munger_analyze
+from munger import analyze as munger_analyze, get_chat_history, chat_send, clear_chat_history, delete_chat_msg
 
 app = Flask(__name__)
 
@@ -1508,6 +1508,28 @@ def api_update_cashflow():
         time.sleep(0.3)
 
     return jsonify({"success": True, "records_updated": updated, "stocks_processed": len(stocks), "mode": mode, "errors": errors[:5] if errors else []})
+
+
+@app.route("/api/stock/<code>/munger-chat", methods=["GET", "POST", "DELETE"])
+def api_munger_chat(code):
+    """对话芒格 API"""
+    if request.method == "GET":
+        return jsonify(get_chat_history(code))
+    elif request.method == "DELETE":
+        msg_id = request.args.get("msg_id", type=int)
+        if msg_id:
+            ok = delete_chat_msg(msg_id)
+            return jsonify({"ok": ok})
+        else:
+            n = clear_chat_history(code)
+            return jsonify({"ok": True, "deleted": n})
+    elif request.method == "POST":
+        data = request.get_json(force=True)
+        message = data.get("message", "").strip()
+        if not message:
+            return jsonify({"error": "empty message"}), 400
+        result = chat_send(code, message)
+        return jsonify(result)
 
 
 @app.route("/api/stock/<code>/munger")
