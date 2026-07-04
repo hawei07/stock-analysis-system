@@ -9,6 +9,7 @@ sys.path.insert(0, r"E:\stock-analysis-system")
 from models import Stock
 from db import execute_query
 from config_manager import get_all_config, set_config, get_deepseek_api_key
+from munger import analyze as munger_analyze
 
 app = Flask(__name__)
 
@@ -1507,6 +1508,18 @@ def api_update_cashflow():
         time.sleep(0.3)
 
     return jsonify({"success": True, "records_updated": updated, "stocks_processed": len(stocks), "mode": mode, "errors": errors[:5] if errors else []})
+
+
+@app.route("/api/stock/<code>/munger")
+def api_munger(code):
+    """芒格视角股票分析"""
+    refresh = request.args.get("refresh", "0") == "1"
+    try:
+        result = munger_analyze(code, force_refresh=refresh)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"verdict": "分析出错", "analysis": str(e)[:200],
+                        "basket": "TOO_HARD", "score": 0, "error": True})
 
 
 if __name__ == "__main__":
