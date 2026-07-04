@@ -1549,9 +1549,16 @@ def api_munger(code):
 @app.route("/api/sticky-notes", methods=["GET", "POST"])
 def api_sticky_notes():
     if request.method == "GET":
-        rows = execute_query(
-            "SELECT id, note_type, content, stock_code, created_at FROM sticky_notes ORDER BY id DESC", ()
-        )
+        stock_code = request.args.get("stock_code", "")
+        if stock_code:
+            rows = execute_query(
+                "SELECT id, note_type, content, stock_code, created_at FROM sticky_notes WHERE stock_code=%s OR stock_code IS NULL ORDER BY id DESC",
+                (stock_code,),
+            )
+        else:
+            rows = execute_query(
+                "SELECT id, note_type, content, stock_code, created_at FROM sticky_notes ORDER BY id DESC", ()
+            )
         for r in rows:
             if r.get("created_at"):
                 r["created_at"] = str(r["created_at"])

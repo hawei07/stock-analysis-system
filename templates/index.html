@@ -222,7 +222,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <h1 style="cursor:pointer" onclick="goList()">股票分析系统</h1>
     <button class="btn btn-back" id="btnBack" style="display:none" onclick="goList()">&larr; 返回列表</button>
     <button id="btnSettings" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px 8px;color:#aaa;transition:color .2s" onclick="openSettings()" title="系统设置" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='#aaa'">⚙</button>
-    <button id="btnSticky" style="background:none;border:none;font-size:15px;cursor:pointer;padding:4px 12px;color:#aaa;transition:color .2s" onclick="goSticky()" title="便利贴" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='#aaa'">📌 便利贴</button>
   </div>
   <div class="stats" id="statsInfo">加载中...</div>
 </div>
@@ -302,6 +301,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
     <button class="tab-btn" data-tab="munger" onclick="switchTab('munger')">🧠 芒格视角</button>
     <button class="tab-btn" data-tab="munger-chat" onclick="switchTab('munger-chat')">💬 对话芒格</button>
+    <button class="tab-btn" data-tab="sticky" onclick="switchTab('sticky')">📌 便利贴</button>
   </div>
 
   <div class="detail-content">
@@ -484,17 +484,13 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         </div>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- 便利贴页面 -->
-<div class="view" id="view-sticky">
-  <div style="max-width:800px;margin:0 auto;padding:24px 20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-      <h2 style="font-size:20px;font-weight:600">📌 便利贴</h2>
-      <button class="btn btn-primary" onclick="openStickyModal()">+ 新建</button>
+    <div class="tab-panel" id="panel-sticky" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <span style="font-weight:600;font-size:14px;color:#666">📌 便利贴</span>
+        <button class="btn btn-sm btn-primary" onclick="openStickyModal()" style="font-size:12px">+ 新建</button>
+      </div>
+      <div id="stickyList"></div>
     </div>
-    <div id="stickyList"></div>
   </div>
 </div>
 
@@ -1260,6 +1256,8 @@ function switchTab(name) {
     loadMunger(false);
   } else if (name === 'munger-chat') {
     loadMungerChat();
+  } else if (name === 'sticky') {
+    loadStickyNotes();
   }
 }
 
@@ -2988,15 +2986,15 @@ function scrollChatBottom() {
 let stickyEditId = null;
 
 function goSticky() {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.getElementById('view-sticky').classList.add('active');
-  document.getElementById('btnBack').style.display = 'inline-block';
+  // Legacy - kept for potential reference but no longer used standalone
   loadStickyNotes();
 }
 
 async function loadStickyNotes() {
+  const code = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
+  if (!code) return;
   try {
-    const res = await fetch('/api/sticky-notes');
+    const res = await fetch('/api/sticky-notes?stock_code=' + code);
     const notes = await res.json();
     const list = document.getElementById('stickyList');
     if (!notes.length) {
@@ -3040,12 +3038,12 @@ function openStickyModal(id, type, content) {
   document.getElementById('stickyModalTitle').textContent = id ? '编辑便利贴' : '新建便利贴';
   document.getElementById('stickyType').value = type || 'text';
   document.getElementById('stickyContent').value = content || '';
-  document.getElementById('stickyStock').value = '';
+  // 当前股票代码
+  const code = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
+  document.getElementById('stickyStock').value = code;
+  if (id) document.getElementById('stickyStock').disabled = true;
+  else document.getElementById('stickyStock').disabled = false;
   document.getElementById('stickyModalOverlay').classList.add('active');
-  if (id && content) {
-    // Try to extract stock code from the card
-    const card = document.querySelector(`[onclick*="editSticky(${id}"]`);
-  }
 }
 
 async function editSticky(id, type, btn) {
