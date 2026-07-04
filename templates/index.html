@@ -961,8 +961,9 @@ async function loadValuation(days) {
     const fmax = n > 0 ? filteredPeVals[n - 1] : null;
     const fmin = n > 0 ? filteredPeVals[0] : null;
     const favg = n > 0 ? +(filteredPeVals.reduce((a, b) => a + b, 0) / n).toFixed(2) : null;
-    // Current PE and its percentile (based on real-time PE from backend)
-    const fpct = data.current_pe && n > 0 ? +(filteredPeVals.filter(v => v <= data.current_pe).length / n * 100).toFixed(2) : null;
+    // Current PE and its percentile (优先使用腾讯实时 PE-TTM)
+    const currentPE = data.realtime_pe || data.current_pe;
+    const fpct = currentPE && n > 0 ? +(filteredPeVals.filter(v => v <= currentPE).length / n * 100).toFixed(2) : null;
 
     // Percentile lines
     const p80Line = dates.map(() => fp80);
@@ -992,7 +993,7 @@ async function loadValuation(days) {
     // Sidebar
     sidebar.innerHTML = `
       <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">PE-TTM</div>
-      <div style="margin-bottom:4px">当前值: <b style="color:#4a6cf7">${data.current_pe || '-'}</b></div>
+      <div style="margin-bottom:4px">当前值: <b style="color:#4a6cf7">${currentPE || '-'}</b></div>
       <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${fpct != null ? fpct + '%' : '-'}</b></div>
       <div style="color:#cf1322;margin-bottom:2px">80%: <b>${fp80 || '-'}</b></div>
       <div style="color:#666;margin-bottom:2px">50%: <b>${fp50 || '-'}</b></div>

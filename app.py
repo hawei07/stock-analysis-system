@@ -1172,6 +1172,8 @@ def api_stock_valuation(code):
             "max_pe": max(pe_values) if pe_values else None,
             "min_pe": min(pe_values) if pe_values else None,
             "avg_pe": round(sum(pe_values) / len(pe_values), 2) if pe_values else None,
+            # 腾讯实时 PE(TTM) = 滚动四季 EPS，比年报 EPS 计算的 PE 更准
+            "realtime_pe": realtime_pe,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
