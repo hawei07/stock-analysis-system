@@ -7,7 +7,7 @@ import time
 import requests
 sys.path.insert(0, r"E:\stock-analysis-system")
 from models import Stock
-from db import execute_query
+from db import execute_query, execute_update
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import analyze as munger_analyze, get_chat_history, chat_send, clear_chat_history, delete_chat_msg
 
@@ -1542,6 +1542,47 @@ def api_munger(code):
     except Exception as e:
         return jsonify({"verdict": "分析出错", "analysis": str(e)[:200],
                         "basket": "TOO_HARD", "score": 0, "error": True})
+
+
+# ==================== 便利贴 API ====================
+
+@app.route("/api/sticky-notes", methods=["GET", "POST"])
+def api_sticky_notes():
+    if request.method == "GET":
+        rows = execute_query(
+            "SELECT id, note_type, content, stock_code, created_at FROM sticky_notes ORDER BY id DESC", ()
+        )
+        for r in rows:
+            if r.get("created_at"):
+                r["created_at"] = str(r["created_at"])
+        return jsonify(rows)
+    elif request.method == "POST":
+        data = request.get_json(force=True)
+        note_type = data.get("note_type", "text")
+        content = data.get("content", "")
+        stock_code = data.get("stock_code", "") or None
+        execute_update(
+            "INSERT INTO sticky_notes (note_type, content, stock_code) VALUES (%s,%s,%s)",
+            (note_type, content, stock_code),
+        )
+        return jsonify({"ok": True})
+
+
+@app.route("/api/sticky-notes/<int:note_id>", methods=["PUT", "DELETE"])
+def api_sticky_note(note_id):
+    if request.method == "PUT":
+        data = request.get_json(force=True)
+        note_type = data.get("note_type", "text")
+        content = data.get("content", "")
+        stock_code = data.get("stock_code", "") or None
+        execute_update(
+            "UPDATE sticky_notes SET note_type=%s, content=%s, stock_code=%s WHERE id=%s",
+            (note_type, content, stock_code, note_id),
+        )
+        return jsonify({"ok": True})
+    elif request.method == "DELETE":
+        execute_update("DELETE FROM sticky_notes WHERE id=%s", (note_id,))
+        return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
