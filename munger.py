@@ -151,7 +151,7 @@ def _gather_financials(stock_code: str) -> dict[str, Any]:
     """, (stock_code,))
 
     stock = execute_query(
-        "SELECT code, name, industry, market, list_date, status FROM stocks WHERE code = %s",
+        "SELECT code, name, industry, market, list_date, status, pe_ttm FROM stocks WHERE code = %s",
         (stock_code,)
     )
     info = stock[0] if stock else {}
@@ -254,6 +254,8 @@ def _build_user_prompt(fin: dict, searches: dict) -> str:
         f"- 现金流质量(5年经营现金流/净利润 > 0.7 占比): {fin['cf_quality']}%",
         f"- 近10年利润 CAGR: {fin['cagr']}%",
         f"- 总资产(最新): {latest.get('total_assets','N/A')}亿 | 净资产: {latest.get('total_equity','N/A')}亿",
+        f"- PE(TTM): {info.get('pe_ttm','N/A')}（来自数据库实时数据）",
+        f"- 总股本(最新): {latest.get('total_shares','N/A')}亿股",
     ]
 
     # Web 搜索结果
@@ -326,7 +328,7 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
 
 # ── 缓存（含版本号，代码升级自动失效） ─────────────────────────────────────
 
-CACHE_VERSION = "v2.1"  # 改代码时递增此版本，旧缓存自动失效
+CACHE_VERSION = "v2.2"  # 改代码时递增此版本，旧缓存自动失效
 
 def _cache_get(stock_code: str) -> dict | None:
     rows = execute_query(
