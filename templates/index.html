@@ -951,6 +951,8 @@ async function loadValuation(days) {
     const dates = priceFiltered.map(p => p.date);
     const peValues = dates.map(d => peMap[d] != null ? peMap[d] : null);
     const priceValues = priceFiltered.map(p => p.close);
+    const pMin = priceValues.length ? Math.min(...priceValues) : null;
+    const pMax = priceValues.length ? Math.max(...priceValues) : null;
 
     // Recalculate percentiles & stats from filtered PE data
     const filteredPeVals = peValues.filter(v => v != null).sort((a, b) => a - b);
@@ -978,8 +980,8 @@ async function loadValuation(days) {
       grid: { left: 60, right: 80, top: 40, bottom: 30 },
       xAxis: { type: 'category', data: dates, axisLabel: { formatter: v => v.slice(0, 7) } },
       yAxis: [
-        { type: 'value', name: 'PE', min: fmin ? Math.floor(fmin * 0.9) : 0, max: fmax ? Math.ceil(fmax * 1.1) : undefined },
-        { type: 'value', name: '股价(元)', splitLine: { show: false } }
+        { type: 'value', name: 'PE', min: fmin ? +(fmin * 0.99).toFixed(2) : 0, max: fmax ? +(fmax * 1.01).toFixed(2) : undefined, splitNumber: 5 },
+        { type: 'value', name: '股价(元)', splitLine: { show: false }, min: pMin ? +(pMin * 0.99).toFixed(2) : undefined, max: pMax ? +(pMax * 1.01).toFixed(2) : undefined, splitNumber: 5 }
       ],
       series: [
         { name: 'PE-TTM', type: 'line', data: peValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', markPoint: { data: [{ type: 'max', name: '最高', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#4a6cf7' }, label: { formatter: '{c}' } }, { type: 'min', name: '最低', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#389e0d' }, label: { formatter: '{c}' } }] } },
