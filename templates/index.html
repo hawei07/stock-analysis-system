@@ -3006,7 +3006,7 @@ async function loadStickyNotes() {
       let body = esc(n.content);
       // Image URLs → img tags
       body = body.replace(/(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?\S*)?)/gi,
-        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block" onerror="this.outerHTML=\\'<span style=color:#999>图片加载失败: $1</span>\\'">');
+        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block" onerror="this.style.display=\'none\'">');
       // Other URLs → clickable links
       body = body.replace(/(https?:\/\/[^\s<>]+)/g,
         '<a href="$1" target="_blank" style="color:#4a6cf7">$1</a>');
