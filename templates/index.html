@@ -680,6 +680,8 @@ async function loadDetail(code) {
     loadKline();
     // 加载分红数据并渲染图表
     loadDividends(code);
+    // 如果当前在便利贴标签，切换股票后自动刷新
+    if (document.getElementById('panel-sticky')?.style.display === 'block') loadStickyNotes();
   } catch (e) {
     showToast('加载详情失败', 'error');
   }
