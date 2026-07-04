@@ -1067,8 +1067,9 @@ def api_stock_balance_sheet(code):
 def api_stock_valuation(code):
     """PE-TTM 历史 + 股价 + 分位点"""
     try:
-        # 1. 获取所有财报季度的基本每股收益（年报/半年报/季报），用于 TTM 计算
-        eps_records = []  # [(report_date, report_type, fiscal_year, eps_cumulative), ...]
+        # 1. 获取所有财报季度的归母净利润 + 总股本，用于 TTM PE 计算
+        # PE = 市值 / TTM归母净利润（比EPSJB更精确，避免股本变动和四舍五入误差）
+        eps_records = []  # [(report_date, report_type, fiscal_year, parent_eps), ...]
         for report_type in ["%E5%B9%B4%E6%8A%A5", "%E4%B8%80%E5%AD%A3%E6%8A%A5", 
                             "%E5%8D%8A%E5%B9%B4%E6%8A%A5", "%E4%B8%89%E5%AD%A3%E6%8A%A5"]:
             url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
@@ -1081,10 +1082,12 @@ def api_stock_valuation(code):
                 if data.get("success"):
                     for item in data["result"]["data"]:
                         rd = item.get("REPORT_DATE", "")
-                        eps = item.get("EPSJB")
+                        parent_np = item.get("PARENTNETPROFIT")  # 归母净利润
+                        total_share = item.get("TOTAL_SHARE")    # 总股本
                         fy = item.get("FISCAL_YEAR") or (int(rd[:4]) if rd[:4].isdigit() else 0)
-                        if rd and eps and float(eps) > 0 and fy:
-                            eps_records.append((rd[:10], report_type, fy, float(eps)))
+                        if rd and parent_np and total_share and float(parent_np) > 0 and int(total_share) > 0 and fy:
+                            parent_eps = float(parent_np) / int(total_share)
+                            eps_records.append((rd[:10], report_type, fy, parent_eps))
             except Exception:
                 pass
         eps_records.sort(key=lambda x: x[0])  # 按日期排序
