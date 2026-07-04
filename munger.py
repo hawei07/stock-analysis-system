@@ -538,7 +538,17 @@ def chat_send(stock_code: str, message: str) -> dict[str, Any]:
     if need_search:
         stock = execute_query("SELECT name FROM stocks WHERE code=%s", (stock_code,))
         name = stock[0]["name"] if stock else stock_code
-        search_text = "\n\n## Web 搜索结果\n" + _web_search(f"{name} {stock_code} {message[:40]}")
+        raw = _web_search(f"{name} {stock_code} {message[:40]}")
+        search_text = "\n\n## Web 搜索结果\n" + raw
+        # 深度抓取搜索结果中前3条链接的全文
+        result_urls = re.findall(r'(https?://[^\s]+)', raw)
+        if result_urls:
+            search_text += "\n\n## 页面详细内容"
+            for i, u in enumerate(result_urls[:3]):
+                content = _fetch_url_content(u)
+                if content and len(content) > 100 and "无法" not in content:
+                    search_text += f"\n\n**[来源{i+1}]** {u}\n{content[:2000]}"
+                    time.sleep(0.3)
 
     # 最近 10 条历史
     hist_rows = execute_query(
