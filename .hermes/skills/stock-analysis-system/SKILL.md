@@ -10,7 +10,7 @@ Project: `E:\stock-analysis-system` | Flask 3.x + MySQL 8.4 | Port 5002
 ## Startup
 
 ```bash
-cd /d/stock-analysis-system && python app.py
+cd /e/stock-analysis-system && python app.py
 # Runs at http://127.0.0.1:5002
 ```
 
@@ -18,9 +18,18 @@ cd /d/stock-analysis-system && python app.py
 
 - **Python**: `python` (3.11, via Hermes venv). Use `uv pip install` for packages.
 - **MySQL**: Running on `E:\MySQL\bin\mysqld.exe`, root with NO password (empty string).
-- **Shell**: git-bash/MSYS2 — POSIX syntax, MSYS paths like `/d/...` work.
+- **Shell**: git-bash/MSYS2 — POSIX syntax, MSYS paths like `/e/...` work.
 - `config.py` password may differ between local (empty) and remote — never commit the local empty-password change.
 - Flask `debug=True` is recommended to avoid Jinja2 template caching (otherwise every HTML edit requires a restart). Auto-reloads on any source change.
+
+## Git 远程同步
+
+```bash
+# 从 GitHub 覆盖本地（丢弃本地未推送的改动）
+cd /e/stock-analysis-system && git fetch origin && git reset --hard origin/main
+```
+
+> 仅本地 commit（未 push）会被丢弃。在 `git reset --hard` 前确认无重要本地改动。
 
 ## Project Structure
 
@@ -47,17 +56,24 @@ cd /d/stock-analysis-system && python app.py
 ### 使用方式
 
 ```
-# 加载单个专家到当前会话
-agency_agents_load agent=ui-designer task="设计股票详情页"
-
-# 委派任务给专家（后台执行）
-agency_agents_delegate agent=api-tester task="测试新增的财务数据接口"
-
 # 搜索匹配的专家
 agency_agents_search query="需要设计数据表格的UI"
+
+# 加载专家方法论（加载后我会化身为该专家直接工作）
+agency_agents_load agent=ui-designer task="设计股票详情页"
+agency_agents_load agent=frontend-developer task="实现股票对比功能"
+agency_agents_load agent=code-reviewer task="审查最近3个commit的代码"
+agency_agents_load agent=git-workflow-master task="给本次feature设计分支策略"
+agency_agents_load agent=api-tester task="测试新增的财务数据接口"
 ```
 
+> ⚠️ `agency_agents_delegate` 在主会话中不可用（需要子 Agent 上下文）。实际工作流：`search` 找专家 → `load` 加载方法论 → 我化身专家直接执行。
+
 多专家协作顺序：设计 → 前端 → 测试 → 审查 → 分支管理。
+
+> **已知限制**：`agency_agents_delegate` 可能返回 `"delegate_task requires a parent agent context"`，此时改为 `agency_agents_load` 获取专家 prompt，手动按其方法论执行分析。Financial Analyst / Investment Researcher 等分析类专家不建议 delegate，直接 load + 手动执行效果更好。
+
+> 安装与配置详见 `references/agency-agents-setup.md`。
 
 ## Database Tables
 
@@ -169,6 +185,9 @@ Both `openIndicatorChart` (financials) and `openBSChart` (balance sheet) use ECh
     - `makeKey` not using `d.report_period` directly — must be `d.report_period || 'FY'`, return composite only when quarterly
     - Simplifying BS table to remove YoY columns — BS needs same colspan="2" + 同比% headers as financials
 14. **Backend debug=True auto-reloads**: Server detects file changes and restarts, no manual restart needed after patching.
+15. **MySQL COLLATE 字符集冲突（含 ENUM 列）**: 不仅是 `stock_code`，`report_period` ENUM 列也可能跨表不一致（`custom_financials` 为 utf8mb4_unicode_ci，`balance_sheets` 为 utf8mb4_0900_ai_ci），导致 JOIN 报错 `Illegal mix of collations`。**根治方案**：所有表的 `stock_code`、`report_period`、`audit_opinion` 等字符串列统一为 `utf8mb4_0900_ai_ci`（匹配 `stocks.code` 原生 COLLATE）。有 FK 约束的表需先 `DROP FOREIGN KEY` → `MODIFY` → `ADD CONSTRAINT` 回加。
+16. **跨表数据源不一致**: `custom_financials`（东方财富）和 `balance_sheets`（新浪财经）的数据来源不同，约 14% 的行存在 `total_assets`/`total_equity` 偏差（大到几十亿）。这不是 bug，是数据源口径差异。**原则**：资产负债表数据以 `balance_sheets` 为准，`custom_financials` 中的 `total_assets`/`total_equity` 仅作冗余参考。前端应优先从 `balance_sheets` 取资产负债表数据。
+17. **`git reset --hard origin/main` 会删除 `.hermes/skills/`**: 远程仓库没有 `.hermes/` 目录，reset 后项目 Skill 被清空。每次 `reset --hard` 后必须重新复制：`cp -R ~/AppData/Local/hermes/skills/software-development/stock-analysis-system/* /e/stock-analysis-system/.hermes/skills/stock-analysis-system/`。建议考虑将 `.hermes/` push 到远程。
 
 ## Color Convention
 
