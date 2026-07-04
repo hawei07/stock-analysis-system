@@ -9,7 +9,7 @@ sys.path.insert(0, r"E:\stock-analysis-system")
 from models import Stock
 from db import execute_query, execute_update
 from config_manager import get_all_config, set_config, get_deepseek_api_key
-from munger import analyze as munger_analyze, get_chat_history, chat_send, clear_chat_history, delete_chat_msg
+from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
 
 app = Flask(__name__)
 
@@ -1530,18 +1530,6 @@ def api_munger_chat(code):
             return jsonify({"error": "empty message"}), 400
         result = chat_send(code, message)
         return jsonify(result)
-
-
-@app.route("/api/stock/<code>/munger")
-def api_munger(code):
-    """芒格视角股票分析"""
-    refresh = request.args.get("refresh", "0") == "1"
-    try:
-        result = munger_analyze(code, force_refresh=refresh)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"verdict": "分析出错", "analysis": str(e)[:200],
-                        "basket": "TOO_HARD", "score": 0, "error": True})
 
 
 # ==================== 便利贴 API ====================

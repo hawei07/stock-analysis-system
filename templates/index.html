@@ -162,17 +162,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 /* 资产负债表分组行 */
 .section-row td{padding:8px 16px !important;border-bottom:2px solid #4a6cf7 !important}
 #bsMainTable .sticky-col{min-width:auto;white-space:nowrap;padding-right:18px}
-/* 芒格视角卡片 */
-.munger-card{background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
-.munger-score{display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border-radius:50%;font-size:28px;font-weight:700;color:#fff}
-.munger-score.high{background:#52c41a}.munger-score.mid{background:#fa8c16}.munger-score.low{background:#e74c3c}
-.munger-verdict{font-size:18px;font-weight:600;color:#1a1a2e;margin:12px 0;line-height:1.6}
-.munger-analysis{font-size:14px;color:#555;line-height:1.8;white-space:pre-wrap}
-.munger-basket{display:inline-block;padding:4px 16px;border-radius:20px;font-size:12px;font-weight:600;margin-top:12px}
-.basket-yes{background:#f6ffed;color:#52c41a;border:1px solid #b7eb8f}
-.basket-no{background:#fff1f0;color:#e74c3c;border:1px solid #ffa39e}
-.basket-hard{background:#fffbe6;color:#fa8c16;border:1px solid #ffe58f}
-.munger-meta{font-size:12px;color:#999;margin-top:10px}
 /* 对话芒格聊天界面 */
 .chat-panel{display:flex;flex-direction:column;height:calc(100vh - 260px);min-height:380px;max-height:700px}
 .chat-header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid #f0f0f0;flex-shrink:0}
@@ -299,7 +288,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
-    <button class="tab-btn" data-tab="munger" onclick="switchTab('munger')">🧠 芒格视角</button>
     <button class="tab-btn" data-tab="munger-chat" onclick="switchTab('munger-chat')">💬 对话芒格</button>
     <button class="tab-btn" data-tab="sticky" onclick="switchTab('sticky')">📌 便利贴</button>
   </div>
@@ -458,14 +446,6 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <div class="fin-table-wrap" id="tableCashflowWrap">
         <div class="empty" id="cfEmpty">请点击"查询"加载现金流量表数据</div>
-      </div>
-    </div>
-    <div class="tab-panel" id="panel-munger" style="display:none">
-      <div class="toolbar-row" style="justify-content:flex-end">
-        <button class="btn btn-sm" onclick="loadMunger(true)" style="font-size:12px">🔄 刷新分析</button>
-      </div>
-      <div id="mungerContent">
-        <div class="empty" id="mungerEmpty">点击"芒格视角"标签加载分析</div>
       </div>
     </div>
     <div class="tab-panel" id="panel-munger-chat" style="display:none">
@@ -1253,8 +1233,6 @@ function switchTab(name) {
     loadIncome();
   } else if (name === 'cashflow') {
     loadCashflow();
-  } else if (name === 'munger') {
-    loadMunger(false);
   } else if (name === 'munger-chat') {
     loadMungerChat();
   } else if (name === 'sticky') {
@@ -2812,52 +2790,6 @@ function showSettingsMsg(text, type) {
   el.textContent = text;
   el.style.display = 'block';
   el.style.color = type === 'success' ? '#52c41a' : '#e74c3c';
-}
-
-// ── 芒格视角 ──────────────────────────────────────────────────────────────
-
-async function loadMunger(forceRefresh) {
-  const code = document.getElementById('detailCode').textContent;
-  if (!code) return;
-  const content = document.getElementById('mungerContent');
-  content.innerHTML = '<div class="empty" style="padding:40px">🧠 正在从网上搜集资料并深度分析中（约 20-30 秒）...</div>';
-
-  try {
-    const url = '/api/stock/' + code + '/munger' + (forceRefresh ? '?refresh=1' : '');
-    const res = await fetch(url);
-    const data = await res.json();
-
-    const score = data.score || 0;
-    const sc = score >= 70 ? 'high' : score >= 40 ? 'mid' : 'low';
-    const basket = data.basket || 'TOO_HARD';
-    const basketCls = basket === 'YES' ? 'basket-yes' : basket === 'NO' ? 'basket-no' : 'basket-hard';
-    const basketText = basket === 'YES' ? '✅ Yes 筐' : basket === 'NO' ? '❌ No 筐' : '🤔 Too Hard 筐';
-    const cachedTag = data.cached ? ' <span style="color:#999;font-size:11px">(缓存)</span>' : '';
-    const sourceTag = data.source === 'deepseek' ? 'DeepSeek V4' : '本地评分';
-
-    // 简单 Markdown 转 HTML（处理标题、列表、粗体、表格）
-    let md = esc(data.analysis || '无分析内容');
-    md = md.replace(/^### (.+)$/gm, '<h4 style="margin:20px 0 10px;color:#1a1a2e;font-size:15px">$1</h4>');
-    md = md.replace(/^## (.+)$/gm, '<h3 style="margin:24px 0 12px;color:#1a1a2e;font-size:17px;border-bottom:2px solid #4a6cf7;padding-bottom:6px">$1</h3>');
-    md = md.replace(/^- (.+)$/gm, '<li style="margin:4px 0 4px 20px;color:#555">$1</li>');
-    md = md.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    md = md.replace(/\n\n/g, '</p><p style="margin:8px 0;line-height:1.8;color:#444">');
-    md = '<p style="margin:8px 0;line-height:1.8;color:#444">' + md + '</p>';
-
-    content.innerHTML = `
-      <div class="munger-card">
-        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #f0f0f0">
-          <div class="munger-score ${sc}">${score}</div>
-          <div style="flex:1">
-            <span class="munger-basket ${basketCls}" style="font-size:14px;padding:6px 20px">${basketText}</span>
-          </div>
-        </div>
-        <div class="munger-analysis">${md}</div>
-        <div class="munger-meta" style="margin-top:20px;padding-top:12px;border-top:1px solid #f0f0f0">分析引擎: ${sourceTag} | ${new Date().toLocaleString()}${cachedTag}</div>
-      </div>`;
-  } catch (e) {
-    content.innerHTML = '<div class="munger-card"><p style="color:#e74c3c">网络错误: ' + esc(String(e)) + '</p></div>';
-  }
 }
 
 // ── 对话芒格 ──────────────────────────────────────────────────────────────
