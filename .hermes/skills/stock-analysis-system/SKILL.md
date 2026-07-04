@@ -67,12 +67,22 @@ cd /e/stock-analysis-system && git fetch origin && git reset --hard origin/main
 ```
 用户提出需求
   ↓
-1. UI Designer     → agency_agents_load agent=ui-designer    → 设计页面与交互
-2. Frontend Developer → agency_agents_load agent=frontend-developer → 实现前端
-3. API Tester       → agency_agents_load agent=api-tester     → 测试所有端点
-4. Code Reviewer    → agency_agents_load agent=code-reviewer  → 审查代码
-5. Git Workflow Master → agency_agents_load agent=git-workflow-master → 分支策略+提交
+1. UI Designer        → agency_agents_load agent=ui-designer       → 设计页面与交互
+2. Backend Architect  → agency_agents_load agent=backend-architect → 写后端代码（路由/模型/API）
+3. Frontend Developer → agency_agents_load agent=frontend-developer → 实现前端
+4. API Tester         → agency_agents_load agent=api-tester        → 测试所有端点
+5. Code Reviewer      → agency_agents_load agent=code-reviewer     → 审查代码
+6. Git Workflow Master → agency_agents_load agent=git-workflow-master → 分支策略+提交
 ```
+
+| 阶段 | 专家 | Slug | 部门 | 用途 |
+|------|------|------|------|------|
+| 🎨 设计 | UI Designer | ui-designer | design | 页面布局、交互设计、组件样式 |
+| 🔧 后端 | Backend Architect | backend-architect | engineering | 系统设计、API开发、数据库架构、Python/Flask |
+| 💻 前端 | Frontend Developer | frontend-developer | engineering | HTML/CSS/JS 实现、Vanilla JS 单页应用 |
+| 🧪 测试 | API Tester | api-tester | testing | Flask API 测试、性能验证 |
+| 🔍 审查 | Code Reviewer | code-reviewer | engineering | 代码审查、安全、可维护性 |
+| 🌿 分支 | Git Workflow Master | git-workflow-master | engineering | 分支策略、commit 规范、合并流程 |
 
 ### 新功能开发：先给方案再看
 
