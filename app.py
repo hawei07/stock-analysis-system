@@ -1163,12 +1163,6 @@ def api_stock_valuation(code):
         except Exception:
             pass
 
-        # 若实时 PE 可用则覆盖计算值，并重新计算分位
-        if realtime_pe and realtime_pe > 0:
-            cur_pe = realtime_pe
-            if pe_values:
-                cur_pct = round(sum(1 for v in pe_values if v <= cur_pe) / len(pe_values) * 100, 2)
-
         return jsonify({
             "pe_data": pe_data,
             "price_data": price_data,
