@@ -293,7 +293,7 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
                 {"role": "system", "content": MUNGER_SYSTEM},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.7,
+            temperature=0.3,
             max_tokens=4000,
         )
         text = resp.choices[0].message.content.strip()
@@ -324,20 +324,23 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
         }
 
 
-# ── 缓存 ─────────────────────────────────────────────────────────────────────
+# ── 缓存（含版本号，代码升级自动失效） ─────────────────────────────────────
+
+CACHE_VERSION = "v2.1"  # 改代码时递增此版本，旧缓存自动失效
 
 def _cache_get(stock_code: str) -> dict | None:
     rows = execute_query(
-        "SELECT analysis_json FROM munger_cache WHERE stock_code=%s", (stock_code,)
+        "SELECT analysis_json FROM munger_cache WHERE stock_code=%s AND cache_version=%s",
+        (stock_code, CACHE_VERSION),
     )
     return json.loads(rows[0]["analysis_json"]) if rows else None
 
 
 def _cache_set(stock_code: str, result: dict) -> None:
     execute_update(
-        "INSERT INTO munger_cache (stock_code, analysis_json) VALUES (%s,%s) "
+        "INSERT INTO munger_cache (stock_code, analysis_json, cache_version) VALUES (%s,%s,%s) "
         "ON DUPLICATE KEY UPDATE analysis_json=VALUES(analysis_json)",
-        (stock_code, json.dumps(result, ensure_ascii=False)),
+        (stock_code, json.dumps(result, ensure_ascii=False), CACHE_VERSION),
     )
 
 
