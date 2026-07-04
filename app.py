@@ -1067,21 +1067,73 @@ def api_stock_balance_sheet(code):
 def api_stock_valuation(code):
     """PE-TTM 历史 + 股价 + 分位点"""
     try:
-        # 1. 获取历年摊薄每股收益（年报），用于计算 PE-TTM
-        pe_data = []
-        url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
-               "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
-               f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22%E5%B9%B4%E6%8A%A5%22)"
-               "&pageSize=50&sortColumns=REPORT_DATE&sortTypes=-1")
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        data = resp.json()
-        eps_by_date = {}
-        if data.get("success"):
-            for item in data["result"]["data"]:
-                rd = item.get("REPORT_DATE", "")
-                eps = item.get("EPSJB")  # 基本每股收益
-                if rd and eps and float(eps) > 0:
-                    eps_by_date[rd[:10]] = float(eps)
+        # 1. 获取所有财报季度的基本每股收益（年报/半年报/季报），用于 TTM 计算
+        eps_records = []  # [(report_date, report_type, fiscal_year, eps_cumulative), ...]
+        for report_type in ["%E5%B9%B4%E6%8A%A5", "%E4%B8%80%E5%AD%A3%E6%8A%A5", 
+                            "%E5%8D%8A%E5%B9%B4%E6%8A%A5", "%E4%B8%89%E5%AD%A3%E6%8A%A5"]:
+            url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
+                   "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
+                   f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22{report_type}%22)"
+                   "&pageSize=50&sortColumns=REPORT_DATE&sortTypes=-1")
+            try:
+                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                data = resp.json()
+                if data.get("success"):
+                    for item in data["result"]["data"]:
+                        rd = item.get("REPORT_DATE", "")
+                        eps = item.get("EPSJB")
+                        fy = item.get("FISCAL_YEAR") or (int(rd[:4]) if rd[:4].isdigit() else 0)
+                        if rd and eps and float(eps) > 0 and fy:
+                            eps_records.append((rd[:10], report_type, fy, float(eps)))
+            except Exception:
+                pass
+        eps_records.sort(key=lambda x: x[0])  # 按日期排序
+
+        # 构建 TTM EPS 函数：给定日期，计算最近12个月每股收益
+        # TTM = 最新年报EPS - 去年同期累计EPS + 今年最新累计EPS
+        def calc_ttm_eps(target_date, records):
+            """target_date: 'YYYY-MM-DD'"""
+            # 找到 target_date 当天或之前的最新财务报告
+            latest = None
+            for r in records:
+                if r[0] <= target_date:
+                    latest = r
+                else:
+                    break
+            if not latest:
+                return None
+            
+            rd, rtype, fy, eps = latest
+            
+            # 年报：直接用作 TTM
+            if "%E5%B9%B4" in rtype:  # 年报
+                # 检查是否有更新的季报在同一财年之后
+                # 年报日期通常是最新的，直接返回
+                return eps
+            
+            # 找到最近的一份年报
+            latest_annual_eps = None
+            for r in records:
+                if "%E5%B9%B4" in r[1] and r[0] <= target_date:
+                    latest_annual_eps = r[3]
+            
+            if not latest_annual_eps:
+                return eps  # 无年报时直接用累计EPS
+            
+            # 找到去年同期的累计EPS
+            # 同一 REPORT_TYPE，fiscal_year - 1
+            last_year_same = None
+            for r in records:
+                if r[1] == rtype and r[2] == fy - 1:
+                    last_year_same = r[3]
+                    break
+            
+            if last_year_same is None:
+                return latest_annual_eps
+            
+            # TTM = 去年年报EPS - 去年同期EPS + 今年最新累计EPS
+            ttm = latest_annual_eps - last_year_same + eps
+            return max(ttm, 0) if ttm > 0 else None
 
         # 2. 获取股价（前复权）—— 分批拉取以覆盖更长历史
         market = "sh" if code.startswith(("6", "5", "9")) else "sz"
@@ -1114,23 +1166,15 @@ def api_stock_valuation(code):
         except Exception:
             pass
 
-        # 3. 计算每日 PE-TTM：前复权股价 / 最新年报 EPS（向前填充）
+        # 3. 计算每日 PE-TTM：前复权股价 / TTM EPS
         pe_data = []
-        if price_data:
-            eps_dates = sorted(eps_by_date.items())  # [(date, eps), ...]
+        if price_data and eps_records:
             for p in price_data:
-                p_date = p["date"]
-                # 找到 p_date 当天或之前的最新 EPS
-                latest_eps = None
-                for ed, eps in eps_dates:
-                    if ed <= p_date:
-                        latest_eps = eps
-                    else:
-                        break
-                if latest_eps and latest_eps > 0:
-                    pe = round(p["close"] / latest_eps, 2)
-                    if 0 < pe < 9999:  # 过滤异常值
-                        pe_data.append({"date": p_date, "pe": pe})
+                ttm_eps = calc_ttm_eps(p["date"], eps_records)
+                if ttm_eps and ttm_eps > 0:
+                    pe = round(p["close"] / ttm_eps, 2)
+                    if 0 < pe < 9999:
+                        pe_data.append({"date": p["date"], "pe": pe})
 
         # 4. 计算分位点
         pe_values = [p["pe"] for p in pe_data if p["pe"] > 0]
