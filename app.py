@@ -632,7 +632,7 @@ def api_stock_financials(code):
                   cf.interest_bearing_debt_ratio,
                   d.dividend_amount, d.dividend_per_share
            FROM custom_financials cf
-           LEFT JOIN dividends d ON cf.stock_code = d.stock_code COLLATE utf8mb4_unicode_ci AND cf.fiscal_year = d.fiscal_year
+           LEFT JOIN dividends d ON cf.stock_code = d.stock_code AND cf.fiscal_year = d.fiscal_year
            WHERE cf.stock_code = %s {where_period}
            AND cf.fiscal_year BETWEEN %s AND %s
            ORDER BY cf.fiscal_year DESC, FIELD(cf.report_period, 'FY','Q3','Q2','Q1') DESC""",
