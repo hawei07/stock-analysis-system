@@ -115,6 +115,7 @@ def _web_search(query: str, max_results: int = 5) -> str:
         )
 
         lines = []
+        urls_seen = set()
         for href, title in links:
             title = re.sub(r'<[^>]+>', '', title).strip()
             # 跳过 DuckDuckGo 内部链接和空标题
@@ -122,10 +123,13 @@ def _web_search(query: str, max_results: int = 5) -> str:
                 continue
             if href.startswith('//') or 'next_form' in href:
                 continue
-            # 截断过长标题（有些标题含摘要）
+            if href in urls_seen:
+                continue
+            urls_seen.add(href)
+            # 截断过长标题
             if len(title) > 150:
                 title = title[:150] + "..."
-            lines.append(f"- {title}")
+            lines.append(f"- {title}\n  {href}")
             if len(lines) >= max_results:
                 break
 
@@ -263,11 +267,25 @@ def _build_user_prompt(fin: dict, searches: dict) -> str:
         f"- 总股本(最新): {latest.get('total_shares','N/A')}亿股",
     ]
 
-    # Web 搜索结果
-    lines += ["", "## Web 搜索结果（按分析维度）"]
+    # Web 搜索结果（抓取前2条链接全文）
+    lines += ["", "## Web 搜索结果（含页面内容）"]
     for dim, text in searches.items():
-        if text.strip():
-            lines.append(f"\n### {dim}\n{text[:800]}")
+        if not text.strip():
+            continue
+        lines.append(f"\n### {dim}")
+        # 提取前2条 URL 并抓取内容
+        result_urls = re.findall(r'(https?://[^\s]+)', text)
+        for i, u in enumerate(result_urls[:2]):
+            content = _fetch_url_content(u)
+            if content and len(content) > 50 and "无法" not in content:
+                lines.append(f"\n**[来源{i+1}]** {u}")
+                lines.append(content[:1500])
+        # 保留其他结果的标题
+        other_lines = [l for l in text.split('\n') if l.startswith('- ') and 'http' not in l]
+        if other_lines:
+            lines.append("\n其他结果:")
+            lines.extend(other_lines[:3])
+        time.sleep(0.3)
 
     lines += [
         "",
@@ -333,7 +351,7 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
 
 # ── 缓存（含版本号，代码升级自动失效） ─────────────────────────────────────
 
-CACHE_VERSION = "v2.4"  # 修复 Web 搜索解析器，旧缓存自动失效
+CACHE_VERSION = "v2.5"  # 深度抓取页面全文，旧缓存自动失效
 
 def _cache_get(stock_code: str) -> dict | None:
     rows = execute_query(
