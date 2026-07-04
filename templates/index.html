@@ -3006,10 +3006,10 @@ async function loadStickyNotes() {
       let body = esc(n.content);
       // data:image → img tags
       body = body.replace(/(data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+)/gi,
-        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block" onerror="this.style.display=none">');
+        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block;cursor:pointer" onclick="viewImage(this.src)" onerror="this.style.display=none">');
       // Image URLs → img tags
       body = body.replace(/(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?\S*)?)/gi,
-        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block" onerror="this.style.display=\'none\'">');
+        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block;cursor:pointer" onclick="viewImage(this.src)" onerror="this.style.display=\'none\'">');
       // Other URLs → clickable links
       body = body.replace(/(https?:\/\/[^\s<>]+)/g,
         '<a href="$1" target="_blank" style="color:#4a6cf7">$1</a>');
@@ -3078,6 +3078,15 @@ async function deleteSticky(id, btn) {
 }
 
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// 图片查看器
+function viewImage(src) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  overlay.innerHTML = '<img src="' + src + '" style="max-width:95vw;max-height:95vh;border-radius:8px">';
+  overlay.onclick = function() { overlay.remove(); };
+  document.body.appendChild(overlay);
+}
 
 // 便利贴内容区粘贴图片支持
 document.addEventListener('DOMContentLoaded', function() {
