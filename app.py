@@ -1091,12 +1091,31 @@ def api_stock_valuation(code):
 
         # 构建 TTM EPS 函数：给定日期，计算最近12个月每股收益
         # TTM = 最新年报EPS - 去年同期累计EPS + 今年最新累计EPS
+        # 季报在财季结束后45天才实际披露，因此延迟生效
         def calc_ttm_eps(target_date, records):
             """target_date: 'YYYY-MM-DD'"""
-            # 找到 target_date 当天或之前的最新财务报告
+            from datetime import datetime, timedelta
+            target_dt = datetime.strptime(target_date, "%Y-%m-%d")
+            
+            # 找到 target_date 当天或之前的最新有效财务报告（考虑披露延迟）
             latest = None
             for r in records:
-                if r[0] <= target_date:
+                rd_dt = datetime.strptime(r[0], "%Y-%m-%d")
+                # 年报: 次年4月30日前披露 → 从5月1日起生效
+                # 半年报: 8月31日前披露 → 从9月1日起生效
+                # Q3季报: 10月31日前披露 → 从11月1日起生效
+                # Q1季报: 4月30日前披露 → 从5月1日起生效
+                _, rtype, fy, _ = r
+                if "%E5%B9%B4" in rtype:  # 年报
+                    effective = datetime(fy + 1, 5, 1)
+                elif "%E5%8D%8A%E5%B9%B4" in rtype:  # 半年报
+                    effective = datetime(fy, 9, 1)
+                elif "%E4%B8%89%E5%AD%A3" in rtype:  # Q3季报
+                    effective = datetime(fy, 11, 1)
+                else:  # Q1季报
+                    effective = datetime(fy, 5, 1)
+                
+                if effective <= target_dt:
                     latest = r
                 else:
                     break
