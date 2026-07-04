@@ -489,7 +489,22 @@ def _fetch_url_content(url: str) -> str:
             text = resp.text.strip()
             if len(text) > 100:
                 return text[:6000]
-        # Jina Reader 失败，回退到直接请求
+        # Jina Reader 失败 → 尝试 Google 缓存
+        try:
+            cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
+            r3 = requests.get(cache_url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }, timeout=10)
+            if r3.status_code == 200 and len(r3.text) > 500:
+                raw = re.sub(r'<script[^>]*>.*?</script>', '', r3.text, flags=re.DOTALL | re.IGNORECASE)
+                raw = re.sub(r'<style[^>]*>.*?</style>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+                raw = re.sub(r'<[^>]+>', ' ', raw)
+                raw = re.sub(r'\s+', ' ', raw).strip()
+                if len(raw) > 200:
+                    return raw[:6000]
+        except Exception:
+            pass
+        # 全部失败 → 直接请求回退
         r2 = requests.get(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }, timeout=10)
