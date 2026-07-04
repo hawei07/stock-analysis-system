@@ -351,7 +351,7 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
 
 # ── 缓存（含版本号，代码升级自动失效） ─────────────────────────────────────
 
-CACHE_VERSION = "v2.6"  # 完整芒格System Prompt，旧缓存自动失效
+CACHE_VERSION = "v2.7"  # Jina Reader + 回退机制
 
 def _cache_get(stock_code: str) -> dict | None:
     rows = execute_query(
@@ -474,25 +474,33 @@ CHAT_SYSTEM = """你是查理·芒格（Charlie Munger）——伯克希尔·哈
 
 
 def _fetch_url_content(url: str) -> str:
-    """抓取 URL 内容，提取纯文本。仅允许 http/https 公网URL。"""
+    """抓取 URL 内容，用 Jina Reader 提取纯净 Markdown。"""
     if not re.match(r'^https?://[^\s]+', url):
         return "(无效链接)"
-    # SSRF 防护：禁止内网/本地地址
     forbidden = ('127.', 'localhost', '0.0.0.0', '10.', '172.16.', '192.168.')
     if any(url.lower().startswith(f'http://{p}') or f'://{p}' in url.lower() for p in forbidden):
         return "(不允许访问内网地址)"
     try:
-        resp = requests.get(url, headers={
+        resp = requests.get(f"https://r.jina.ai/{url}", headers={
+            "Accept": "text/markdown",
+            "User-Agent": "Mozilla/5.0 (compatible; stock-analysis/1.0)"
+        }, timeout=15)
+        if resp.status_code == 200:
+            text = resp.text.strip()
+            if len(text) > 100:
+                return text[:6000]
+        # Jina Reader 失败，回退到直接请求
+        r2 = requests.get(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }, timeout=10)
-        text = resp.text
-        text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
-        text = re.sub(r'<[^>]+>', ' ', text)
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text[:6000]
-    except Exception:
-        return "(无法抓取链接)"
+        raw = r2.text
+        raw = re.sub(r'<script[^>]*>.*?</script>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+        raw = re.sub(r'<style[^>]*>.*?</style>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+        raw = re.sub(r'<[^>]+>', ' ', raw)
+        raw = re.sub(r'\s+', ' ', raw).strip()
+        return raw[:6000] if len(raw) > 100 else "(页面为空)"
+    except Exception as e:
+        return f"(抓取失败: {e})"
 
 
 def get_chat_history(stock_code: str) -> list[dict]:
