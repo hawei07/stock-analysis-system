@@ -507,6 +507,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         <select id="stickyType" style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;margin-top:4px">
           <option value="text">📝 文字</option>
           <option value="link">🔗 链接</option>
+          <option value="image">🖼️ 图片</option>
         </select>
       </div>
       <div style="margin-bottom:12px">
@@ -3004,15 +3005,18 @@ async function loadStickyNotes() {
     list.innerHTML = notes.map(n => {
       const time = (n.created_at || '').replace('T',' ').substring(0,16);
       const stockTag = n.stock_code ? `<span style="font-size:11px;color:#4a6cf7;background:#f0f5ff;padding:2px 8px;border-radius:10px">${esc(n.stock_code)}</span>` : '';
-      const icon = n.note_type === 'link' ? '🔗' : '📝';
-      const bg = n.note_type === 'link' ? '#f0f5ff' : '#fffbe6';
-      let body = esc(n.content);
-      if (n.note_type === 'link') {
+      const icon = n.note_type === 'link' ? '🔗' : n.note_type === 'image' ? '🖼️' : '📝';
+      const bg = n.note_type === 'link' ? '#f0f5ff' : n.note_type === 'image' ? '#f5f0ff' : '#fffbe6';
+      let body;
+      if (n.note_type === 'image') {
+        body = `<img src="${n.content}" style="max-width:100%;max-height:400px;border-radius:8px" onerror="this.outerHTML='<span style=color:#999>图片加载失败</span>'">`;
+      } else if (n.note_type === 'link') {
         const m = n.content.match(/(https?:\/\/\S+)/);
         if (m) {
           body = `<a href="${m[1]}" target="_blank" style="color:#4a6cf7;font-weight:600;display:block;margin-bottom:4px">${m[1]}</a>` + esc(n.content.replace(m[1],'').trim());
         }
       }
+      if (!body) body = esc(n.content);
       return `<div class="sticky-card" style="background:${bg}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
           <span style="font-size:13px;color:#999">${time}</span>
