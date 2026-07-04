@@ -3004,6 +3004,9 @@ async function loadStickyNotes() {
       const titleHtml = n.title ? `<div style="font-weight:600;font-size:15px;margin-bottom:8px">${esc(n.title)}</div>` : '';
       // Auto-detect images and links in content
       let body = esc(n.content);
+      // data:image → img tags
+      body = body.replace(/(data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+)/gi,
+        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block" onerror="this.style.display=none">');
       // Image URLs → img tags
       body = body.replace(/(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?\S*)?)/gi,
         '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block" onerror="this.style.display=\'none\'">');
@@ -3075,6 +3078,33 @@ async function deleteSticky(id, btn) {
 }
 
 function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// 便利贴内容区粘贴图片支持
+document.addEventListener('DOMContentLoaded', function() {
+  const ta = document.getElementById('stickyContent');
+  if (ta) {
+    ta.addEventListener('paste', function(e) {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          const reader = new FileReader();
+          reader.onload = function(ev) {
+            const imgTag = '\n[图片]\n';
+            const cursor = ta.selectionStart;
+            const before = ta.value.substring(0, cursor);
+            const after = ta.value.substring(cursor);
+            ta.value = before + ev.target.result + after;
+          };
+          reader.readAsDataURL(blob);
+          break;
+        }
+      }
+    });
+  }
+});
 </script>
 <!-- 系统设置弹窗 -->
 <div class="modal-overlay" id="settingsModalOverlay" onclick="if(event.target===this)closeSettings()">
