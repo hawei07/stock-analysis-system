@@ -108,22 +108,27 @@ def _web_search(query: str, max_results: int = 5) -> str:
         }, timeout=12)
         text = resp.text
 
-        # 提取带摘要的结果
-        results = re.findall(
-            r'<a[^>]*class="result-link"[^>]*>([^<]+)</a>.*?<td[^>]*class="result-snippet"[^>]*>(.*?)</td>',
-            text, re.DOTALL | re.IGNORECASE
+        # 提取所有链接（适配新版 DuckDuckGo Lite HTML）
+        links = re.findall(
+            r'<a[^>]*href="([^"]+)"[^>]*>\s*(.+?)\s*</a>',
+            text, re.DOTALL
         )
-        if not results:
-            results = re.findall(
-                r'<a[^>]*class="result-link"[^>]*>([^<]+)</a>', text
-            )
-            results = [(t, "") for t in results]
 
         lines = []
-        for title, snippet in results[:max_results]:
+        for href, title in links:
             title = re.sub(r'<[^>]+>', '', title).strip()
-            snippet = re.sub(r'<[^>]+>', '', snippet).strip()[:200]
-            lines.append(f"- {title}" + (f"\n  {snippet}" if snippet else ""))
+            # 跳过 DuckDuckGo 内部链接和空标题
+            if not title or 'duckduckgo' in href.lower():
+                continue
+            if href.startswith('//') or 'next_form' in href:
+                continue
+            # 截断过长标题（有些标题含摘要）
+            if len(title) > 150:
+                title = title[:150] + "..."
+            lines.append(f"- {title}")
+            if len(lines) >= max_results:
+                break
+
         return "\n".join(lines) if lines else "(无搜索结果)"
     except Exception as e:
         return f"(搜索失败: {e})"
@@ -328,7 +333,7 @@ def _call_deepseek(fin: dict) -> dict[str, Any]:
 
 # ── 缓存（含版本号，代码升级自动失效） ─────────────────────────────────────
 
-CACHE_VERSION = "v2.3"  # 改代码时递增此版本，旧缓存自动失效
+CACHE_VERSION = "v2.4"  # 修复 Web 搜索解析器，旧缓存自动失效
 
 def _cache_get(stock_code: str) -> dict | None:
     rows = execute_query(
