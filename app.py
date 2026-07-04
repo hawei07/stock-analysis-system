@@ -1552,12 +1552,12 @@ def api_sticky_notes():
         stock_code = request.args.get("stock_code", "")
         if stock_code:
             rows = execute_query(
-                "SELECT id, note_type, content, stock_code, created_at FROM sticky_notes WHERE stock_code=%s OR stock_code IS NULL ORDER BY id DESC",
+                "SELECT id, title, note_type, content, stock_code, created_at FROM sticky_notes WHERE stock_code=%s OR stock_code IS NULL ORDER BY id DESC",
                 (stock_code,),
             )
         else:
             rows = execute_query(
-                "SELECT id, note_type, content, stock_code, created_at FROM sticky_notes ORDER BY id DESC", ()
+                "SELECT id, title, note_type, content, stock_code, created_at FROM sticky_notes ORDER BY id DESC", ()
             )
         for r in rows:
             if r.get("created_at"):
@@ -1566,11 +1566,12 @@ def api_sticky_notes():
     elif request.method == "POST":
         data = request.get_json(force=True)
         note_type = data.get("note_type", "text")
+        title = data.get("title", "")
         content = data.get("content", "")
         stock_code = data.get("stock_code", "") or None
         execute_update(
-            "INSERT INTO sticky_notes (note_type, content, stock_code) VALUES (%s,%s,%s)",
-            (note_type, content, stock_code),
+            "INSERT INTO sticky_notes (title, note_type, content, stock_code) VALUES (%s,%s,%s,%s)",
+            (title, note_type, content, stock_code),
         )
         return jsonify({"ok": True})
 
@@ -1580,11 +1581,12 @@ def api_sticky_note(note_id):
     if request.method == "PUT":
         data = request.get_json(force=True)
         note_type = data.get("note_type", "text")
+        title = data.get("title", "")
         content = data.get("content", "")
         stock_code = data.get("stock_code", "") or None
         execute_update(
-            "UPDATE sticky_notes SET note_type=%s, content=%s, stock_code=%s WHERE id=%s",
-            (note_type, content, stock_code, note_id),
+            "UPDATE sticky_notes SET title=%s, note_type=%s, content=%s, stock_code=%s WHERE id=%s",
+            (title, note_type, content, stock_code, note_id),
         )
         return jsonify({"ok": True})
     elif request.method == "DELETE":

@@ -503,16 +503,12 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     </div>
     <div class="modal-body" style="padding:20px">
       <div style="margin-bottom:12px">
-        <label style="font-size:13px;font-weight:600">类型</label>
-        <select id="stickyType" style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;margin-top:4px">
-          <option value="text">📝 文字</option>
-          <option value="link">🔗 链接</option>
-          <option value="image">🖼️ 图片</option>
-        </select>
+        <label style="font-size:13px;font-weight:600">标题</label>
+        <input type="text" id="stickyTitle" style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;margin-top:4px" placeholder="便利贴标题">
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:13px;font-weight:600">内容</label>
-        <textarea id="stickyContent" rows="5" style="width:100%;padding:10px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;resize:vertical;font-family:inherit;margin-top:4px" placeholder="输入文字或粘贴链接..."></textarea>
+        <textarea id="stickyContent" rows="5" style="width:100%;padding:10px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;resize:vertical;font-family:inherit;margin-top:4px" placeholder="支持文字、链接 https://... 和图片 URL（.png/.jpg 等），混排输入"></textarea>
       </div>
       <div style="margin-bottom:16px">
         <label style="font-size:13px;font-weight:600">关联股票（可选）</label>
@@ -3005,31 +3001,28 @@ async function loadStickyNotes() {
     list.innerHTML = notes.map(n => {
       const time = (n.created_at || '').replace('T',' ').substring(0,16);
       const stockTag = n.stock_code ? `<span style="font-size:11px;color:#4a6cf7;background:#f0f5ff;padding:2px 8px;border-radius:10px">${esc(n.stock_code)}</span>` : '';
-      const icon = n.note_type === 'link' ? '🔗' : n.note_type === 'image' ? '🖼️' : '📝';
-      const bg = n.note_type === 'link' ? '#f0f5ff' : n.note_type === 'image' ? '#f5f0ff' : '#fffbe6';
-      let body;
-      if (n.note_type === 'image') {
-        body = `<img src="${n.content}" style="max-width:100%;max-height:400px;border-radius:8px" onerror="this.outerHTML='<span style=color:#999>图片加载失败</span>'">`;
-      } else if (n.note_type === 'link') {
-        const m = n.content.match(/(https?:\/\/\S+)/);
-        if (m) {
-          body = `<a href="${m[1]}" target="_blank" style="color:#4a6cf7;font-weight:600;display:block;margin-bottom:4px">${m[1]}</a>` + esc(n.content.replace(m[1],'').trim());
-        }
-      }
-      if (!body) body = esc(n.content);
-      return `<div class="sticky-card" style="background:${bg}">
+      const titleHtml = n.title ? `<div style="font-weight:600;font-size:15px;margin-bottom:8px">${esc(n.title)}</div>` : '';
+      // Auto-detect images and links in content
+      let body = esc(n.content);
+      // Image URLs → img tags
+      body = body.replace(/(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?\S*)?)/gi,
+        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block" onerror="this.outerHTML=\\'<span style=color:#999>图片加载失败: $1</span>\\'">');
+      // Other URLs → clickable links
+      body = body.replace(/(https?:\/\/[^\s<>]+)/g,
+        '<a href="$1" target="_blank" style="color:#4a6cf7">$1</a>');
+      body = body.replace(/\n/g, '<br>');
+
+      return `<div class="sticky-card" style="background:#fffbe6">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
           <span style="font-size:13px;color:#999">${time}</span>
           <div class="sticky-actions">
-            <button onclick="editSticky(${n.id},'${n.note_type}',this)" title="编辑" style="background:none;border:none;cursor:pointer;color:#bbb;font-size:14px;padding:2px 6px">✎</button>
+            <button onclick="editSticky(${n.id},this)" title="编辑" style="background:none;border:none;cursor:pointer;color:#bbb;font-size:14px;padding:2px 6px">✎</button>
             <button onclick="deleteSticky(${n.id},this)" title="删除" style="background:none;border:none;cursor:pointer;color:#bbb;font-size:14px;padding:2px 6px">✕</button>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <span style="font-size:20px">${icon}</span>
-          ${stockTag}
-        </div>
-        <div style="font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word">${body}</div>
+        ${titleHtml}
+        ${stockTag ? `<div style="margin-bottom:8px">${stockTag}</div>` : ''}
+        <div style="font-size:14px;line-height:1.7;word-break:break-word">${body}</div>
       </div>`;
     }).join('');
   } catch(e) {
@@ -3037,38 +3030,32 @@ async function loadStickyNotes() {
   }
 }
 
-function openStickyModal(id, type, content) {
+function openStickyModal(id, title, content) {
   stickyEditId = id || null;
   document.getElementById('stickyModalTitle').textContent = id ? '编辑便利贴' : '新建便利贴';
-  document.getElementById('stickyType').value = type || 'text';
+  document.getElementById('stickyTitle').value = title || '';
   document.getElementById('stickyContent').value = content || '';
-  // 当前股票代码
   const code = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
   document.getElementById('stickyStock').value = code;
-  if (id) document.getElementById('stickyStock').disabled = true;
-  else document.getElementById('stickyStock').disabled = false;
   document.getElementById('stickyModalOverlay').classList.add('active');
 }
 
-async function editSticky(id, type, btn) {
-  const card = btn.closest('.sticky-card');
-  const body = card.querySelector('div:last-child').textContent;
-  const stockEl = card.querySelector('span[style*="border-radius"]');
-  openStickyModal(id, type, body);
-  if (stockEl) document.getElementById('stickyStock').value = stockEl.textContent;
+async function editSticky(id, btn) {
+  // Fetch notes to find this one
+  const res = await fetch('/api/sticky-notes?stock_code=' + (document.getElementById('detailCode')?.textContent || ''));
+  const notes = await res.json();
+  const n = notes.find(x => x.id === id);
+  if (n) openStickyModal(n.id, n.title, n.content);
 }
 
-function closeStickyModal() {
-  document.getElementById('stickyModalOverlay').classList.remove('active');
-  stickyEditId = null;
-}
+function closeStickyModal() { document.getElementById('stickyModalOverlay').classList.remove('active'); stickyEditId = null; }
 
 async function saveSticky() {
-  const type = document.getElementById('stickyType').value;
+  const title = document.getElementById('stickyTitle').value.trim();
   const content = document.getElementById('stickyContent').value.trim();
   const stock = document.getElementById('stickyStock').value.trim();
-  if (!content) { alert('请输入内容'); return; }
-  const body = { note_type: type, content, stock_code: stock };
+  if (!content && !title) { alert('请输入内容'); return; }
+  const body = { note_type: 'text', title, content, stock_code: stock };
   const method = stickyEditId ? 'PUT' : 'POST';
   const url = '/api/sticky-notes' + (stickyEditId ? '/' + stickyEditId : '');
   try {
