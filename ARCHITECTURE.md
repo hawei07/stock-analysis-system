@@ -11,7 +11,7 @@ AIGC:
 
 # 股票分析系统 — 业务逻辑与技术架构总结
 
-> 版本 v2.3 | 2026-07-03 | Python Flask + MySQL 8.4
+> 版本 v2.7 | 2026-07-04 | Python Flask + MySQL 8.4 + DeepSeek V4 Pro
 
 ---
 
@@ -60,7 +60,9 @@ AIGC:
 |------|------|------|
 | 前端 | `templates/index.html` | 单页应用，表格渲染、表单交互、分页 |
 | Web 层 | `app.py` | 路由分发、请求校验、JSON 序列化 |
-| 模型层 | `models.py` | 数据库 CRUD 封装（无 ORM，手写 SQL） |
+| 模型层 | `models.py` | Stock CRUD + sticky_notes/munger_chats 查询 |
+| 服务层 | `munger.py` | 芒格对话引擎 + Web搜索 + 三层抓取 + DeepSeek |
+| 配置层 | `config_manager.py` | API Key 等系统配置读写 |
 | 持久层 | `db.py` | 连接池管理、查询/更新统一入口 |
 | 配置 | `config.py` | 数据库连接参数集中管理 |
 
@@ -228,6 +230,16 @@ AIGC:
 | GET | `/api/stock/<code>/kline` | 获取日K线数据（蜡烛图） |
 | GET | `/api/stock/<code>/valuation` | 获取 PE-TTM 估值数据（历史+股价+分位点） |
 | GET | `/api/stock/<code>/realtime-quote` | 查询实时行情 |
+| GET | `/api/config` | 获取系统配置（掩码） |
+| PUT | `/api/config` | 更新系统配置 |
+| GET | `/api/stock/<code>/munger-chat` | 获取对话历史 |
+| POST | `/api/stock/<code>/munger-chat` | 发送对话消息 |
+| DELETE | `/api/stock/<code>/munger-chat?msg_id=N` | 删除单条消息 |
+| DELETE | `/api/stock/<code>/munger-chat` | 清空全部对话 |
+| GET | `/api/sticky-notes?stock_code=X` | 获取便利贴 |
+| POST | `/api/sticky-notes` | 新建便利贴 |
+| PUT | `/api/sticky-notes/<id>` | 编辑便利贴 |
+| DELETE | `/api/sticky-notes/<id>` | 删除便利贴 |
 
 ### 4.2 接口详情
 
@@ -579,19 +591,70 @@ AIGC:
 | 双网格 | 上方 K线（65%）+ 下方成交量（15%） |
 | 提示框 | 横轴十字线，显示 OHLCV 五要素 |
 
-### 5.9 估值分析
+### 5.9 估值分析（PE-TTM 四轮演进）
 
-PE-TTM 历史走势 + 分位点 + 股价联动，支持时间范围切换：
+PE-TTM 历史走势 + 分位点 + 股价联动，支持时间范围切换。
+
+**计算演进**：
+
+| 轮次 | 方法 | 问题 |
+|------|------|------|
+| R1 | 股价 / 年报 EPS | 2026年仍用2024EPS，PE虚高12.81 |
+| R2 | TTM = 年报 - 去年同期 + 今年累计 | 9月30日提前用了Q3数据 |
+| R3 | R2 + 披露延迟（年报5月/Q3 11月生效） | 基本准确 |
+| R4 | R3 + 归母净利润/总股本（替代EPSJB） | **当前方法，最新PE=8.96与腾讯完全一致** |
+
+**当前算法**：
+```
+TTM_EPS = PARENTNETPROFIT / TOTAL_SHARE  （每期独立获取总股本）
+PE = 前复权股价 / TTM_EPS
+```
+数据源：东方财富「全部报告类型」+ 腾讯前复权K线。分位点在前端基于筛后数据实时计算。
 
 | 特性 | 实现方式 |
 |------|------|
-| PE-TTM 计算 | 股价（前复权）/ 最新年报摊薄 EPS，向前填充至每日 |
-| 当前 PE | 优先取 qt.gtimg.cn 实时 PE-TTM，更精确 |
+| PE-TTM 计算 | 股价（前复权）/ TTM EPS（归母净利润÷总股本），披露延迟后生效 |
+| 当前 PE | 图表和侧边栏统一为 归母净利润计算值，同时传 realtime_pe 供参考 |
 | 分位点 | 80%/50%/20% 基于所选时间范围在**前端实时计算** |
 | 股价数据 | 腾讯 K线 API 分批拉取（最多 8 批 ≈ 20 年），去重后排序 |
 | 时间范围 | 上市以来 / 20年 / 10年 / 5年 / 3年 / 1年 |
-| 图表 | 双Y轴折线：PE-TTM（蓝）+ 分位虚线（红/灰/绿）+ 股价（橙） |
+| 图表 | 双Y轴折线：PE-TTM（蓝）+ 分位虚线（红/灰/绿）+ 股价（橙），Y轴 padding 1% |
 | 标记点 | 蓝色大头针标最高 PE，绿色标最低 PE |
+
+### 5.10 对话芒格（💬）
+
+每只股票独立的实时对话，芒格人格（Full Munger Skill），支持 Web 搜索和链接分析。
+
+| 特性 | 实现方式 |
+|------|------|
+| System Prompt | 完整芒格人格：5大心智模型 + 8条启发式 + Agentic 工作流 |
+| 模型 | DeepSeek V4 Pro，temperature=0.3，max_tokens=1000 |
+| Web 搜索 | DuckDuckGo Lite → 标题捕获，触发词（?/怎么/为什么/查/搜索） |
+| 链接分析 | 三层抓取（Jina Reader → Google 缓存 → 直接请求） |
+| 上下文 | 财务摘要(PE/ROE/ROIC/负债率) + 最近10条历史 + 搜索结果前3条全文 |
+| 消息管理 | 单条删除 + 清空全部，GET/POST/DELETE API |
+| 存储 | `munger_chats` 表，按 stock_code 隔离 |
+
+### 5.11 便利贴（📌）
+
+股票详情页标签，每只股票独立笔记。标题 + 内容两个字段，内容支持文字/链接/图片混排自动识别。
+
+| 特性 | 实现方式 |
+|------|------|
+| 输入 | 标题 + 内容 textarea（无类型选择器），关联股票下拉选择 |
+| 粘贴图片 | Ctrl+V 自动转 base64 data URI 插入，渲染为 `<img>` |
+| 查看原图 | 点击图片全屏深色浮层查看（`background:rgba(0,0,0,.85)`） |
+| 存储 | `sticky_notes` 表（title + content LONGTEXT + stock_code） |
+| API | GET(按stock_code过滤)/POST/PUT/DELETE |
+| 切换股票 | 自动检测 `panel-sticky` 显示状态 → 调用 `loadStickyNotes()` |
+
+### 5.12 Web 页面抓取三层回退
+
+```
+Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
+```
+
+雪球等 JS SPA 页面通过 Google 缓存绕过 JS 渲染瓶颈。
 | 侧边栏 | 当前值 / 分位点 / 80%-50%-20% / 最大-平均-最小，联动时间范围 |
 
 ### 5.10 利润表 & 现金流量表
