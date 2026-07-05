@@ -116,13 +116,13 @@ tr:hover td{background:#fafbff}
 .toolbar-row input{width:80px}
 
 .fin-table-wrap{overflow-x:auto;max-width:100%;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);position:relative;max-height:70vh;overflow-y:auto}
-.fin-table{border-collapse:collapse;min-width:100%;font-size:12px}
+.fin-table{border-collapse:separate;border-spacing:0;min-width:100%;font-size:12px}
 .fin-table th,.fin-table td{border:1px solid #e8e8e8;padding:6px 10px;text-align:right;white-space:nowrap}
 .fin-table th{background:#f0f0f0;font-weight:600;font-size:12px;color:#333}
 .fin-table td{background:#fff}
 .fin-table .sticky-col{position:sticky;left:0;z-index:2;background:#fafafa;font-weight:500;text-align:left;min-width:180px}
-.fin-table .sticky-header{position:sticky;top:0;z-index:3}
-.fin-table thead th.sticky-col{z-index:4;background:#f0f0f0}
+.fin-table thead{position:sticky;top:0;z-index:5}
+.fin-table thead th.sticky-col{z-index:6;background:#f0f0f0}
 .fin-table .year-header{text-align:center;font-size:14px;background:#e6f0ff}
 .fin-table .sub-header{font-size:11px;color:#666;text-align:center}
 .fin-table .unit-row td{font-size:11px;color:#999;text-align:center;background:#fafafa;padding:4px 10px}
