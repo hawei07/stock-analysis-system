@@ -11,7 +11,7 @@ AIGC:
 
 # 股票分析系统 — 业务逻辑与技术架构总结
 
-> 版本 v2.7 | 2026-07-04 | Python Flask + MySQL 8.4 + DeepSeek V4 Pro
+> 版本 v2.8 | 2026-07-05 | Python Flask + MySQL 8.4 + DeepSeek V4 Pro
 
 ---
 
@@ -21,7 +21,7 @@ AIGC:
 
 - **技术栈**：Python 3.11 + Flask + MySQL 8.4
 - **访问地址**：`http://127.0.0.1:5002`
-- **代码仓库**：`D:\stock-analysis-system`（Git 管理，分支策略 `feature/xxx → main`，修改后立即本地 commit，仅在明确指令时 push）
+- **代码仓库**：`E:\stock-analysis-system`（Git 管理，分支策略 `feature/xxx → main`，修改后立即本地 commit，仅在明确指令时 push）
 
 ---
 
@@ -31,16 +31,21 @@ AIGC:
 ┌──────────────────────────────────────────┐
 │              浏览器 (SPA)                  │
 │        Vanilla JS + CSS Variables         │
+│         @media 640px 移动端适配            │
 └──────────────────┬───────────────────────┘
                    │ HTTP RESTful API
 ┌──────────────────▼───────────────────────┐
 │           Flask Web 服务 (app.py)          │
 │  路由: / (页面)  /api/* (数据接口)         │
+│  服务: munger.py (对话芒格)                │
 └──────────────────┬───────────────────────┘
                    │ Python 调用
 ┌──────────────────▼───────────────────────┐
 │         数据模型层 (models.py)              │
 │        Stock 类 — 纯 SQL 封装              │
+├──────────────────────────────────────────┤
+│         data/sticky_notes.json             │
+│         便利贴 JSON 文件存储               │
 └──────────────────┬───────────────────────┘
                    │ mysql-connector-python
 ┌──────────────────▼───────────────────────┐
@@ -64,6 +69,7 @@ AIGC:
 | 服务层 | `munger.py` | 芒格对话引擎 + Web搜索 + 三层抓取 + DeepSeek |
 | 配置层 | `config_manager.py` | API Key 等系统配置读写 |
 | 持久层 | `db.py` | 连接池管理、查询/更新统一入口 |
+| 数据层 | `data/sticky_notes.json` | 便利贴 JSON 文件存储 |
 | 配置 | `config.py` | 数据库连接参数集中管理 |
 
 ---
@@ -639,14 +645,18 @@ PE = 前复权股价 / TTM_EPS
 
 股票详情页标签，每只股票独立笔记。标题 + 内容两个字段，内容支持文字/链接/图片混排自动识别。
 
+> ⚠️ v2.8 起便利贴从 MySQL `sticky_notes` 表迁移到 JSON 文件存储（`data/sticky_notes.json`），base64 图片自动提取为独立文件（`data/images/`），实现 Git + Syncthing 跨设备同步。
+
 | 特性 | 实现方式 |
 |------|------|
 | 输入 | 标题 + 内容 textarea（无类型选择器），关联股票下拉选择 |
-| 粘贴图片 | Ctrl+V 自动转 base64 data URI 插入，渲染为 `<img>` |
+| 粘贴图片 | Ctrl+V 自动转 base64 data URI 插入，保存时后端提取为文件 |
 | 查看原图 | 点击图片全屏深色浮层查看（`background:rgba(0,0,0,.85)`） |
-| 存储 | `sticky_notes` 表（title + content LONGTEXT + stock_code） |
-| API | GET(按stock_code过滤)/POST/PUT/DELETE |
+| 存储 | `data/sticky_notes.json`（文字）+ `data/images/*.png`（图片，.gitignore） |
+| API | GET(按stock_code过滤)/POST/PUT/DELETE，图片服务 `/data/images/<path>` |
 | 切换股票 | 自动检测 `panel-sticky` 显示状态 → 调用 `loadStickyNotes()` |
+| 串号防护 | 下拉未填充时兜底取 `detailCode.textContent`，防止存为错误 stock_code |
+| 图片渲染 | 新增 `/data/images/` 路径正则匹配，本地图片路径自动转 `<img>` |
 
 ### 5.12 Web 页面抓取三层回退
 
@@ -656,6 +666,36 @@ Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
 
 雪球等 JS SPA 页面通过 Google 缓存绕过 JS 渲染瓶颈。
 | 侧边栏 | 当前值 / 分位点 / 80%-50%-20% / 最大-平均-最小，联动时间范围 |
+
+### 5.13 移动端响应式适配（v2.8）
+
+纯 CSS 渐进增强，两个断点（768px + 640px），不改 JS。640px 块覆盖 15 个模块：
+
+| 模块 | 适配策略 |
+|------|------|
+| Header | 竖排堆叠，标题缩小 |
+| Toolbar | 搜索框 `flex:1` 占满，按钮缩小 |
+| Tab 栏 | `overflow-x:auto` 左右滑动，隐藏滚动条 |
+| 实时卡片 | 一行两列 (`flex:1 1 calc(50%-6px)`) |
+| 财务表格 | sticky 列缩至 120px，整体 `thead` 吸顶 |
+| 估值侧边栏 | 侧边栏变横向 flex 条，图表高度 300px |
+| 图表 | K线/估值/分红 高度 500→300px |
+| 对话芒格 | 聊天气泡间距缩小，输入栏紧凑 |
+| 弹窗 | `.row` 改为 `flex-direction:column` |
+| Toast | 顶部→底部居中 |
+
+> `thead { position:sticky;top:0 }` + `border-collapse:separate;border-spacing:0` 替代逐 `<th>` 方案，解决年份表头滚动时不冻结问题。
+
+### 5.14 跨设备同步（v2.8）
+
+家庭/公司电脑间的便利贴同步方案：
+
+| 数据类型 | 存储 | 同步方式 |
+|----------|------|----------|
+| 文字内容 | `data/sticky_notes.json` | Git push/pull |
+| 图片文件 | `data/images/*.png` | Syncthing / 坚果云 / OneDrive |
+
+手机局域网访问：改 `app.run(host="0.0.0.0")` + 防火墙放行 TCP 5002。
 
 ### 5.10 利润表 & 现金流量表
 
@@ -781,17 +821,20 @@ dividend_yield = MAX(dps_last_year, dps_year_before) / current_price
 ## 六、项目结构
 
 ```
-D:\stock-analysis-system\
-├── .gitignore            # Git 忽略规则
+D:\\stock-analysis-system\\
+├── .gitignore            # Git 忽略规则（含 data/images/）
 ├── app.py                # Flask 入口 + RESTful API
 ├── config.py             # 数据库配置
+├── config_manager.py     # 系统配置管理（API Key）
 ├── db.py                 # 连接池 + 查询封装
-├── main.py               # CLI 交互入口（旧版，已由 Web 替代）
+├── munger.py             # 对话芒格引擎
 ├── models.py             # Stock 数据模型
 ├── requirements.txt      # Python 依赖
-├── stock_list.py         # CLI 工具（旧版，保留备用）
+├── data\
+│   ├── sticky_notes.json # 便利贴数据（JSON，Git 追踪）
+│   └── images\           # 便利贴图片（.gitignore，Syncthing 同步）
 └── templates\
-    └── index.html        # 前端单页应用
+    └── index.html        # 前端 SPA（单页应用，~3130行）
 ```
 
 ---
@@ -803,8 +846,8 @@ D:\stock-analysis-system\
 | 组件 | 版本 | 路径 |
 |------|------|------|
 | Python | 3.11.8 | 系统 PATH |
-| MySQL | 8.4.9 | `D:\devtools\mysql`（junction to `D:\开发工具\mysql`） |
-| Git | 2.54.0 | `D:\Git\bin\git.exe` |
+| MySQL | 8.4.9 | `E:\MySQL` |
+| Git | 2.54.0 | 系统 PATH |
 
 ### Git 远程与 SSH 配置
 
@@ -820,14 +863,13 @@ D:\stock-analysis-system\
 
 ```powershell
 # 1. 确保 MySQL 运行
-Start-Process "D:\开发工具\mysql\bin\mysqld.exe" `
-  -ArgumentList "--defaults-file=D:\devtools\mysql\my.ini" -WindowStyle Hidden
+# MySQL 8.4 位于 E:\MySQL\bin\，mysqld.exe 已在后台运行
 
 # 2. 安装依赖（首次）
 pip install -r requirements.txt
 
 # 3. 启动 Web 服务
-python D:\stock-analysis-system\app.py
+python E:\stock-analysis-system\app.py
 # 访问 http://127.0.0.1:5002
 ```
 
@@ -866,4 +908,14 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 | 三期 | 技术分析 | MACD/KDJ/均线等指标计算与可视化 |
 | 四期 | 策略回测 | 自定义策略引擎 + 收益曲线 |
 | 五期 | 选股筛选 | 多条件组合筛选 + 排序 |
+
+### 8.2 近期完成 (v2.8)
+
+| 功能 | 说明 |
+|------|------|
+| 移动端适配 | `@media (max-width:640px)` 纯 CSS，15 模块手机可用 |
+| 便利贴 JSON 化 | MySQL → 文件存储，base64 图片分离，支持跨设备同步 |
+| 表格表头冻结 | `thead position:sticky` + `border-collapse:separate` |
+| 便利贴串号修复 | 下拉异步填充竞态兜底 |
+| 分红图表 resize | `switchTab` 遗漏分支补齐 |
 *（内容由AI生成，仅供参考）*
