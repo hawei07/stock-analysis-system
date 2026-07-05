@@ -885,9 +885,39 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 
 ---
 
-## 八、后续扩展规划
+## 八、开发流程规范
 
-### 8.1 当前数据规模
+> 遵循 **Agency Agents 七专家流程**，强制产品经理前置分析 + 用户确认门禁。
+
+### 流程
+
+```
+用户需求
+  ↓
+0️⃣ Product Manager (product-manager)     → 需求分析 + 产品设计
+  ↓  ⛔ 用户必须确认后才能继续
+1️⃣ UI Designer (ui-designer)             → 页面设计
+2️⃣ Backend Architect (backend-architect) → 后端/API/数据库
+3️⃣ Frontend Developer (frontend-developer)→ 前端实现
+4️⃣ API Tester (api-tester)               → 接口测试
+5️⃣ Code Reviewer (code-reviewer)         → 代码审查
+6️⃣ Git Workflow Master (git-workflow-master) → 提交规范
+```
+
+### 规则
+
+| 规则 | 说明 |
+|------|------|
+| 派发方式 | `delegate_task` 派发子 Agent，禁止 `agency_agents_load` 化身 |
+| 第 0 步强制 | 任何需求必须先经产品经理分析，输出需求文档 |
+| 用户确认门禁 | 第 0 步后必须等待用户明确确认（"可以"/"开始"），才进入开发 |
+| 禁止跳过 | 绝不允许跳过产品经理步骤直接写代码 |
+
+---
+
+## 九、后续扩展规划
+
+### 9.1 当前数据规模
 
 | 指标 | 数值 |
 |------|------|
