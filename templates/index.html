@@ -3045,8 +3045,10 @@ async function saveSticky() {
   const title = document.getElementById('stickyTitle').value.trim();
   const content = document.getElementById('stickyContent').value.trim();
   const stock = document.getElementById('stickyStock').value.trim();
+  // 兜底：如果下拉未填充（仅"不关联"一项），自动用当前股票代码
+  const finalStock = stock || (document.getElementById('stickyStock').options.length <= 1 ? (document.getElementById('detailCode')?.textContent || '') : stock);
   if (!content && !title) { alert('请输入内容'); return; }
-  const body = { note_type: 'text', title, content, stock_code: stock };
+  const body = { note_type: 'text', title, content, stock_code: finalStock };
   const method = stickyEditId ? 'PUT' : 'POST';
   const url = '/api/sticky-notes' + (stickyEditId ? '/' + stickyEditId : '');
   try {
