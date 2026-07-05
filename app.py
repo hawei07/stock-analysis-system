@@ -1,10 +1,16 @@
 """股票分析系统 - Web 服务"""
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_from_directory
 import sys
 import re
 import time
 import requests
+import json
+import os
+import threading
+import base64
+import uuid
+from datetime import datetime
 sys.path.insert(0, r"E:\stock-analysis-system")
 from models import Stock
 from db import execute_query, execute_update
@@ -12,6 +18,78 @@ from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
 
 app = Flask(__name__)
+
+# ==================== 便利贴 JSON 文件存储 ====================
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+JSON_PATH = os.path.join(DATA_DIR, 'sticky_notes.json')
+IMAGES_DIR = os.path.join(DATA_DIR, 'images')
+_json_lock = threading.Lock()
+
+
+def _load_notes():
+    """从 JSON 文件加载所有便利贴"""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if not os.path.exists(JSON_PATH):
+        return []
+    try:
+        with open(JSON_PATH, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            return json.loads(content) if content else []
+    except (json.JSONDecodeError, FileNotFoundError):
+        return []
+
+
+def _save_notes(notes):
+    """保存便利贴到 JSON 文件（线程安全）"""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with _json_lock:
+        with open(JSON_PATH, 'w', encoding='utf-8') as f:
+            json.dump(notes, f, ensure_ascii=False, indent=2)
+
+
+def _extract_images(content, note_id):
+    """提取 content 中的 base64 图片到文件，替换为文件路径"""
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+
+    def replace_base64(match):
+        data_uri = match.group(0)
+        try:
+            header, b64data = data_uri.split(',', 1)
+        except ValueError:
+            return data_uri
+        if 'image/png' in header:
+            ext = 'png'
+        elif 'image/jpeg' in header or 'image/jpg' in header:
+            ext = 'jpg'
+        elif 'image/gif' in header:
+            ext = 'gif'
+        elif 'image/webp' in header:
+            ext = 'webp'
+        else:
+            ext = 'png'
+        filename = f'{note_id}_{uuid.uuid4().hex[:8]}.{ext}'
+        filepath = os.path.join(IMAGES_DIR, filename)
+        try:
+            with open(filepath, 'wb') as f:
+                f.write(base64.b64decode(b64data))
+        except Exception:
+            return data_uri
+        return f'/data/images/{filename}'
+
+    return re.sub(r'data:image/[^;]+;base64,[a-zA-Z0-9+/=]+', replace_base64, content)
+
+
+def _cleanup_images(note):
+    """删除便利贴关联的图片文件"""
+    paths = re.findall(r'/data/images/([^"\')\s]+)', note.get('content', ''))
+    for fname in paths:
+        fpath = os.path.join(IMAGES_DIR, fname)
+        if os.path.exists(fpath):
+            try:
+                os.remove(fpath)
+            except OSError:
+                pass
 
 
 # ==================== 页面路由 ====================
@@ -1600,48 +1678,60 @@ def api_munger_chat(code):
 def api_sticky_notes():
     if request.method == "GET":
         stock_code = request.args.get("stock_code", "")
+        notes = _load_notes()
         if stock_code:
-            rows = execute_query(
-                "SELECT id, title, note_type, content, stock_code, created_at FROM sticky_notes WHERE stock_code=%s OR stock_code IS NULL ORDER BY id DESC",
-                (stock_code,),
-            )
-        else:
-            rows = execute_query(
-                "SELECT id, title, note_type, content, stock_code, created_at FROM sticky_notes ORDER BY id DESC", ()
-            )
-        for r in rows:
-            if r.get("created_at"):
-                r["created_at"] = str(r["created_at"])
-        return jsonify(rows)
+            notes = [n for n in notes if n.get('stock_code') == stock_code or not n.get('stock_code')]
+        # 按 id 倒序
+        notes.sort(key=lambda n: n.get('id', 0), reverse=True)
+        return jsonify(notes)
     elif request.method == "POST":
         data = request.get_json(force=True)
-        note_type = data.get("note_type", "text")
-        title = data.get("title", "")
-        content = data.get("content", "")
-        stock_code = data.get("stock_code", "") or None
-        execute_update(
-            "INSERT INTO sticky_notes (title, note_type, content, stock_code) VALUES (%s,%s,%s,%s)",
-            (title, note_type, content, stock_code),
-        )
-        return jsonify({"ok": True})
+        notes = _load_notes()
+        new_id = max([n.get('id', 0) for n in notes], default=0) + 1
+        content = _extract_images(data.get('content', ''), new_id)
+        now = datetime.now().isoformat()
+        note = {
+            'id': new_id,
+            'title': data.get('title', ''),
+            'content': content,
+            'stock_code': data.get('stock_code', '') or '',
+            'created_at': now,
+            'updated_at': now
+        }
+        notes.append(note)
+        _save_notes(notes)
+        return jsonify({"ok": True, "id": new_id})
 
 
 @app.route("/api/sticky-notes/<int:note_id>", methods=["PUT", "DELETE"])
 def api_sticky_note(note_id):
     if request.method == "PUT":
         data = request.get_json(force=True)
-        note_type = data.get("note_type", "text")
-        title = data.get("title", "")
-        content = data.get("content", "")
-        stock_code = data.get("stock_code", "") or None
-        execute_update(
-            "UPDATE sticky_notes SET title=%s, note_type=%s, content=%s, stock_code=%s WHERE id=%s",
-            (title, note_type, content, stock_code, note_id),
-        )
-        return jsonify({"ok": True})
+        notes = _load_notes()
+        for n in notes:
+            if n.get('id') == note_id:
+                _cleanup_images(n)
+                n['title'] = data.get('title', '')
+                n['content'] = _extract_images(data.get('content', ''), note_id)
+                n['stock_code'] = data.get('stock_code', '') or ''
+                n['updated_at'] = datetime.now().isoformat()
+                _save_notes(notes)
+                return jsonify({"ok": True})
+        return jsonify({"error": "not found"}), 404
     elif request.method == "DELETE":
-        execute_update("DELETE FROM sticky_notes WHERE id=%s", (note_id,))
-        return jsonify({"ok": True})
+        notes = _load_notes()
+        for n in notes:
+            if n.get('id') == note_id:
+                _cleanup_images(n)
+                notes.remove(n)
+                _save_notes(notes)
+                return jsonify({"ok": True})
+        return jsonify({"error": "not found"}), 404
+
+
+@app.route('/data/images/<path:filename>')
+def serve_sticky_image(filename):
+    return send_from_directory(IMAGES_DIR, filename)
 
 
 if __name__ == "__main__":
@@ -1651,4 +1741,4 @@ if __name__ == "__main__":
         print("✓ 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"⚠ 表结构检查异常: {e}")
-    app.run(host="127.0.0.1", port=5002, debug=True)
+    app.run(host="0.0.0.0", port=5002, debug=True)
