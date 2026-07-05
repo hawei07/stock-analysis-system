@@ -146,8 +146,8 @@ def api_stock_detail(code):
         stock["created_at"] = str(stock["created_at"]) if stock.get("created_at") else None
         stock["updated_at"] = str(stock["updated_at"]) if stock.get("updated_at") else None
 
-        # 获取实时行情：股价、PE(TTM)、市值
-        realtime = {"price": None, "pe_ttm": None, "market_cap": None}
+        # 获取实时行情：股价、PE(TTM)、PB、市值
+        realtime = {"price": None, "pe_ttm": None, "pb": None, "market_cap": None}
         try:
             market = stock.get("market", "SH")
             prefix = "sh" if market == "SH" else ("sz" if market == "SZ" else "bj")
@@ -166,6 +166,13 @@ def api_stock_detail(code):
                     if pe_str and pe_str != "-":
                         try:
                             realtime["pe_ttm"] = float(pe_str)
+                        except ValueError:
+                            pass
+                if len(parts) >= 44:
+                    pb_str = parts[43].strip()
+                    if pb_str and pb_str != "-":
+                        try:
+                            realtime["pb"] = float(pb_str)
                         except ValueError:
                             pass
                 if len(parts) >= 46:
@@ -1144,6 +1151,9 @@ def api_stock_balance_sheet(code):
 @app.route("/api/stock/<code>/valuation")
 def api_stock_valuation(code):
     """PE-TTM 历史 + 股价 + 分位点"""
+    import sys as _sys2
+    _sys2.stderr.write(f"[VALUATION] Starting for {code}\n")
+    _sys2.stderr.flush()
     try:
         # 1. 获取所有财报季度的归母净利润 + 总股本，用于 TTM PE 计算
         # PE = 市值 / TTM归母净利润（比EPSJB更精确，避免股本变动和四舍五入误差）
@@ -1162,7 +1172,7 @@ def api_stock_valuation(code):
                         rd = item.get("REPORT_DATE", "")
                         parent_np = item.get("PARENTNETPROFIT")  # 归母净利润
                         total_share = item.get("TOTAL_SHARE")    # 总股本
-                        fy = item.get("FISCAL_YEAR") or (int(rd[:4]) if rd[:4].isdigit() else 0)
+                        fy = int(item.get("REPORT_YEAR")) if item.get("REPORT_YEAR") else (int(rd[:4]) if rd[:4].isdigit() else 0)
                         if rd and parent_np and total_share and float(parent_np) > 0 and int(total_share) > 0 and fy:
                             parent_eps = float(parent_np) / int(total_share)
                             eps_records.append((rd[:10], report_type, fy, parent_eps))
@@ -1290,8 +1300,9 @@ def api_stock_valuation(code):
         else:
             p80 = p50 = p20 = cur_pe = cur_pct = None
 
-        # 5. 获取实时 PE-TTM（qt.gtimg.cn，比计算值更精确）
+        # 5. 获取实时 PE-TTM 和 PB（qt.gtimg.cn，比计算值更精确）
         realtime_pe = None
+        realtime_pb = None
         try:
             prefix = "sh" if code.startswith(("6", "5", "9")) else "sz"
             url3 = f"https://qt.gtimg.cn/q={prefix}{code}"
@@ -1304,20 +1315,150 @@ def api_stock_valuation(code):
                     pe_str = parts[39].strip()
                     if pe_str and pe_str not in ("", "-"):
                         realtime_pe = float(pe_str)
+                # 腾讯行情 parts[43] = 市净率 PB
+                if len(parts) >= 44:
+                    pb_str = parts[43].strip()
+                    if pb_str and pb_str not in ("", "-"):
+                        try:
+                            realtime_pb = float(pb_str)
+                        except ValueError:
+                            pass
         except Exception:
             pass
 
+        # ==================== PB 估值（扣商誉）====================
+        # PB = 前复权股价 / 每股净资产（扣商誉）
+        # 每股净资产 = (归母股东权益 - 商誉) / 总股本
+        # 数据源：balance_sheets.parent_equity + balance_sheets.goodwill + 东方财富 TOTAL_SHARE
+        # 披露延迟规则与 PE 一致：年报→次年5/1，半年报→9/1，三季报→11/1，一季报→5/1
+        import sys as _sys
+        _sys.stderr.write(f"[PB] Starting PB computation for {code}\n")
+        _sys.stderr.flush()
+        pb_data = []
+        try:
+            # 获取东方财富财报数据（含 TOTAL_SHARE），同时匹配 balance_sheets 的归母权益和商誉
+            report_type_map = {
+                "%E5%B9%B4%E6%8A%A5": "FY",
+                "%E4%B8%80%E5%AD%A3%E6%8A%A5": "Q1",
+                "%E5%8D%8A%E5%B9%B4%E6%8A%A5": "Q2",
+                "%E4%B8%89%E5%AD%A3%E6%8A%A5": "Q3",
+            }
+            # 从 balance_sheets 加载归母权益和商誉
+            bs_rows = execute_query(
+                "SELECT fiscal_year, report_period, parent_equity, goodwill "
+                "FROM balance_sheets WHERE stock_code=%s AND parent_equity IS NOT NULL "
+                "ORDER BY fiscal_year, FIELD(report_period,'Q1','Q2','Q3','FY')",
+                (code,)
+            )
+            bs_map = {}  # {(fiscal_year, report_period): (parent_equity_亿, goodwill_亿)}
+            for r in bs_rows:
+                pe_val = float(r["parent_equity"]) if r["parent_equity"] is not None else None
+                gw_val = float(r["goodwill"]) if r["goodwill"] is not None else 0.0
+                if pe_val is not None:
+                    bs_map[(r["fiscal_year"], r["report_period"])] = (pe_val, gw_val)
+            print(f"[PB DEBUG] bs_map has {len(bs_map)} keys, sample: {list(bs_map.keys())[:3]}", flush=True)
+
+            # 从东方财富获取 total_share 并匹配 balance_sheets 构建 每股净资产
+            bv_records = []  # [(report_date, effective_date, bvps), ...]
+            for report_type in ["%E5%B9%B4%E6%8A%A5", "%E4%B8%80%E5%AD%A3%E6%8A%A5",
+                                "%E5%8D%8A%E5%B9%B4%E6%8A%A5", "%E4%B8%89%E5%AD%A3%E6%8A%A5"]:
+                url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
+                       "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
+                       f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22{report_type}%22)"
+                       "&pageSize=50&sortColumns=REPORT_DATE&sortTypes=-1")
+                try:
+                    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                    data = resp.json()
+                    if data.get("success"):
+                        for item in data["result"]["data"]:
+                            rd = item.get("REPORT_DATE", "")
+                            total_share = item.get("TOTAL_SHARE")
+                            fy = int(item.get("REPORT_YEAR")) if item.get("REPORT_YEAR") else (int(rd[:4]) if rd[:4].isdigit() else 0)
+                            rp = report_type_map.get(report_type, "FY")
+                            if not rd or not total_share or int(total_share) <= 0 or not fy:
+                                continue
+                            # 匹配 balance_sheets
+                            bs_key = (fy, rp)
+                            if bs_key in bs_map:
+                                parent_eq_亿, goodwill_亿 = bs_map[bs_key]
+                                # 归母权益(元) = parent_equity_亿 * 1e8
+                                # 商誉(元) = goodwill_亿 * 1e8
+                                net_equity = (parent_eq_亿 - goodwill_亿) * 1e8
+                                if net_equity > 0:
+                                    bvps = net_equity / int(total_share)
+                                    # 披露延迟
+                                    rd_dt = datetime.strptime(rd[:10], "%Y-%m-%d")
+                                    if rp == "FY":
+                                        effective = datetime(fy + 1, 5, 1)
+                                    elif rp == "Q2":
+                                        effective = datetime(fy, 9, 1)
+                                    elif rp == "Q3":
+                                        effective = datetime(fy, 11, 1)
+                                    else:  # Q1
+                                        effective = datetime(fy, 5, 1)
+                                    bv_records.append((rd[:10], effective, bvps))
+                except Exception:
+                    pass
+
+            bv_records.sort(key=lambda x: x[1])  # 按生效日期排序
+            print(f"[PB DEBUG] bv_records count: {len(bv_records)}", flush=True)
+
+            # 对每个交易日，取最新生效的 每股净资产，计算 PB
+            if price_data and bv_records:
+                bv_idx = 0
+                for p in price_data:
+                    p_date = datetime.strptime(p["date"], "%Y-%m-%d")
+                    # 找到最新的生效 每股净资产
+                    latest_bvps = None
+                    for bv in bv_records:
+                        if bv[1] <= p_date:
+                            latest_bvps = bv[2]
+                        else:
+                            break
+                    if latest_bvps and latest_bvps > 0:
+                        pb = round(p["close"] / latest_bvps, 2)
+                        if 0 < pb < 9999:
+                            pb_data.append({"date": p["date"], "pb": pb})
+        except Exception as e:
+            import traceback
+            print(f"[PB计算异常] {code}: {e}")
+            traceback.print_exc()
+            pass
+
+        # PB 分位点
+        pb_values = [p["pb"] for p in pb_data if p["pb"] > 0]
+        pb_values.sort()
+        if pb_values:
+            n_pb = len(pb_values)
+            p80_pb = pb_values[int(n_pb * 0.8)] if n_pb > 0 else None
+            p50_pb = pb_values[int(n_pb * 0.5)] if n_pb > 0 else None
+            p20_pb = pb_values[int(n_pb * 0.2)] if n_pb > 0 else None
+            cur_pb = pb_data[-1]["pb"] if pb_data else None
+            cur_pb_pct = round(sum(1 for v in pb_values if v <= cur_pb) / n_pb * 100, 2) if cur_pb and n_pb > 0 else None
+            max_pb = max(pb_values)
+            min_pb = min(pb_values)
+            avg_pb = round(sum(pb_values) / n_pb, 2)
+        else:
+            p80_pb = p50_pb = p20_pb = cur_pb = cur_pb_pct = max_pb = min_pb = avg_pb = None
+
         return jsonify({
             "pe_data": pe_data,
+            "pb_data": pb_data,
             "price_data": price_data,
             "current_pe": cur_pe,
-            "current_pct": cur_pct,
-            "p80": p80, "p50": p50, "p20": p20,
+            "current_pe_pct": cur_pct,
+            "p80_pe": p80, "p50_pe": p50, "p20_pe": p20,
             "max_pe": max(pe_values) if pe_values else None,
             "min_pe": min(pe_values) if pe_values else None,
             "avg_pe": round(sum(pe_values) / len(pe_values), 2) if pe_values else None,
-            # 腾讯实时 PE(TTM) = 滚动四季 EPS，比年报 EPS 计算的 PE 更准
             "realtime_pe": realtime_pe,
+            "current_pb": cur_pb,
+            "current_pb_pct": cur_pb_pct,
+            "p80_pb": p80_pb, "p50_pb": p50_pb, "p20_pb": p20_pb,
+            "max_pb": max_pb,
+            "min_pb": min_pb,
+            "avg_pb": avg_pb,
+            "realtime_pb": realtime_pb,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

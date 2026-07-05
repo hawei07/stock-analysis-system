@@ -224,7 +224,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   .fin-table .sticky-col{min-width:120px}
   .fin-table th,.fin-table td{font-size:11px;padding:4px 6px}
   #panel-valuation>div[style]{flex-direction:column}
-  #valSidebar{width:auto!important;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  #valSidebar,#pbSidebar{width:auto!important;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
   .chart-box,.chart-modal-box{height:300px}
   #chartKline{height:300px}
   .chat-msg.munger{padding-right:20px}
@@ -358,6 +358,14 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       <div style="display:flex;gap:16px">
         <div id="valSidebar" style="width:160px;flex-shrink:0;background:#f7f9fc;border-radius:8px;padding:12px;font-size:13px"></div>
         <div class="chart-box" id="chartValuation" style="flex:1;height:450px"></div>
+      </div>
+      <!-- PB 估值（扣商誉） -->
+      <div style="margin-top:20px;padding-top:16px;border-top:2px solid #4a6cf7">
+        <div style="font-size:14px;font-weight:600;color:#4a6cf7;margin-bottom:12px">PB 估值（扣商誉）= (归母权益 - 商誉) / 总股本</div>
+        <div style="display:flex;gap:16px">
+          <div id="pbSidebar" style="width:160px;flex-shrink:0;background:#f7f9fc;border-radius:8px;padding:12px;font-size:13px"></div>
+          <div class="chart-box" id="chartPb" style="flex:1;height:450px"></div>
+        </div>
       </div>
     </div>
     <div class="tab-panel" id="panel-dividends" style="display:none">
@@ -872,7 +880,11 @@ function renderDividendsChart(data) {
     ]
   };
   chartInstance.setOption(option);
-  window.addEventListener('resize', () => chartInstance && chartInstance.resize());
+  window.addEventListener('resize', () => {
+    chartInstance && chartInstance.resize();
+    valInstance && valInstance.resize();
+    pbInstance && pbInstance.resize();
+  });
 }
 
 // ==================== K线图 ====================
@@ -959,6 +971,7 @@ async function loadKline() {
 // ==================== 估值分析 ====================
 
 let valInstance = null;
+let pbInstance = null;
 
 async function loadValuation(days) {
   const code = document.getElementById('detailCode').textContent.trim();
@@ -1041,6 +1054,66 @@ async function loadValuation(days) {
       <div style="color:#cf1322;margin-bottom:2px">最大: <b>${fmax || '-'}</b></div>
       <div style="color:#333;margin-bottom:2px">平均: <b>${favg || '-'}</b></div>
       <div style="color:#389e0d">最小: <b>${fmin || '-'}</b></div>`;
+
+    // ===== PB 估值（扣商誉）=====
+    const pbFiltered = (data.pb_data || []).filter(p => p.date >= cutoff);
+    const pbMap = {}; pbFiltered.forEach(p => pbMap[p.date] = p.pb);
+    const pbValues = dates.map(d => pbMap[d] != null ? pbMap[d] : null);
+    const filteredPbVals = pbValues.filter(v => v != null).sort((a, b) => a - b);
+    const pbn = filteredPbVals.length;
+    const bp80 = pbn > 0 ? filteredPbVals[Math.floor(pbn * 0.8)] : null;
+    const bp50 = pbn > 0 ? filteredPbVals[Math.floor(pbn * 0.5)] : null;
+    const bp20 = pbn > 0 ? filteredPbVals[Math.floor(pbn * 0.2)] : null;
+    const bmax = pbn > 0 ? filteredPbVals[pbn - 1] : null;
+    const bmin = pbn > 0 ? filteredPbVals[0] : null;
+    const bavg = pbn > 0 ? +(filteredPbVals.reduce((a, b) => a + b, 0) / pbn).toFixed(2) : null;
+    // 优先使用计算 PB，实时 PB 仅作参考（腾讯行情 PB 可能与扣商誉后的计算值偏差较大）
+    const currentPB = data.current_pb;
+    const realtimePB = data.realtime_pb;
+    const bpct = currentPB && pbn > 0 ? +(filteredPbVals.filter(v => v <= currentPB).length / pbn * 100).toFixed(2) : null;
+
+    // PB Y轴 padding: fmin<1 时扩到 5%，PE 的 1% 对 PB 太紧
+    const pbPad = (bmin != null && bmin < 1) ? 0.05 : 0.01;
+    const pb80Line = dates.map(() => bp80);
+    const pb50Line = dates.map(() => bp50);
+    const pb20Line = dates.map(() => bp20);
+
+    if (pbInstance) pbInstance.dispose();
+    pbInstance = echarts.init(document.getElementById('chartPb'));
+    pbInstance.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['PB(扣商誉)', '80%分位', '50%分位', '20%分位', '股价(前复权)'], top: 4 },
+      grid: { left: 60, right: 80, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: dates, axisLabel: { formatter: v => v.slice(0, 7) }, boundaryGap: false },
+      yAxis: [
+        { type: 'value', name: 'PB', min: bmin ? +(bmin * (1 - pbPad)).toFixed(2) : 0, max: bmax ? +(bmax * (1 + pbPad)).toFixed(2) : undefined, splitNumber: 5 },
+        { type: 'value', name: '股价(元)', splitLine: { show: false }, min: pMin ? +(pMin * 0.99).toFixed(2) : undefined, max: pMax ? +(pMax * 1.01).toFixed(2) : undefined, splitNumber: 5 }
+      ],
+      series: [
+        { name: 'PB(扣商誉)', type: 'line', data: pbValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', connectNulls: false, markPoint: { data: [{ type: 'max', name: '最高', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#4a6cf7' }, label: { formatter: '{c}' } }, { type: 'min', name: '最低', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#389e0d' }, label: { formatter: '{c}' } }] } },
+        { name: '80%分位', type: 'line', data: pb80Line, yAxisIndex: 0, lineStyle: { color: '#cf1322', type: 'dashed', width: 1 }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
+        { name: '50%分位', type: 'line', data: pb50Line, yAxisIndex: 0, lineStyle: { color: '#666', type: 'dashed', width: 1 }, itemStyle: { color: '#666' }, symbol: 'none' },
+        { name: '20%分位', type: 'line', data: pb20Line, yAxisIndex: 0, lineStyle: { color: '#389e0d', type: 'dashed', width: 1 }, itemStyle: { color: '#389e0d' }, symbol: 'none' },
+        { name: '股价(前复权)', type: 'line', data: priceValues, yAxisIndex: 1, lineStyle: { color: '#fa8c16', width: 1.5 }, itemStyle: { color: '#fa8c16' }, symbol: 'none' },
+      ]
+    });
+
+    // PB 侧边栏 — 显示计算 PB（主值）和实时 PB（参考）
+    const realtimePBText = (realtimePB != null && realtimePB !== currentPB) 
+      ? `<div style="font-size:11px;color:#999;margin-top:2px">实时 PB: <b style="color:#999">${realtimePB.toFixed(2)}</b>（腾讯行情）</div>` 
+      : '';
+    document.getElementById('pbSidebar').innerHTML = `
+      <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">PB(扣商誉)</div>
+      <div style="margin-bottom:4px">计算 PB: <b style="color:#4a6cf7">${currentPB ? currentPB.toFixed(2) : '-'}</b></div>
+      ${realtimePBText}
+      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${bpct != null ? bpct + '%' : '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">80%: <b>${bp80 || '-'}</b></div>
+      <div style="color:#666;margin-bottom:2px">50%: <b>${bp50 || '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:8px">20%: <b>${bp20 || '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">最大: <b>${bmax || '-'}</b></div>
+      <div style="color:#333;margin-bottom:2px">平均: <b>${bavg || '-'}</b></div>
+      <div style="color:#389e0d">最小: <b>${bmin || '-'}</b></div>`;
+
     statusEl.textContent = `${peFiltered.length} 个数据点`;
     statusEl.style.color = '#52c41a';
   } catch (e) {
