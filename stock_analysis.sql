@@ -56,6 +56,36 @@ INSERT INTO `dividends` VALUES (1,'600519',2021,524.6014,271.4296,21.6750,'2022-
 UNLOCK TABLES;
 
 --
+-- Table structure for table `business_segments`
+--
+
+DROP TABLE IF EXISTS `business_segments`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `business_segments` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `stock_code` varchar(10) NOT NULL COMMENT '股票代码',
+  `fiscal_year` int NOT NULL COMMENT '财年',
+  `report_period` varchar(8) NOT NULL DEFAULT 'FY' COMMENT '报告期',
+  `dimension_type` varchar(20) NOT NULL COMMENT '维度: business/product/region',
+  `segment_name` varchar(120) NOT NULL COMMENT '分部名称',
+  `revenue` decimal(18,4) DEFAULT NULL COMMENT '收入(亿元)',
+  `cost` decimal(18,4) DEFAULT NULL COMMENT '成本(亿元)',
+  `gross_profit` decimal(18,4) DEFAULT NULL COMMENT '毛利(亿元)',
+  `gross_margin` decimal(10,4) DEFAULT NULL COMMENT '毛利率(%)',
+  `revenue_ratio` decimal(10,4) DEFAULT NULL COMMENT '收入占比(%)',
+  `profit_ratio` decimal(10,4) DEFAULT NULL COMMENT '毛利占比(%)',
+  `source` varchar(50) DEFAULT NULL COMMENT '数据来源',
+  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_segment` (`stock_code`,`fiscal_year`,`report_period`,`dimension_type`,`segment_name`),
+  KEY `idx_segment_stock_year` (`stock_code`,`fiscal_year`),
+  KEY `idx_segment_dimension` (`stock_code`,`dimension_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='业务营收及毛利构成表';
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `stocks`
 --
 
@@ -74,6 +104,7 @@ CREATE TABLE `stocks` (
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `pe_ttm` decimal(10,2) DEFAULT NULL,
   `dividend_yield` decimal(10,4) DEFAULT NULL,
+  `display_order` int DEFAULT NULL COMMENT '首页默认展示顺序',
   PRIMARY KEY (`id`),
   UNIQUE KEY `code` (`code`)
 ) ENGINE=InnoDB AUTO_INCREMENT=30 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='股票基础信息表';
@@ -85,7 +116,7 @@ CREATE TABLE `stocks` (
 
 LOCK TABLES `stocks` WRITE;
 /*!40000 ALTER TABLE `stocks` DISABLE KEYS */;
-INSERT INTO `stocks` VALUES (1,'600519','贵州茅台','SH','白酒','2001-08-27','正常','2026-06-25 11:01:52','2026-06-25 18:36:10',18.32,4.2900),(2,'000858','五粮液','SZ','白酒','1998-04-27','正常','2026-06-25 11:01:52','2026-06-25 18:44:44',23.10,7.6600),(4,'000333','美的集团','SZ','家电','2013-09-18','正常','2026-06-25 11:01:52','2026-06-25 18:36:13',13.18,5.6200),(5,'600036','招商银行','SH','银行','2002-04-09','正常','2026-06-25 11:01:52','2026-06-25 18:44:47',6.06,5.5200),(6,'000651','格力电器','SZ','家电','1996-11-18','正常','2026-06-25 11:01:52','2026-06-25 18:44:49',7.13,9.1000),(8,'002415','海康威视','SZ','安防','2010-05-28','正常','2026-06-25 11:01:52','2026-06-25 18:36:18',21.13,3.3400),(9,'600276','恒瑞医药','SH','医药','2000-10-18','正常','2026-06-25 11:01:52','2026-06-25 18:32:08',40.91,0.4000),(10,'000725','京东方A','SZ','面板','2001-01-12','正常','2026-06-25 11:01:52','2026-06-25 18:36:22',46.82,0.7400),(12,'002594','比亚迪','SZ','汽车','2011-06-30','正常','2026-06-25 11:01:52','2026-06-25 18:44:55',27.20,4.8300),(13,'600030','中信证券','SH','证券','2003-01-06','正常','2026-06-25 11:01:52','2026-06-25 18:43:44',12.75,3.3800),(16,'300750','宁德时代','SZ','电池','2018-06-11','正常','2026-06-25 11:01:52','2026-06-25 18:44:58',23.54,1.4400),(18,'600900','长江电力','SH','电力','2003-11-18','正常','2026-06-25 11:01:52','2026-06-25 18:44:59',17.78,3.6000),(20,'300059','东方财富','SZ','互联网金融','2010-03-19','正常','2026-06-25 11:01:52','2026-06-25 18:36:29',25.48,0.4700),(21,'600025','华能水电','SH',NULL,NULL,'正常','2026-06-25 11:56:41','2026-06-25 18:36:31',19.40,2.3100),(28,'600993','马应龙','SH',NULL,NULL,'正常','2026-06-25 14:50:34','2026-06-25 18:43:51',16.05,2.8200),(29,'000933','神火股份','SZ',NULL,NULL,'正常','2026-06-25 15:03:23','2026-06-25 18:36:34',8.94,3.6000);
+INSERT INTO `stocks` (`id`,`code`,`name`,`market`,`industry`,`list_date`,`status`,`created_at`,`updated_at`,`pe_ttm`,`dividend_yield`) VALUES (1,'600519','贵州茅台','SH','白酒','2001-08-27','正常','2026-06-25 11:01:52','2026-06-25 18:36:10',18.32,4.2900),(2,'000858','五粮液','SZ','白酒','1998-04-27','正常','2026-06-25 11:01:52','2026-06-25 18:44:44',23.10,7.6600),(4,'000333','美的集团','SZ','家电','2013-09-18','正常','2026-06-25 11:01:52','2026-06-25 18:36:13',13.18,5.6200),(5,'600036','招商银行','SH','银行','2002-04-09','正常','2026-06-25 11:01:52','2026-06-25 18:44:47',6.06,5.5200),(6,'000651','格力电器','SZ','家电','1996-11-18','正常','2026-06-25 11:01:52','2026-06-25 18:44:49',7.13,9.1000),(8,'002415','海康威视','SZ','安防','2010-05-28','正常','2026-06-25 11:01:52','2026-06-25 18:36:18',21.13,3.3400),(9,'600276','恒瑞医药','SH','医药','2000-10-18','正常','2026-06-25 11:01:52','2026-06-25 18:32:08',40.91,0.4000),(10,'000725','京东方A','SZ','面板','2001-01-12','正常','2026-06-25 11:01:52','2026-06-25 18:36:22',46.82,0.7400),(12,'002594','比亚迪','SZ','汽车','2011-06-30','正常','2026-06-25 11:01:52','2026-06-25 18:44:55',27.20,4.8300),(13,'600030','中信证券','SH','证券','2003-01-06','正常','2026-06-25 11:01:52','2026-06-25 18:43:44',12.75,3.3800),(16,'300750','宁德时代','SZ','电池','2018-06-11','正常','2026-06-25 11:01:52','2026-06-25 18:44:58',23.54,1.4400),(18,'600900','长江电力','SH','电力','2003-11-18','正常','2026-06-25 11:01:52','2026-06-25 18:44:59',17.78,3.6000),(20,'300059','东方财富','SZ','互联网金融','2010-03-19','正常','2026-06-25 11:01:52','2026-06-25 18:36:29',25.48,0.4700),(21,'600025','华能水电','SH',NULL,NULL,'正常','2026-06-25 11:56:41','2026-06-25 18:36:31',19.40,2.3100),(28,'600993','马应龙','SH',NULL,NULL,'正常','2026-06-25 14:50:34','2026-06-25 18:43:51',16.05,2.8200),(29,'000933','神火股份','SZ',NULL,NULL,'正常','2026-06-25 15:03:23','2026-06-25 18:36:34',8.94,3.6000);
 /*!40000 ALTER TABLE `stocks` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

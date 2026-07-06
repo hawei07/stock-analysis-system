@@ -11,7 +11,7 @@ AIGC:
 
 # 股票分析系统 — 业务逻辑与技术架构总结
 
-> 版本 v2.8 | 2026-07-05 | Python Flask + MySQL 8.4 + DeepSeek V4 Pro
+> 版本 v2.9 | 2026-07-06 | Python Flask + MySQL 8.4 + DeepSeek V4 Pro
 
 ---
 
@@ -97,6 +97,7 @@ AIGC:
 | `industry` | VARCHAR(50) | NULL | 所属行业 |
 | `pe_ttm` | DECIMAL(10,2) | NULL | 动态市盈率 |
 | `dividend_yield` | DECIMAL(10,4) | NULL | 股息率（%） |
+| `display_order` | INT | NULL | 首页默认展示顺序，支持拖拽调整 |
 | `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | `updated_at` | DATETIME | ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
 
@@ -118,7 +119,29 @@ AIGC:
 
 > 唯一约束：UNIQUE(stock_code, fiscal_year)，每只股票每个财年仅一条记录。
 
-### 3.4 custom_financials 表结构
+### 3.4 business_segments 表结构
+
+| 字段 | 类型 | 约束 | 说明 |
+|------|------|------|------|
+| `id` | BIGINT | PK, AUTO_INCREMENT | 主键 |
+| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
+| `fiscal_year` | INT | NOT NULL | 财年 |
+| `report_period` | VARCHAR(8) | DEFAULT 'FY' | 报告期 |
+| `dimension_type` | VARCHAR(20) | NOT NULL | 构成维度：business/product/region |
+| `segment_name` | VARCHAR(120) | NOT NULL | 业务、产品或地区名称 |
+| `revenue` | DECIMAL(18,4) | NULL | 收入（亿元） |
+| `cost` | DECIMAL(18,4) | NULL | 成本（亿元） |
+| `gross_profit` | DECIMAL(18,4) | NULL | 毛利（亿元） |
+| `gross_margin` | DECIMAL(10,4) | NULL | 毛利率（%） |
+| `revenue_ratio` | DECIMAL(10,4) | NULL | 收入占比（%） |
+| `profit_ratio` | DECIMAL(10,4) | NULL | 毛利占比（%） |
+| `source` | VARCHAR(50) | NULL | 数据来源 |
+| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
+| `updated_at` | DATETIME | ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
+
+> 唯一约束：UNIQUE(stock_code, fiscal_year, report_period, dimension_type, segment_name)。数据来源为东方财富 F10 主营构成接口，后端按业务/产品/地区三类维度归档，前端用于营收构成图表和表格。
+
+### 3.5 custom_financials 表结构
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -146,7 +169,7 @@ AIGC:
 
 > 唯一约束：UNIQUE(stock_code, fiscal_year, report_period)。`report_period` 为 ENUM('FY','Q1','Q2','Q3')，FY=年报、Q1=一季报、Q2=中报、Q3=三季报。数据来源为东方财富 datacenter-web API，原始单位（元）入库前除以 1e8 转换为亿元。前端查询时动态计算核心利润率、净利润率、现金流利润比三个派生指标。支持累计和单季度两种视图。
 
-### 3.5 balance_sheets 表结构
+### 3.6 balance_sheets 表结构
 
 | 字段 | 类型 | 约束 | 说明 |
 |------|------|------|------|
@@ -215,7 +238,8 @@ AIGC:
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 前端页面 |
-| GET | `/api/stocks` | 分页查询股票列表 |
+| GET | `/api/stocks` | 分页查询股票列表，支持指标排序 |
+| POST | `/api/stocks/reorder` | 保存首页默认展示顺序 |
 | GET | `/api/stock/<code>` | 查询单只股票详情 |
 | POST | `/api/stock` | 新增股票（支持代码或名称） |
 | PUT | `/api/stock/<code>` | 更新股票 |
@@ -234,7 +258,9 @@ AIGC:
 | GET | `/api/stock/<code>/cashflow` | 查询单只股票现金流量表数据 |
 | POST | `/api/update-cashflow` | 从新浪财经拉取并更新现金流量表数据 |
 | GET | `/api/stock/<code>/kline` | 获取日K线数据（蜡烛图） |
-| GET | `/api/stock/<code>/valuation` | 获取 PE-TTM 估值数据（历史+股价+分位点） |
+| GET | `/api/stock/<code>/valuation` | 获取 PE/PB/股息率估值数据（历史+股价+分位点） |
+| GET | `/api/stock/<code>/segments` | 查询营收构成数据 |
+| POST | `/api/update-segments` | 从东方财富拉取并更新营收构成数据 |
 | GET | `/api/stock/<code>/realtime-quote` | 查询实时行情 |
 | GET | `/api/config` | 获取系统配置（掩码） |
 | PUT | `/api/config` | 更新系统配置 |
@@ -251,7 +277,7 @@ AIGC:
 
 #### GET /api/stocks
 
-分页查询，支持筛选。
+分页查询，支持筛选、首页指标补充和指标排序。默认顺序使用 `stocks.display_order`，用户拖拽保存后会按该字段展示。
 
 **Query 参数**：
 
@@ -261,6 +287,8 @@ AIGC:
 | `page_size` | int | 15 | 每页条数 |
 | `keyword` | string | — | 代码或名称模糊搜索（支持名称拼音/汉字搜索） |
 | `search_type` | string | `code` | 搜索模式：`code`=代码搜索、`name`=名称搜索 |
+| `sort_by` | string | — | 排序字段：code/name/price/pe_ttm/pb_ex_goodwill/dividend_yield/ytd_return |
+| `sort_dir` | string | asc | 排序方向：asc/desc |
 
 **响应**：
 
@@ -280,13 +308,30 @@ AIGC:
       "list_date": "2001-08-27",
       "status": "正常",
       "pe_ttm": 25.30,
+      "price": 1510.00,
+      "pb_ex_goodwill": 8.75,
       "dividend_yield": 0.0235,
+      "ytd_return": 12.34,
       "created_at": "...",
       "updated_at": "..."
     }
   ]
 }
 ```
+
+#### POST /api/stocks/reorder
+
+保存首页默认展示顺序。前端进入“调整默认顺序”后拖拽行，提交股票代码数组，后端按数组顺序写入 `stocks.display_order`。
+
+**请求体**：
+
+```json
+{
+  "codes": ["600519", "000858", "000333"]
+}
+```
+
+**成功响应**：`200` + `{"ok": true, "updated": 3}`
 
 #### POST /api/stock
 
@@ -451,6 +496,60 @@ AIGC:
 
 **成功响应**：`200` + `{"success": true, "message": "已更新 19 条年报数据", "stock_code": "600519", "count": 19}`
 
+#### GET /api/stock/&lt;code&gt;/segments
+
+查询指定股票的营收构成数据，支持业务、产品、地区三类维度。
+
+**Query 参数**：
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `from_year` | int | 2016 | 起始年份 |
+| `to_year` | int | 当前年份 | 结束年份 |
+| `dimension` | string | `business` | 构成维度：business/product/region |
+
+**响应**：
+
+```json
+{
+  "data": [
+    {
+      "fiscal_year": 2024,
+      "dimension_type": "business",
+      "segment_name": "酒类",
+      "revenue": 1700.00,
+      "gross_profit": 1500.00,
+      "gross_margin": 88.20,
+      "revenue_ratio": 95.50,
+      "profit_ratio": 97.10
+    }
+  ],
+  "summary": {
+    "latest_year": 2024,
+    "top_revenue_segment": "酒类",
+    "top_revenue_ratio": 95.50,
+    "top_profit_segment": "酒类",
+    "top_profit_ratio": 97.10,
+    "top3_revenue_ratio": 99.20,
+    "gross_margin": 88.20
+  }
+}
+```
+
+#### POST /api/update-segments
+
+从东方财富 F10 主营构成接口拉取数据，按 `business/product/region` 三种维度 upsert 写入 `business_segments` 表。全量更新按钮会包含该接口；股票详情页营收构成标签也提供单股更新。
+
+**请求体**：
+
+```json
+{
+  "code": "600519"
+}
+```
+
+**成功响应**：`200` + `{"success": true, "records_updated": 411, "stocks_processed": 1}`
+
 #### GET /api/stock/&lt;code&gt;/balance-sheet
 
 查询指定股票的资产负债表数据，支持年报/季报切换和累计/单季度（delta）视图。
@@ -482,7 +581,7 @@ AIGC:
 ]
 ```
 
-> 完整包含 49 个资产负债表科目字段（流动资产/非流动资产/流动负债/非流动负债/股东权益），详见 §3.5 表结构。
+> 完整包含 49 个资产负债表科目字段（流动资产/非流动资产/流动负债/非流动负债/股东权益），详见 §3.6 表结构。
 
 #### POST /api/update-balance-sheet
 
@@ -545,6 +644,8 @@ AIGC:
 
 - **关键字搜索**：同时对 `code` 和 `name` 做模糊匹配（LIKE %xxx%），支持股票名称拼音搜索
 - **分页**：默认每页 15 条，超范围页码自动由 `total_pages` 限制
+- **指标排序**：首页表头支持按代码、名称、股价、PE、PB(扣商誉)、股息率、今年以来收益率升降序排序
+- **默认顺序**：未排序时按 `display_order` 展示；进入调整模式后拖拽股票行并保存，写回 `/api/stocks/reorder`
 
 ### 5.3 添加股票
 
@@ -560,6 +661,8 @@ AIGC:
 - 删除前 `confirm()` 二次确认
 - 添加股票支持输入代码或名称，自动匹配
 - 详情页顶部下拉框可切换自选股
+- 首页“恢复默认顺序”会清空当前指标排序，回到 `display_order` 默认视图
+- 股票详情页切换股票时会重置营收构成面板并重新加载，避免旧股票图表残留
 
 ### 5.5 季报与同比
 
@@ -624,10 +727,26 @@ PE = 前复权股价 / TTM_EPS
 | 分位点 | 80%/50%/20% 基于所选时间范围在**前端实时计算** |
 | 股价数据 | 腾讯 K线 API 分批拉取（最多 8 批 ≈ 20 年），去重后排序 |
 | 时间范围 | 上市以来 / 20年 / 10年 / 5年 / 3年 / 1年 |
-| 图表 | 双Y轴折线：PE-TTM（蓝）+ 分位虚线（红/灰/绿）+ 股价（橙），Y轴 padding 1% |
+| 图表 | PE-TTM、PB(扣商誉)、股息率三组估值图，均含分位线和股价联动 |
 | 标记点 | 蓝色大头针标最高 PE，绿色标最低 PE |
 
-### 5.10 对话芒格（💬）
+**股息率估值**：使用本地 `dividends.dividend_per_share` 作为分红数据源，并使用腾讯未复权历史价格计算历史股息率，避免“未复权分红 / 前复权老股价”造成早期股息率失真。
+
+### 5.10 营收构成
+
+股票详情页新增“营收构成”标签，用于观察公司业务收入和利润来源的长期变化。
+
+| 特性 | 实现方式 |
+|------|------|
+| 数据源 | 东方财富 F10 主营构成接口 |
+| 存储 | `business_segments` 表，本地持久化 |
+| 维度 | 按业务、按产品、按地区三类切换 |
+| 指标 | 收入、成本、毛利、毛利率、收入占比、毛利占比 |
+| 图表 | 历年收入堆叠、历年毛利堆叠、最新年度收入占比/毛利率气泡图 |
+| 摘要 | 最新年度、第一大收入来源、第一大毛利来源、Top3 收入集中度 |
+| 切股刷新 | `resetSegmentsPanel()` + 请求序号 `segmentLoadSeq` 防止异步串号 |
+
+### 5.11 对话芒格（💬）
 
 每只股票独立的实时对话，芒格人格（Full Munger Skill），支持 Web 搜索和链接分析。
 
@@ -641,7 +760,7 @@ PE = 前复权股价 / TTM_EPS
 | 消息管理 | 单条删除 + 清空全部，GET/POST/DELETE API |
 | 存储 | `munger_chats` 表，按 stock_code 隔离 |
 
-### 5.11 便利贴（📌）
+### 5.12 便利贴（📌）
 
 股票详情页标签，每只股票独立笔记。标题 + 内容两个字段，内容支持文字/链接/图片混排自动识别。
 
@@ -658,7 +777,7 @@ PE = 前复权股价 / TTM_EPS
 | 串号防护 | 下拉未填充时兜底取 `detailCode.textContent`，防止存为错误 stock_code |
 | 图片渲染 | 新增 `/data/images/` 路径正则匹配，本地图片路径自动转 `<img>` |
 
-### 5.12 Web 页面抓取三层回退
+### 5.13 Web 页面抓取三层回退
 
 ```
 Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
@@ -667,7 +786,7 @@ Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
 雪球等 JS SPA 页面通过 Google 缓存绕过 JS 渲染瓶颈。
 | 侧边栏 | 当前值 / 分位点 / 80%-50%-20% / 最大-平均-最小，联动时间范围 |
 
-### 5.13 移动端响应式适配（v2.8）
+### 5.14 移动端响应式适配（v2.8）
 
 纯 CSS 渐进增强，两个断点（768px + 640px），不改 JS。640px 块覆盖 15 个模块：
 
@@ -686,7 +805,7 @@ Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
 
 > `thead { position:sticky;top:0 }` + `border-collapse:separate;border-spacing:0` 替代逐 `<th>` 方案，解决年份表头滚动时不冻结问题。
 
-### 5.14 跨设备同步（v2.8）
+### 5.15 跨设备同步（v2.8）
 
 家庭/公司电脑间的便利贴同步方案：
 
@@ -697,7 +816,7 @@ Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
 
 手机局域网访问：改 `app.run(host="0.0.0.0")` + 防火墙放行 TCP 5002。
 
-### 5.10 利润表 & 现金流量表
+### 5.16 利润表 & 现金流量表
 
 与资产负债表共享通用渲染逻辑（`renderFinanceTable`），支持：
 
@@ -709,7 +828,7 @@ Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
 | 对比股票 | ✓ 橙色子行 | ✓ |
 | 图表弹窗 | ✓ 柱状图+YoY折线+CAGR | ✓ |
 
-### 5.11 统一数据更新
+### 5.17 统一数据更新
 
 首页「⟳ 更新数据」按钮弹出模式选择弹窗：
 
@@ -720,7 +839,7 @@ Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
 
 点击后一次性调用 5 个 API（分红/财报/资产负债表/利润表/现金流量表），Toast 汇总结果。
 
-### 5.8 数据源与采集逻辑
+### 5.18 数据源与采集逻辑
 
 #### 股票详情页实时行情卡片（v1.2 新增）
 
@@ -927,6 +1046,7 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 | 资产负债表记录 | 157 条 |
 | 利润表记录 | 670 条（含 FY/Q1/Q2/Q3） |
 | 现金流量表记录 | 652 条（含 FY/Q1/Q2/Q3） |
+| 营收构成数据 | 按需拉取并本地存储 |
 | K线数据 | 按需实时拉取（腾讯 API） |
 | PE 估值数据 | 按需计算，股价分批拉取最多 20 年 |
 | 覆盖财年 | 完整覆盖各股票上市以来全部数据 |
@@ -939,7 +1059,18 @@ CREATE DATABASE IF NOT EXISTS stock_analysis
 | 四期 | 策略回测 | 自定义策略引擎 + 收益曲线 |
 | 五期 | 选股筛选 | 多条件组合筛选 + 排序 |
 
-### 8.2 近期完成 (v2.8)
+### 9.2 近期完成 (v2.9)
+
+| 功能 | 说明 |
+|------|------|
+| 营收构成 | 股票详情页新增业务/产品/地区构成，展示历年收入、毛利、占比和集中度 |
+| 估值股息率 | 估值页新增股息率图表，使用本地分红和未复权价格计算 |
+| 首页指标扩展 | 新增股价、PB(扣商誉)、今年以来收益率 |
+| 首页排序 | 支持按主要指标排序，并可恢复默认视图 |
+| 默认顺序拖拽 | 首页进入调整模式后拖拽股票顺序，保存到 `stocks.display_order` |
+| 营收构成切股刷新 | 切换股票时自动清空旧数据并加载当前股票数据 |
+
+### 9.3 近期完成 (v2.8)
 
 | 功能 | 说明 |
 |------|------|

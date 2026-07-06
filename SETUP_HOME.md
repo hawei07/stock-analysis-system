@@ -82,6 +82,12 @@ cd D:\stock-analysis-system
 python app.py
 ```
 
+如果系统环境没有配置 `python`，也可以使用 Hermes 自带的 Python 3.11 venv：
+
+```bash
+C:\Users\admin\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe app.py
+```
+
 浏览器打开 `http://127.0.0.1:5002` 即可看到股票列表。
 
 ---
@@ -101,6 +107,12 @@ cd D:\stock-analysis-system
 python app.py
 ```
 
+Hermes venv 启动方式同样适用：
+
+```bash
+C:\Users\admin\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe app.py
+```
+
 访问 `http://127.0.0.1:5002`
 
 ---
@@ -114,13 +126,19 @@ cd D:\stock-analysis-system
 git pull origin main
 ```
 
-开发完成后提交并推送：
+开发完成后先查看变更，再提交到本地 Git：
 
 ```bash
+git status
 git add -A
 git commit -m "feat: xxx"
+```
+
+确认需要同步到另一台电脑时再推送：
+
+```bash
 git push origin main
 ```
 
-两台电脑之间切换开发时，记得先 `git pull` 同步，再开始写代码。
+两台电脑之间切换开发时，记得先 `git pull` 同步，再开始写代码。数据库中的运行时数据不随 Git 自动同步；便利贴图片等本地文件建议继续使用 Syncthing/网盘同步。
 *（内容由AI生成，仅供参考）*

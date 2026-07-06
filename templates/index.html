@@ -39,6 +39,14 @@ table{width:100%;border-collapse:collapse}
 th{background:#fafafa;padding:12px 16px;text-align:left;font-weight:600;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;white-space:nowrap}
 td{padding:12px 16px;font-size:13px;border-bottom:1px solid #f5f5f5}
 tr:hover td{background:#fafbff}
+.sortable-th{cursor:pointer;user-select:none}
+.sortable-th:hover{color:#4a6cf7}
+.sort-arrow{font-size:11px;color:#999;margin-left:4px}
+.drag-handle{display:none;color:#aaa;cursor:grab;font-size:16px;margin-right:8px;vertical-align:middle}
+.reorder-mode .drag-handle{display:inline-block}
+.reorder-mode tbody tr{cursor:grab}
+.reorder-mode tbody tr.dragging{opacity:.55;background:#f0f5ff}
+.reorder-mode tbody tr.drag-over td{border-top:2px solid #4a6cf7}
 .code{font-family:'Courier New',monospace;font-weight:600;color:#4a6cf7}
 .name-link{color:#4a6cf7;cursor:pointer;text-decoration:none;font-weight:500}
 .name-link:hover{text-decoration:underline;color:#3b5de7}
@@ -83,6 +91,14 @@ tr:hover td{background:#fafbff}
 .detail-content{padding:24px 32px}
 .chart-container{background:#fff;border-radius:8px;padding:24px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .chart-box{width:100%;height:420px}
+.segment-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.segment-summary-card{background:#fff;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:3px solid #4a6cf7}
+.segment-summary-card .label{font-size:12px;color:#999;margin-bottom:6px}
+.segment-summary-card .value{font-size:18px;font-weight:700;color:#1a1a2e;line-height:1.35}
+.segment-summary-card .sub{font-size:12px;color:#888;margin-top:4px}
+.segment-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.segment-chart-grid .chart-container:last-child{grid-column:1 / -1}
+.segment-chart-title{font-size:15px;font-weight:600;margin-bottom:12px;color:#1a1a2e}
 
 /* 弹窗 */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center}
@@ -224,8 +240,11 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   .fin-table .sticky-col{min-width:120px}
   .fin-table th,.fin-table td{font-size:11px;padding:4px 6px}
   #panel-valuation>div[style]{flex-direction:column}
-  #valSidebar,#pbSidebar{width:auto!important;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+  #valSidebar,#pbSidebar,#dySidebar{width:auto!important;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
   .chart-box,.chart-modal-box{height:300px}
+  .segment-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .segment-chart-grid{grid-template-columns:1fr}
+  .segment-chart-grid .chart-container:last-child{grid-column:auto}
   #chartKline{height:300px}
   .chat-msg.munger{padding-right:20px}
   .chat-msg.user{padding-left:20px}
@@ -259,6 +278,11 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <input type="text" id="keyword" placeholder="搜索代码或名称..." onkeyup="debounceSearch()">
     <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
     <button class="btn btn-success" id="btnUpdate" onclick="updateAll()">⟳ 更新数据</button>
+    <button class="btn btn-outline" id="btnResetSort" onclick="resetListSort()">恢复默认顺序</button>
+    <button class="btn btn-outline" id="btnReorderMode" onclick="startReorderMode()">调整默认顺序</button>
+    <button class="btn btn-primary" id="btnSaveOrder" onclick="saveDefaultOrder()" style="display:none">保存顺序</button>
+    <button class="btn btn-outline" id="btnCancelOrder" onclick="cancelReorderMode()" style="display:none">取消</button>
+    <span id="listModeHint" style="font-size:12px;color:#999"></span>
   </div>
 
   <div class="content">
@@ -266,10 +290,13 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       <table>
         <thead>
           <tr>
-            <th>代码</th>
-            <th>名称</th>
-            <th>PE(TTM)</th>
-            <th>股息率</th>
+            <th class="sortable-th" onclick="sortStocks('code')">代码<span class="sort-arrow" data-sort-arrow="code"></span></th>
+            <th class="sortable-th" onclick="sortStocks('name')">名称<span class="sort-arrow" data-sort-arrow="name"></span></th>
+            <th class="sortable-th" onclick="sortStocks('price')">股价<span class="sort-arrow" data-sort-arrow="price"></span></th>
+            <th class="sortable-th" onclick="sortStocks('pe_ttm')">PE(TTM)<span class="sort-arrow" data-sort-arrow="pe_ttm"></span></th>
+            <th class="sortable-th" onclick="sortStocks('pb_ex_goodwill')">PB(扣商誉)<span class="sort-arrow" data-sort-arrow="pb_ex_goodwill"></span></th>
+            <th class="sortable-th" onclick="sortStocks('dividend_yield')">股息率<span class="sort-arrow" data-sort-arrow="dividend_yield"></span></th>
+            <th class="sortable-th" onclick="sortStocks('ytd_return')">今年以来<span class="sort-arrow" data-sort-arrow="ytd_return"></span></th>
             <th>操作</th>
           </tr>
         </thead>
@@ -323,6 +350,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <button class="tab-btn" data-tab="valuation" onclick="switchTab('valuation')">估值</button>
     <button class="tab-btn" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
     <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
+    <button class="tab-btn" data-tab="segments" onclick="switchTab('segments')">营收构成</button>
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
@@ -367,6 +395,13 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
           <div class="chart-box" id="chartPb" style="flex:1;height:450px"></div>
         </div>
       </div>
+      <div style="margin-top:20px;padding-top:16px;border-top:2px solid #52c41a">
+        <div style="font-size:14px;font-weight:600;color:#389e0d;margin-bottom:12px">股息率 = 最近已知年度每股分红 / 前复权股价</div>
+        <div style="display:flex;gap:16px">
+          <div id="dySidebar" style="width:160px;flex-shrink:0;background:#f7f9fc;border-radius:8px;padding:12px;font-size:13px"></div>
+          <div class="chart-box" id="chartDividendYield" style="flex:1;height:450px"></div>
+        </div>
+      </div>
     </div>
     <div class="tab-panel" id="panel-dividends" style="display:none">
       <div class="toolbar-row">
@@ -408,6 +443,44 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
       </div>
       <div class="fin-table-wrap" id="tableFinancialsWrap">
         <div class="empty" id="finEmpty">请点击"查询"加载财务数据</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-segments" style="display:none">
+      <div class="toolbar-row">
+        <label>年份范围：</label>
+        <input type="number" id="segFromYear" value="2016" min="2000" max="2030" style="width:70px">
+        <span style="font-size:13px">至</span>
+        <input type="number" id="segToYear" value="2025" min="2000" max="2030" style="width:70px">
+        <select id="segDimension" style="width:90px;margin-left:8px" onchange="loadSegments()">
+          <option value="business">按业务</option>
+          <option value="product">按产品</option>
+          <option value="region">按地区</option>
+        </select>
+        <select id="segView" style="width:90px" onchange="renderSegmentsFromCache()">
+          <option value="amount">金额</option>
+          <option value="ratio">占比</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="loadSegments()">查询</button>
+        <button class="btn btn-outline btn-sm" onclick="updateSegments()">更新数据</button>
+        <span id="segStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="segment-summary-grid" id="segmentSummary"></div>
+      <div class="segment-chart-grid">
+        <div class="chart-container">
+          <div class="segment-chart-title">历年业务收入构成</div>
+          <div class="chart-box" id="chartSegmentRevenue"></div>
+        </div>
+        <div class="chart-container">
+          <div class="segment-chart-title">历年业务毛利构成</div>
+          <div class="chart-box" id="chartSegmentProfit"></div>
+        </div>
+        <div class="chart-container">
+          <div class="segment-chart-title">最新年度业务质量图</div>
+          <div class="chart-box" id="chartSegmentBubble"></div>
+        </div>
+      </div>
+      <div class="fin-table-wrap" id="tableSegmentsWrap">
+        <div class="empty" id="segEmpty">请点击"查询"加载营收构成数据</div>
       </div>
     </div>
     <div class="tab-panel" id="panel-balance" style="display:none">
@@ -592,8 +665,18 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 <script>
 let currentPage = 1;
 let totalPages = 1;
+let listPageSize = 15;
+let currentSortBy = '';
+let currentSortDir = 'asc';
+let reorderMode = false;
+let draggedRow = null;
 let searchTimer = null;
 let chartInstance = null;
+let segmentRevenueChart = null;
+let segmentProfitChart = null;
+let segmentBubbleChart = null;
+let segmentCache = null;
+let segmentLoadSeq = 0;
 
 let currentTab = 'chart';
 
@@ -645,7 +728,6 @@ function showDetailView(code) {
   document.getElementById('view-list').classList.remove('active');
   document.getElementById('view-detail').classList.add('active');
   document.getElementById('btnBack').style.display = 'inline-block';
-  switchTab(currentTab);
   loadDetail(code);
 }
 
@@ -679,6 +761,9 @@ async function loadDetail(code) {
     document.getElementById('finToYear').value = curYear;
     document.getElementById('bsFromYear').value = startYear;
     document.getElementById('bsToYear').value = curYear;
+    document.getElementById('segFromYear').value = startYear;
+    document.getElementById('segToYear').value = curYear;
+    resetSegmentsPanel();
     document.getElementById('detailMarket').textContent = stock.market;
     document.getElementById('detailMarket').className = 'market-tag market-' + stock.market;
     document.getElementById('detailIndustry').textContent = stock.industry ? '行业: ' + stock.industry : '';
@@ -706,6 +791,7 @@ async function loadDetail(code) {
     loadKline();
     // 加载分红数据并渲染图表
     loadDividends(code);
+    if (currentTab === 'segments') loadSegments();
     // 如果当前在便利贴标签，切换股票后自动刷新
     if (document.getElementById('panel-sticky')?.style.display === 'block') loadStickyNotes();
   } catch (e) {
@@ -972,6 +1058,7 @@ async function loadKline() {
 
 let valInstance = null;
 let pbInstance = null;
+let dyInstance = null;
 
 async function loadValuation(days) {
   const code = document.getElementById('detailCode').textContent.trim();
@@ -1114,6 +1201,59 @@ async function loadValuation(days) {
       <div style="color:#333;margin-bottom:2px">平均: <b>${bavg || '-'}</b></div>
       <div style="color:#389e0d">最小: <b>${bmin || '-'}</b></div>`;
 
+    // ===== 股息率估值 =====
+    const dyFiltered = (data.dividend_yield_data || []).filter(p => p.date >= cutoff);
+    const dyMap = {}; dyFiltered.forEach(p => dyMap[p.date] = p.dividend_yield);
+    const dyValues = dates.map(d => dyMap[d] != null ? dyMap[d] : null);
+    const filteredDyVals = dyValues.filter(v => v != null).sort((a, b) => a - b);
+    const dyn = filteredDyVals.length;
+    const dy80 = dyn > 0 ? filteredDyVals[Math.floor(dyn * 0.8)] : null;
+    const dy50 = dyn > 0 ? filteredDyVals[Math.floor(dyn * 0.5)] : null;
+    const dy20 = dyn > 0 ? filteredDyVals[Math.floor(dyn * 0.2)] : null;
+    const dymax = dyn > 0 ? filteredDyVals[dyn - 1] : null;
+    const dymin = dyn > 0 ? filteredDyVals[0] : null;
+    const dyavg = dyn > 0 ? +(filteredDyVals.reduce((a, b) => a + b, 0) / dyn).toFixed(2) : null;
+    const currentDY = data.current_dividend_yield || (dyFiltered.length ? dyFiltered[dyFiltered.length - 1].dividend_yield : null);
+    const dypct = currentDY && dyn > 0 ? +(filteredDyVals.filter(v => v <= currentDY).length / dyn * 100).toFixed(2) : null;
+    const dy80Line = dates.map(() => dy80);
+    const dy50Line = dates.map(() => dy50);
+    const dy20Line = dates.map(() => dy20);
+    const dyPad = (dymin != null && dymin < 1) ? 0.08 : 0.04;
+
+    if (dyInstance) dyInstance.dispose();
+    dyInstance = echarts.init(document.getElementById('chartDividendYield'));
+    dyInstance.setOption({
+      tooltip: {
+        trigger: 'axis',
+        valueFormatter: v => v == null ? '-' : Number(v).toFixed(2) + '%'
+      },
+      legend: { data: ['股息率', '80%分位', '50%分位', '20%分位', '股价(前复权)'], top: 4 },
+      grid: { left: 60, right: 80, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: dates, axisLabel: { formatter: v => v.slice(0, 7) }, boundaryGap: false },
+      yAxis: [
+        { type: 'value', name: '股息率(%)', min: dymin ? Math.max(0, +(dymin * (1 - dyPad)).toFixed(2)) : 0, max: dymax ? +(dymax * (1 + dyPad)).toFixed(2) : undefined, splitNumber: 5, axisLabel: { formatter: v => v + '%' } },
+        { type: 'value', name: '股价(元)', splitLine: { show: false }, min: pMin ? +(pMin * 0.99).toFixed(2) : undefined, max: pMax ? +(pMax * 1.01).toFixed(2) : undefined, splitNumber: 5 }
+      ],
+      series: [
+        { name: '股息率', type: 'line', data: dyValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', connectNulls: false, markPoint: { data: [{ type: 'max', name: '最高', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#52c41a' }, label: { formatter: p => Number(p.value).toFixed(2) + '%' } }, { type: 'min', name: '最低', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#ff4d4f' }, label: { formatter: p => Number(p.value).toFixed(2) + '%' } }] } },
+        { name: '80%分位', type: 'line', data: dy80Line, yAxisIndex: 0, lineStyle: { color: '#389e0d', type: 'dashed', width: 1 }, itemStyle: { color: '#389e0d' }, symbol: 'none' },
+        { name: '50%分位', type: 'line', data: dy50Line, yAxisIndex: 0, lineStyle: { color: '#666', type: 'dashed', width: 1 }, itemStyle: { color: '#666' }, symbol: 'none' },
+        { name: '20%分位', type: 'line', data: dy20Line, yAxisIndex: 0, lineStyle: { color: '#cf1322', type: 'dashed', width: 1 }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
+        { name: '股价(前复权)', type: 'line', data: priceValues, yAxisIndex: 1, lineStyle: { color: '#fa8c16', width: 1.5 }, itemStyle: { color: '#fa8c16' }, symbol: 'none' },
+      ]
+    });
+
+    document.getElementById('dySidebar').innerHTML = `
+      <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">股息率</div>
+      <div style="margin-bottom:4px">当前值: <b style="color:#4a6cf7">${currentDY != null ? currentDY.toFixed(2) + '%' : '-'}</b></div>
+      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${dypct != null ? dypct + '%' : '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:2px">80%: <b>${dy80 != null ? dy80.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#666;margin-bottom:2px">50%: <b>${dy50 != null ? dy50.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:8px">20%: <b>${dy20 != null ? dy20.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:2px">最大: <b>${dymax != null ? dymax.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#333;margin-bottom:2px">平均: <b>${dyavg != null ? dyavg.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#cf1322">最小: <b>${dymin != null ? dymin.toFixed(2) + '%' : '-'}</b></div>`;
+
     statusEl.textContent = `${peFiltered.length} 个数据点`;
     statusEl.style.color = '#52c41a';
   } catch (e) {
@@ -1131,8 +1271,12 @@ function debounceSearch() {
 
 async function loadStocks() {
   const keyword = document.getElementById('keyword').value.trim();
-  const params = new URLSearchParams({ page: currentPage, page_size: 15 });
+  const params = new URLSearchParams({ page: currentPage, page_size: listPageSize });
   if (keyword) params.append('keyword', keyword);
+  if (currentSortBy && !reorderMode) {
+    params.append('sort_by', currentSortBy);
+    params.append('sort_dir', currentSortDir);
+  }
 
   try {
     const res = await fetch('/api/stocks?' + params);
@@ -1140,6 +1284,7 @@ async function loadStocks() {
     renderTable(data.data);
     totalPages = data.total_pages;
     renderPagination(data);
+    updateListControls();
     document.getElementById('emptyHint').style.display = data.total === 0 ? 'block' : 'none';
   } catch (e) {
     showToast('加载失败', 'error');
@@ -1148,18 +1293,133 @@ async function loadStocks() {
 
 function renderTable(stocks) {
   const tbody = document.getElementById('stockTableBody');
+  const fmtPct = v => {
+    if (v == null || Number.isNaN(Number(v))) return '-';
+    const n = Number(v);
+    const color = n > 0 ? '#cf1322' : (n < 0 ? '#389e0d' : '#666');
+    return `<span style="color:${color};font-weight:600">${n.toFixed(2)}%</span>`;
+  };
   tbody.innerHTML = stocks.map(s => `
-    <tr>
+    <tr data-code="${esc(s.code)}" draggable="${reorderMode ? 'true' : 'false'}">
       <td><span class="code">${esc(s.code)}</span></td>
-      <td><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
+      <td><span class="drag-handle">::</span><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
+      <td>${s.price != null ? Number(s.price).toFixed(2) : '-'}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
+      <td>${s.pb_ex_goodwill != null ? Number(s.pb_ex_goodwill).toFixed(2) : '-'}</td>
       <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
+      <td>${fmtPct(s.ytd_return)}</td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="openEditModal('${esc(s.code)}')">编辑</button>
         <button class="btn btn-danger btn-sm" onclick="deleteStock('${esc(s.code)}','${esc(s.name)}')">删除</button>
       </td>
     </tr>
   `).join('');
+  bindReorderRows();
+}
+
+function updateListControls() {
+  document.querySelector('.table-wrap')?.classList.toggle('reorder-mode', reorderMode);
+  document.getElementById('btnReorderMode').style.display = reorderMode ? 'none' : '';
+  document.getElementById('btnSaveOrder').style.display = reorderMode ? '' : 'none';
+  document.getElementById('btnCancelOrder').style.display = reorderMode ? '' : 'none';
+  document.getElementById('btnResetSort').style.display = currentSortBy || reorderMode ? '' : 'none';
+  document.getElementById('listModeHint').textContent = reorderMode ? '拖动股票行调整默认展示顺序' : (currentSortBy ? '当前为指标排序视图' : '');
+  document.getElementById('pagination').style.display = reorderMode ? 'none' : '';
+  document.querySelectorAll('[data-sort-arrow]').forEach(el => {
+    const field = el.dataset.sortArrow;
+    el.textContent = currentSortBy === field ? (currentSortDir === 'asc' ? '↑' : '↓') : '';
+  });
+}
+
+function sortStocks(field) {
+  if (reorderMode) return;
+  if (currentSortBy === field) {
+    currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSortBy = field;
+    currentSortDir = field === 'code' || field === 'name' ? 'asc' : 'desc';
+  }
+  currentPage = 1;
+  loadStocks();
+}
+
+function resetListSort() {
+  currentSortBy = '';
+  currentSortDir = 'asc';
+  reorderMode = false;
+  listPageSize = 15;
+  currentPage = 1;
+  loadStocks();
+}
+
+function startReorderMode() {
+  currentSortBy = '';
+  currentSortDir = 'asc';
+  reorderMode = true;
+  listPageSize = 200;
+  currentPage = 1;
+  document.getElementById('keyword').value = '';
+  loadStocks();
+}
+
+function cancelReorderMode() {
+  reorderMode = false;
+  listPageSize = 15;
+  currentPage = 1;
+  loadStocks();
+}
+
+function bindReorderRows() {
+  const tbody = document.getElementById('stockTableBody');
+  if (!tbody) return;
+  tbody.querySelectorAll('tr').forEach(row => {
+    row.ondragstart = e => {
+      if (!reorderMode) return e.preventDefault();
+      draggedRow = row;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    };
+    row.ondragend = () => {
+      row.classList.remove('dragging');
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      draggedRow = null;
+    };
+    row.ondragover = e => {
+      if (!reorderMode || !draggedRow || draggedRow === row) return;
+      e.preventDefault();
+      row.classList.add('drag-over');
+    };
+    row.ondragleave = () => row.classList.remove('drag-over');
+    row.ondrop = e => {
+      if (!reorderMode || !draggedRow || draggedRow === row) return;
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      const rect = row.getBoundingClientRect();
+      const after = e.clientY > rect.top + rect.height / 2;
+      tbody.insertBefore(draggedRow, after ? row.nextSibling : row);
+    };
+  });
+}
+
+async function saveDefaultOrder() {
+  const codes = Array.from(document.querySelectorAll('#stockTableBody tr')).map(row => row.dataset.code).filter(Boolean);
+  if (!codes.length) return;
+  try {
+    const res = await fetch('/api/stocks/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codes })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    showToast('默认顺序已保存', 'success');
+    reorderMode = false;
+    listPageSize = 15;
+    currentPage = 1;
+    loadStocks();
+  } catch (e) {
+    showToast('保存顺序失败: ' + e.message, 'error');
+  }
 }
 
 function renderPagination(data) {
@@ -1341,6 +1601,8 @@ function switchTab(name) {
     loadKline();
   } else if (name === 'valuation') {
     loadValuation(3650);
+  } else if (name === 'segments') {
+    loadSegments();
   } else if (name === 'balance') {
     loadBalanceSheet();
   } else if (name === 'income') {
@@ -1845,6 +2107,270 @@ async function updateFinancials() {
     statusEl.textContent = '请求失败: ' + e.message;
     statusEl.style.color = '#ff4d4f';
   }
+}
+
+// ==================== 营收构成 ====================
+
+function segmentNum(v) {
+  return v == null || Number.isNaN(Number(v)) ? null : Number(v);
+}
+
+function fmtSegmentAmount(v) {
+  const n = segmentNum(v);
+  if (n == null) return '-';
+  return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(2);
+}
+
+function fmtSegmentPct(v) {
+  const n = segmentNum(v);
+  return n == null ? '-' : n.toFixed(1) + '%';
+}
+
+function disposeSegmentCharts() {
+  for (const chart of [segmentRevenueChart, segmentProfitChart, segmentBubbleChart]) {
+    if (chart) chart.dispose();
+  }
+  segmentRevenueChart = null;
+  segmentProfitChart = null;
+  segmentBubbleChart = null;
+}
+
+function resetSegmentsPanel() {
+  segmentLoadSeq++;
+  segmentCache = null;
+  disposeSegmentCharts();
+  const summary = document.getElementById('segmentSummary');
+  const wrap = document.getElementById('tableSegmentsWrap');
+  const status = document.getElementById('segStatus');
+  if (summary) summary.innerHTML = '';
+  if (wrap) wrap.innerHTML = '<div class="empty">请点击"查询"加载营收构成数据</div>';
+  if (status) status.textContent = '';
+}
+
+async function loadSegments() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const requestSeq = ++segmentLoadSeq;
+  const from = document.getElementById('segFromYear').value;
+  const to = document.getElementById('segToYear').value;
+  const dimension = document.getElementById('segDimension').value;
+  const status = document.getElementById('segStatus');
+  const wrap = document.getElementById('tableSegmentsWrap');
+  status.textContent = '加载中...';
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+
+  try {
+    const params = new URLSearchParams({ from_year: from, to_year: to, dimension });
+    const res = await fetch(`/api/stock/${code}/segments?${params}`);
+    const payload = await res.json();
+    if (requestSeq !== segmentLoadSeq || code !== document.getElementById('detailCode').textContent.trim()) return;
+    const data = payload.data || [];
+    segmentCache = { data, summary: payload.summary || null };
+    if (!data.length) {
+      disposeSegmentCharts();
+      document.getElementById('segmentSummary').innerHTML = '';
+      wrap.innerHTML = '<div class="empty">暂无营收构成数据，请点击"更新数据"拉取</div>';
+      status.textContent = '暂无数据';
+      return;
+    }
+    renderSegmentsFromCache();
+    status.textContent = `共 ${data.length} 条`;
+  } catch (e) {
+    disposeSegmentCharts();
+    document.getElementById('segmentSummary').innerHTML = '';
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">加载失败: ' + e.message + '</div>';
+    status.textContent = '加载失败';
+  }
+}
+
+async function updateSegments() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const status = document.getElementById('segStatus');
+  status.textContent = '更新中...';
+  try {
+    const res = await fetch('/api/update-segments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('营收构成更新完成: ' + (data.records_updated || 0) + ' 条', 'success');
+      await loadSegments();
+    } else {
+      const msg = data.errors && data.errors.length ? data.errors[0] : '更新失败';
+      showToast(msg, 'error');
+      status.textContent = '更新失败';
+    }
+  } catch (e) {
+    showToast('营收构成更新失败: ' + e.message, 'error');
+    status.textContent = '更新失败';
+  }
+}
+
+function renderSegmentsFromCache() {
+  if (!segmentCache) return;
+  renderSegmentSummary(segmentCache.summary);
+  renderSegmentCharts(segmentCache.data);
+  renderSegmentTable(segmentCache.data);
+}
+
+function renderSegmentSummary(summary) {
+  const el = document.getElementById('segmentSummary');
+  if (!summary) {
+    el.innerHTML = '';
+    return;
+  }
+  const cards = [
+    { label: '最新年度', value: summary.latest_year || '-', sub: '年报口径' },
+    { label: '第一大收入来源', value: summary.top_revenue_segment || '-', sub: '占收入 ' + fmtSegmentPct(summary.top_revenue_ratio) },
+    { label: '第一大毛利来源', value: summary.top_profit_segment || '-', sub: '占毛利 ' + fmtSegmentPct(summary.top_profit_ratio) },
+    { label: 'Top3 收入集中度', value: fmtSegmentPct(summary.top3_revenue_ratio), sub: '综合毛利率 ' + fmtSegmentPct(summary.gross_margin) },
+  ];
+  el.innerHTML = cards.map(c => `
+    <div class="segment-summary-card">
+      <div class="label">${esc(c.label)}</div>
+      <div class="value">${esc(String(c.value))}</div>
+      <div class="sub">${esc(c.sub)}</div>
+    </div>
+  `).join('');
+  bindReorderRows();
+}
+
+function segmentYears(data) {
+  return [...new Set(data.map(d => d.fiscal_year))].sort((a, b) => a - b);
+}
+
+function topSegmentNames(data, field) {
+  const latestYear = Math.max(...data.map(d => d.fiscal_year));
+  return data.filter(d => d.fiscal_year === latestYear)
+    .sort((a, b) => (segmentNum(b[field]) || 0) - (segmentNum(a[field]) || 0))
+    .slice(0, 8)
+    .map(d => d.segment_name);
+}
+
+function buildSegmentSeries(data, field, ratioField) {
+  const view = document.getElementById('segView').value;
+  const years = segmentYears(data);
+  const names = topSegmentNames(data, field);
+  const rowsByYear = {};
+  for (const row of data) {
+    rowsByYear[row.fiscal_year] = rowsByYear[row.fiscal_year] || [];
+    rowsByYear[row.fiscal_year].push(row);
+  }
+  const seriesNames = [...names, '其他'];
+  const series = seriesNames.map(name => ({
+    name,
+    type: 'bar',
+    stack: 'total',
+    emphasis: { focus: 'series' },
+    data: years.map(year => {
+      const rows = rowsByYear[year] || [];
+      if (name === '其他') {
+        return rows.filter(r => !names.includes(r.segment_name)).reduce((sum, r) => sum + (segmentNum(view === 'ratio' ? r[ratioField] : r[field]) || 0), 0);
+      }
+      const row = rows.find(r => r.segment_name === name);
+      return row ? (segmentNum(view === 'ratio' ? row[ratioField] : row[field]) || 0) : 0;
+    })
+  }));
+  return { years, series };
+}
+
+function renderSegmentStackChart(domId, title, field, ratioField) {
+  const data = segmentCache.data || [];
+  const view = document.getElementById('segView').value;
+  const { years, series } = buildSegmentSeries(data, field, ratioField);
+  const dom = document.getElementById(domId);
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) existing.dispose();
+  const chart = echarts.init(dom);
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      valueFormatter: v => view === 'ratio' ? Number(v).toFixed(1) + '%' : Number(v).toFixed(2) + ' 亿'
+    },
+    legend: { type: 'scroll', top: 0 },
+    grid: { left: 48, right: 18, top: 56, bottom: 36 },
+    xAxis: { type: 'category', data: years },
+    yAxis: { type: 'value', name: view === 'ratio' ? '占比(%)' : '亿元' },
+    series
+  });
+  return chart;
+}
+
+function renderSegmentBubble(data) {
+  const latestYear = Math.max(...data.map(d => d.fiscal_year));
+  const latest = data.filter(d => d.fiscal_year === latestYear)
+    .sort((a, b) => (segmentNum(b.revenue) || 0) - (segmentNum(a.revenue) || 0))
+    .slice(0, 12);
+  const dom = document.getElementById('chartSegmentBubble');
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) existing.dispose();
+  segmentBubbleChart = echarts.init(dom);
+  segmentBubbleChart.setOption({
+    tooltip: {
+      formatter: p => {
+        const d = p.data;
+        return `${esc(d[3])}<br>收入占比: ${fmtSegmentPct(d[0])}<br>毛利率: ${fmtSegmentPct(d[1])}<br>收入: ${fmtSegmentAmount(d[2])} 亿`;
+      }
+    },
+    grid: { left: 52, right: 24, top: 28, bottom: 42 },
+    xAxis: { type: 'value', name: '收入占比(%)' },
+    yAxis: { type: 'value', name: '毛利率(%)' },
+    series: [{
+      type: 'scatter',
+      symbolSize: d => Math.max(12, Math.min(58, Math.sqrt(Math.max(d[2], 0)) * 4)),
+      data: latest.map(r => [r.revenue_ratio || 0, r.gross_margin || 0, r.revenue || 0, r.segment_name]),
+      label: { show: true, formatter: p => p.data[3], position: 'right', fontSize: 11 },
+      itemStyle: { color: '#4a6cf7', opacity: .78 }
+    }]
+  });
+}
+
+function renderSegmentCharts(data) {
+  segmentRevenueChart = renderSegmentStackChart('chartSegmentRevenue', '历年业务收入构成', 'revenue', 'revenue_ratio');
+  segmentProfitChart = renderSegmentStackChart('chartSegmentProfit', '历年业务毛利构成', 'gross_profit', 'profit_ratio');
+  renderSegmentBubble(data);
+  setTimeout(() => {
+    if (segmentRevenueChart) segmentRevenueChart.resize();
+    if (segmentProfitChart) segmentProfitChart.resize();
+    if (segmentBubbleChart) segmentBubbleChart.resize();
+  }, 50);
+}
+
+function renderSegmentTable(data) {
+  const wrap = document.getElementById('tableSegmentsWrap');
+  const years = segmentYears(data).sort((a, b) => b - a);
+  const latestYear = Math.max(...data.map(d => d.fiscal_year));
+  const names = [...new Set(data.map(d => d.segment_name))].sort((a, b) => {
+    const ar = data.find(d => d.fiscal_year === latestYear && d.segment_name === a);
+    const br = data.find(d => d.fiscal_year === latestYear && d.segment_name === b);
+    return (segmentNum(br?.revenue) || 0) - (segmentNum(ar?.revenue) || 0);
+  });
+  const map = {};
+  for (const row of data) map[row.fiscal_year + '|' + row.segment_name] = row;
+
+  let html = '<table class="fin-table"><thead><tr><th class="sticky-col" rowspan="2">业务名称</th>';
+  for (const year of years) html += `<th class="year-header" colspan="4">${year}</th>`;
+  html += '</tr><tr>';
+  for (const year of years) html += '<th class="sub-header">收入(亿)</th><th class="sub-header">收入占比</th><th class="sub-header">毛利(亿)</th><th class="sub-header">毛利率</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const name of names) {
+    html += `<tr><td class="sticky-col">${esc(name)}</td>`;
+    for (const year of years) {
+      const row = map[year + '|' + name];
+      html += `<td>${fmtSegmentAmount(row?.revenue)}</td>`;
+      html += `<td>${fmtSegmentPct(row?.revenue_ratio)}</td>`;
+      html += `<td>${fmtSegmentAmount(row?.gross_profit)}</td>`;
+      html += `<td>${fmtSegmentPct(row?.gross_margin)}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
 }
 
 // ==================== 资产负债表 ====================
@@ -2842,6 +3368,7 @@ async function doUpdateAll(mode) {
   const apis = [
     { name: '分红', url: '/api/update-dividends' },
     { name: '财报', url: '/api/update-financials' },
+    { name: '营收构成', url: '/api/update-segments' },
     { name: '资产负债表', url: '/api/update-balance-sheet' },
     { name: '利润表', url: '/api/update-income' },
     { name: '现金流量表', url: '/api/update-cashflow' },

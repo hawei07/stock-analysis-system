@@ -27,7 +27,10 @@ class Stock:
         total = execute_query(count_sql, params)[0]["total"]
 
         offset = (page - 1) * page_size
-        data_sql = f"SELECT id, code, name, market, industry, list_date, status, pe_ttm, dividend_yield FROM stocks{where} ORDER BY code LIMIT %s OFFSET %s"
+        data_sql = f"""SELECT id, code, name, market, industry, list_date, status, pe_ttm, dividend_yield, display_order
+                       FROM stocks{where}
+                       ORDER BY COALESCE(display_order, id), id
+                       LIMIT %s OFFSET %s"""
         rows = execute_query(data_sql, params + [page_size, offset])
 
         return {
