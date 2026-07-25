@@ -2,6 +2,10 @@
 
 import sys
 import subprocess
+from pathlib import Path
+
+
+APP_DIR = Path(__file__).resolve().parent
 
 
 def menu():
@@ -35,12 +39,12 @@ def main():
                 extra.append(f"market={market}")
             if status:
                 extra.append(f"status={status}")
-            subprocess.run([sys.executable, "stock_list.py", "list", f"page={page}"] + extra, cwd=r"D:\stock-analysis-system")
+            subprocess.run([sys.executable, "stock_list.py", "list", f"page={page}"] + extra, cwd=APP_DIR)
 
         elif choice == "2":
             kw = input("搜索关键字: ").strip()
             if kw:
-                subprocess.run([sys.executable, "stock_list.py", "search", kw], cwd=r"D:\stock-analysis-system")
+                subprocess.run([sys.executable, "stock_list.py", "search", kw], cwd=APP_DIR)
 
         elif choice == "3":
             code = input("股票代码: ").strip()
@@ -55,7 +59,7 @@ def main():
                     args.append(list_date)
             elif list_date:
                 args.extend([None, list_date])
-            subprocess.run([sys.executable] + args, cwd=r"D:\stock-analysis-system")
+            subprocess.run([sys.executable] + args, cwd=APP_DIR)
 
         elif choice == "4":
             code = input("要更新的股票代码: ").strip()
@@ -68,15 +72,15 @@ def main():
                 fields.append(f)
             if fields:
                 subprocess.run([sys.executable, "stock_list.py", "update", code] + fields,
-                               cwd=r"D:\stock-analysis-system")
+                               cwd=APP_DIR)
 
         elif choice == "5":
             code = input("要删除的股票代码: ").strip()
             if code:
-                subprocess.run([sys.executable, "stock_list.py", "delete", code], cwd=r"D:\stock-analysis-system")
+                subprocess.run([sys.executable, "stock_list.py", "delete", code], cwd=APP_DIR)
 
         elif choice == "6":
-            subprocess.run([sys.executable, "stock_list.py", "import"], cwd=r"D:\stock-analysis-system")
+            subprocess.run([sys.executable, "stock_list.py", "import"], cwd=APP_DIR)
 
         elif choice == "0":
             print("再见!")
@@ -90,12 +94,12 @@ def main():
 def init_if_empty():
     """如果表为空，自动导入示例数据"""
     import sys
-    sys.path.insert(0, r"D:\stock-analysis-system")
+    sys.path.insert(0, str(APP_DIR))
     from models import Stock
     result = Stock.get_all(page=1, page_size=1)
     if result["total"] == 0:
         print("首次运行，正在导入示例数据...")
-        subprocess.run([sys.executable, "stock_list.py", "import"], cwd=r"D:\stock-analysis-system")
+        subprocess.run([sys.executable, "stock_list.py", "import"], cwd=APP_DIR)
 
 
 if __name__ == "__main__":

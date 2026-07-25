@@ -9,12 +9,39 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import base64
 import uuid
 import html as html_lib
 from datetime import datetime
-sys.path.insert(0, r"E:\stock-analysis-system")
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+if APP_DIR not in sys.path:
+    sys.path.insert(0, APP_DIR)
+
+
+def _read_local_settings():
+    path = os.path.join(APP_DIR, "local_settings.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+LOCAL_SETTINGS = _read_local_settings()
+
+
+def _setting(name, env_name, default=None):
+    value = os.environ.get(env_name)
+    if value not in (None, ""):
+        return value
+    value = LOCAL_SETTINGS.get(name)
+    return default if value in (None, "") else value
+
+
 from models import Stock
 from db import execute_query, execute_update
 from config import DB_CONFIG
@@ -23,18 +50,49 @@ from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_
 
 app = Flask(__name__)
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-CLOUD_SYNC_DIR = os.environ.get("STOCK_CLOUD_SYNC_DIR", r"D:\stock-cloud-sync")
-MYSQL_BIN_DIR = os.environ.get("MYSQL_BIN_DIR", r"D:\dvptool\mysql\bin")
+CLOUD_SYNC_DIR = _setting("cloud_sync_dir", "STOCK_CLOUD_SYNC_DIR", r"D:\stock-cloud-sync")
+MYSQL_BIN_DIR = _setting("mysql_bin_dir", "MYSQL_BIN_DIR", "")
+APP_PORT = int(_setting("app_port", "STOCK_APP_PORT", 5002))
 CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
 
+_db_overrides = {
+    "host": _setting("db_host", "STOCK_DB_HOST"),
+    "port": _setting("db_port", "STOCK_DB_PORT"),
+    "user": _setting("db_user", "STOCK_DB_USER"),
+    "password": _setting("db_password", "STOCK_DB_PASSWORD"),
+    "database": _setting("db_name", "STOCK_DB_NAME"),
+}
+for _key, _value in _db_overrides.items():
+    if _value not in (None, ""):
+        DB_CONFIG[_key] = int(_value) if _key == "port" else _value
+
 
 def _mysql_tool_path(name):
     exe = f"{name}.exe" if os.name == "nt" else name
-    path = os.path.join(MYSQL_BIN_DIR, exe)
-    return path if os.path.exists(path) else exe
+    candidates = []
+    if MYSQL_BIN_DIR:
+        candidates.append(os.path.join(MYSQL_BIN_DIR, exe))
+
+    resolved = shutil.which(exe)
+    if resolved:
+        candidates.append(resolved)
+
+    if os.name == "nt":
+        candidates.extend([
+            os.path.join(r"E:\MySQL\bin", exe),
+            os.path.join(r"D:\MySQL\bin", exe),
+            os.path.join(r"D:\mysql\bin", exe),
+            os.path.join(r"D:\dvptool\mysql\bin", exe),
+            os.path.join(r"C:\Program Files\MySQL\MySQL Server 8.4\bin", exe),
+            os.path.join(r"C:\Program Files\MySQL\MySQL Server 8.0\bin", exe),
+        ])
+
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return exe
 
 
 def _cloud_backup_dir():
@@ -48,6 +106,37 @@ def _cloud_state_path():
 
 def _cloud_latest_path():
     return os.path.join(_cloud_backup_dir(), CLOUD_LATEST_SQL)
+
+
+def _backup_file_payload(path):
+    stat = os.stat(path)
+    return {
+        "name": os.path.basename(path),
+        "path": path,
+        "size": stat.st_size,
+        "mtime": stat.st_mtime,
+        "mtime_iso": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+    }
+
+
+def _cloud_backup_files():
+    backup_dir = _cloud_backup_dir()
+    files = []
+    for name in os.listdir(backup_dir):
+        path = os.path.join(backup_dir, name)
+        if os.path.isfile(path) and name.lower().endswith(".sql"):
+            files.append(_backup_file_payload(path))
+    return sorted(files, key=lambda item: item["mtime"], reverse=True)
+
+
+def _resolve_backup_file(filename):
+    if not filename or os.path.basename(filename) != filename or not filename.lower().endswith(".sql"):
+        raise ValueError("Invalid backup filename")
+    path = os.path.abspath(os.path.join(_cloud_backup_dir(), filename))
+    backup_dir = os.path.abspath(_cloud_backup_dir())
+    if os.path.commonpath([backup_dir, path]) != backup_dir or not os.path.exists(path):
+        raise FileNotFoundError(filename)
+    return path
 
 
 def _read_local_cloud_state():
@@ -156,6 +245,7 @@ def _dump_database(prefix="stock_analysis", update_latest=True):
 def _restore_database(sql_path):
     if not os.path.exists(sql_path):
         raise FileNotFoundError(sql_path)
+
     cmd = [
         _mysql_tool_path("mysql"),
         "--host", DB_CONFIG.get("host", "127.0.0.1"),
@@ -165,11 +255,31 @@ def _restore_database(sql_path):
         "--default-character-set=utf8mb4",
         DB_CONFIG.get("database", "stock_analysis"),
     ]
-    with open(sql_path, "rb") as f:
-        result = subprocess.run(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(os.path.abspath(__file__)), timeout=180)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysql restore failed")
-    return True
+    prepared_path = None
+    try:
+        with open(sql_path, "r", encoding="utf-8") as f:
+            sql = f.read()
+        sql = re.sub(
+            r",\s*\r?\n\s*CONSTRAINT\s+`[^`]+`\s+FOREIGN KEY\s+\([^)]+\)\s+REFERENCES\s+`[^`]+`\s+\([^)]+\)"
+            r"(?:\s+ON\s+DELETE\s+\w+)?(?:\s+ON\s+UPDATE\s+\w+)?",
+            "",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        fd, prepared_path = tempfile.mkstemp(prefix="stock_restore_", suffix=".sql")
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(sql)
+        with open(prepared_path, "rb") as f:
+            result = subprocess.run(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(os.path.abspath(__file__)), timeout=180)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysql restore failed")
+        return True
+    finally:
+        if prepared_path:
+            try:
+                os.remove(prepared_path)
+            except OSError:
+                pass
 
 
 # ==================== 便利贴 JSON 文件存储 ====================
@@ -299,7 +409,7 @@ def _ensure_stock_order_column():
 def _ensure_graham_valuation_table():
     execute_query(
         """CREATE TABLE IF NOT EXISTS graham_valuations (
-            stock_code VARCHAR(10) NOT NULL,
+            stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
             growth_rate DECIMAL(10,4) NULL,
             payout_ratio DECIMAL(10,4) NULL,
             risk_free_rate DECIMAL(10,4) NULL,
@@ -611,7 +721,7 @@ def _ensure_portfolio_tables():
     execute_query(
         """CREATE TABLE IF NOT EXISTS portfolio_positions (
             id INT NOT NULL AUTO_INCREMENT,
-            stock_code VARCHAR(10) NOT NULL,
+            stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
             shares DECIMAL(18,4) NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1121,11 +1231,42 @@ def api_cloud_backup_status():
     })
 
 
+@app.route("/api/cloud-backup/files")
+def api_cloud_backup_files():
+    try:
+        return jsonify({
+            "backup_dir": _cloud_backup_dir(),
+            "files": _cloud_backup_files(),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/cloud-backup/backup", methods=["POST"])
 def api_cloud_backup_create():
     try:
         state = _dump_database()
         return jsonify({"ok": True, **state})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cloud-backup/restore-file", methods=["POST"])
+def api_cloud_backup_restore_file():
+    try:
+        data = request.get_json(silent=True) or {}
+        filename = data.get("filename", "")
+        backup_path = _resolve_backup_file(filename)
+        pre_restore_state = _dump_database(prefix="pre_restore", update_latest=False)
+        _restore_database(backup_path)
+        _mark_cloud_applied("restore-file", {"restored_from": backup_path})
+        return jsonify({
+            "ok": True,
+            "restored_from": backup_path,
+            "pre_restore_backup": pre_restore_state.get("latest_backup"),
+        })
+    except FileNotFoundError:
+        return jsonify({"error": "Backup file not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -3492,4 +3633,4 @@ if __name__ == "__main__":
         print("✓ 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"⚠ 表结构检查异常: {e}")
-    app.run(host="0.0.0.0", port=5002, debug=True)
+    app.run(host="0.0.0.0", port=APP_PORT, debug=True)
