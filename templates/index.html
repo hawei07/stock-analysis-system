@@ -330,6 +330,7 @@ html[data-theme="dark"] .chart-modal-overlay{background:var(--modal-mask)!import
 html[data-theme="dark"] .munger .chat-bubble{background:var(--surface-soft)!important;color:var(--text)!important}
 html[data-theme="dark"] .chat-delete{background:var(--surface)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .sticky-card{background:#2b2614!important;border-color:#51451f!important;color:var(--text)!important}
+html[data-theme="dark"] #grahamPreview{background:var(--surface-soft)!important;color:var(--text)!important}
 html[data-theme="dark"] .fin-table tbody tr.fin-row-highlight td{background:#3b3419!important;color:#fff4c2!important}
 html[data-theme="dark"] .fin-table tbody tr.fin-row-highlight .sticky-col{background:#4d421f!important;color:#fff4c2!important}
 html[data-theme="dark"] .market-SH{background:#3a1c22;color:#ff9aa2}
@@ -381,7 +382,10 @@ html[data-theme="dark"] .status-\*ST{background:#3a1c22;color:#ff9aa2}
             <th class="sortable-th" onclick="sortStocks('code')">代码<span class="sort-arrow" data-sort-arrow="code"></span></th>
             <th class="sortable-th" onclick="sortStocks('name')">名称<span class="sort-arrow" data-sort-arrow="name"></span></th>
             <th class="sortable-th" onclick="sortStocks('price')">股价<span class="sort-arrow" data-sort-arrow="price"></span></th>
+            <th class="sortable-th" onclick="sortStocks('reasonable_price')">合理股价<span class="sort-arrow" data-sort-arrow="reasonable_price"></span></th>
+            <th class="sortable-th" onclick="sortStocks('reasonable_discount')">折扣<span class="sort-arrow" data-sort-arrow="reasonable_discount"></span></th>
             <th class="sortable-th" onclick="sortStocks('pe_ttm')">PE(TTM)<span class="sort-arrow" data-sort-arrow="pe_ttm"></span></th>
+            <th class="sortable-th" onclick="sortStocks('reasonable_valuation')">合理估值<span class="sort-arrow" data-sort-arrow="reasonable_valuation"></span></th>
             <th class="sortable-th" onclick="sortStocks('pb_ex_goodwill')">PB(扣商誉)<span class="sort-arrow" data-sort-arrow="pb_ex_goodwill"></span></th>
             <th class="sortable-th" onclick="sortStocks('dividend_yield')">股息率<span class="sort-arrow" data-sort-arrow="dividend_yield"></span></th>
             <th class="sortable-th" onclick="sortStocks('ytd_return')">今年以来<span class="sort-arrow" data-sort-arrow="ytd_return"></span></th>
@@ -738,6 +742,56 @@ html[data-theme="dark"] .status-\*ST{background:#3a1c22;color:#ff9aa2}
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal()">取消</button>
       <button class="btn btn-primary" id="btnSave" onclick="saveStock()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 格雷厄姆估值参数弹窗 -->
+<div class="modal-overlay" id="grahamModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="grahamModalTitle">格雷厄姆估值参数</h3>
+      <button class="modal-close" onclick="closeGrahamModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="grahamCode">
+      <div class="row">
+        <div>
+          <label>增长率（%）</label>
+          <input type="number" id="grahamGrowthRate" step="0.01" placeholder="例如 5">
+        </div>
+        <div>
+          <label>当年预期利润（亿元）</label>
+          <input type="number" id="grahamExpectedProfit" step="0.01" min="0" placeholder="例如 100">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>分红比例（%）</label>
+          <div style="display:flex;gap:8px">
+            <input type="number" id="grahamPayoutRatio" step="0.01" min="0" style="flex:1">
+            <button class="btn btn-outline btn-sm" onclick="resetGrahamPayout()" style="height:38px;margin-top:0">重置</button>
+          </div>
+          <div id="grahamPayoutDefault" style="font-size:11px;color:#999;margin-top:2px;margin-bottom:14px"></div>
+        </div>
+        <div>
+          <label>无风险利率（%）</label>
+          <div style="display:flex;gap:8px">
+            <input type="number" id="grahamRiskFreeRate" step="0.01" min="0.01" style="flex:1">
+            <button class="btn btn-outline btn-sm" onclick="resetGrahamRiskFree()" style="height:38px;margin-top:0">重置</button>
+          </div>
+          <div id="grahamRiskDefault" style="font-size:11px;color:#999;margin-top:2px;margin-bottom:14px">默认 5%</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#666;line-height:1.7">
+        <div>合理估值 = 分红比例*1 / 无风险利率 + 增长率</div>
+        <div>合理股价 = 合理估值 × 当年预期利润 / 总股本</div>
+      </div>
+      <div id="grahamPreview" style="margin-top:12px;padding:10px 12px;background:#f7f9fc;border-radius:6px;font-size:13px;line-height:1.8"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeGrahamModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveGrahamValuation()">保存</button>
     </div>
   </div>
 </div>
@@ -1636,6 +1690,7 @@ async function loadStocks() {
 
 function renderTable(stocks) {
   const tbody = document.getElementById('stockTableBody');
+  const fmtNum = v => (v == null || Number.isNaN(Number(v))) ? '-' : Number(v).toFixed(2);
   const fmtPct = v => {
     if (v == null || Number.isNaN(Number(v))) return '-';
     const n = Number(v);
@@ -1647,7 +1702,10 @@ function renderTable(stocks) {
       <td><span class="code">${esc(s.code)}</span></td>
       <td><span class="drag-handle">::</span><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
       <td>${s.price != null ? Number(s.price).toFixed(2) : '-'}</td>
+      <td>${fmtNum(s.reasonable_price)}</td>
+      <td>${fmtPct(s.reasonable_discount)}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="openGrahamModal('${esc(s.code)}')" title="编辑格雷厄姆估值参数">${fmtNum(s.reasonable_valuation)}</button></td>
       <td>${s.pb_ex_goodwill != null ? Number(s.pb_ex_goodwill).toFixed(2) : '-'}</td>
       <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
       <td>${fmtPct(s.ytd_return)}</td>
@@ -1659,6 +1717,111 @@ function renderTable(stocks) {
   `).join('');
   bindReorderRows();
 }
+
+let grahamDefaults = null;
+
+function numOrEmpty(value) {
+  return value == null || Number.isNaN(Number(value)) ? '' : Number(value).toFixed(2);
+}
+
+function grahamInputNumber(id) {
+  const value = document.getElementById(id).value;
+  if (value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function updateGrahamPreview() {
+  const payout = grahamInputNumber('grahamPayoutRatio');
+  const riskFree = grahamInputNumber('grahamRiskFreeRate');
+  const growth = grahamInputNumber('grahamGrowthRate') || 0;
+  const expectedProfit = grahamInputNumber('grahamExpectedProfit');
+  const totalShares = grahamDefaults?.total_shares;
+  let valuation = null;
+  let price = null;
+  if (payout != null && riskFree != null && riskFree > 0) {
+    valuation = payout / riskFree + growth;
+  }
+  if (valuation != null && expectedProfit != null && totalShares) {
+    price = valuation * expectedProfit / totalShares;
+  }
+  document.getElementById('grahamPreview').innerHTML = `
+    <div>合理估值：<b>${valuation != null ? valuation.toFixed(2) : '-'}</b></div>
+    <div>合理股价：<b>${price != null ? price.toFixed(2) + ' 元' : '-'}</b></div>
+    <div>总股本：${totalShares != null ? Number(totalShares).toFixed(2) + ' 亿股' : '-'}</div>
+  `;
+}
+
+async function openGrahamModal(code) {
+  const modal = document.getElementById('grahamModal');
+  document.getElementById('grahamCode').value = code;
+  document.getElementById('grahamModalTitle').textContent = `${code} 格雷厄姆估值参数`;
+  document.getElementById('grahamPreview').textContent = '加载中...';
+  modal.classList.add('active');
+  try {
+    const res = await fetch(`/api/stock/${code}/graham-valuation`);
+    const data = await res.json();
+    grahamDefaults = data.defaults || {};
+    grahamDefaults.total_shares = data.total_shares;
+    document.getElementById('grahamGrowthRate').value = numOrEmpty(data.params?.growth_rate);
+    document.getElementById('grahamPayoutRatio').value = numOrEmpty(data.params?.payout_ratio);
+    document.getElementById('grahamRiskFreeRate').value = numOrEmpty(data.params?.risk_free_rate);
+    document.getElementById('grahamExpectedProfit').value = numOrEmpty(data.params?.expected_profit);
+    document.getElementById('grahamPayoutDefault').textContent = `默认：${grahamDefaults.payout_ratio != null ? Number(grahamDefaults.payout_ratio).toFixed(2) + '%' : '暂无最近3年分红比例'}`;
+    updateGrahamPreview();
+  } catch (e) {
+    showToast('估值参数加载失败', 'error');
+    closeGrahamModal();
+  }
+}
+
+function closeGrahamModal() {
+  document.getElementById('grahamModal').classList.remove('active');
+  grahamDefaults = null;
+}
+
+function resetGrahamPayout() {
+  document.getElementById('grahamPayoutRatio').value = numOrEmpty(grahamDefaults?.payout_ratio);
+  updateGrahamPreview();
+}
+
+function resetGrahamRiskFree() {
+  document.getElementById('grahamRiskFreeRate').value = '5.00';
+  updateGrahamPreview();
+}
+
+async function saveGrahamValuation() {
+  const code = document.getElementById('grahamCode').value;
+  const payload = {
+    growth_rate: document.getElementById('grahamGrowthRate').value,
+    payout_ratio: document.getElementById('grahamPayoutRatio').value,
+    risk_free_rate: document.getElementById('grahamRiskFreeRate').value,
+    expected_profit: document.getElementById('grahamExpectedProfit').value,
+  };
+  try {
+    const res = await fetch(`/api/stock/${code}/graham-valuation`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showToast(data.error || '保存失败', 'error');
+      return;
+    }
+    showToast('估值参数已保存', 'success');
+    closeGrahamModal();
+    loadStocks();
+  } catch (e) {
+    showToast('保存失败', 'error');
+  }
+}
+
+['grahamGrowthRate', 'grahamPayoutRatio', 'grahamRiskFreeRate', 'grahamExpectedProfit'].forEach(id => {
+  document.addEventListener('input', e => {
+    if (e.target && e.target.id === id) updateGrahamPreview();
+  });
+});
 
 function updateListControls() {
   document.querySelector('.table-wrap')?.classList.toggle('reorder-mode', reorderMode);

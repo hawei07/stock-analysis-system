@@ -144,6 +144,175 @@ def _ensure_stock_order_column():
         pass
 
 
+def _ensure_graham_valuation_table():
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS graham_valuations (
+            stock_code VARCHAR(10) NOT NULL,
+            growth_rate DECIMAL(10,4) NULL,
+            payout_ratio DECIMAL(10,4) NULL,
+            risk_free_rate DECIMAL(10,4) NULL,
+            expected_profit DECIMAL(18,4) NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (stock_code),
+            CONSTRAINT fk_graham_stock FOREIGN KEY (stock_code)
+                REFERENCES stocks (code) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+
+
+def _latest_total_shares(codes):
+    if not codes:
+        return {}
+    placeholders = ",".join(["%s"] * len(codes))
+    try:
+        rows = execute_query(
+            f"""SELECT stock_code, total_shares
+                FROM (
+                  SELECT stock_code, total_shares,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY stock_code
+                           ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC
+                         ) AS rn
+                  FROM custom_financials
+                  WHERE stock_code IN ({placeholders}) AND total_shares IS NOT NULL AND total_shares > 0
+                ) t
+                WHERE rn=1""",
+            tuple(codes),
+        )
+        return {r["stock_code"]: float(r["total_shares"]) for r in rows}
+    except Exception:
+        return {}
+
+
+def _graham_defaults(codes):
+    if not codes:
+        return {}
+    placeholders = ",".join(["%s"] * len(codes))
+    defaults = {code: {
+        "growth_rate": 0.0,
+        "payout_ratio": None,
+        "risk_free_rate": 5.0,
+        "expected_profit": None,
+        "total_shares": None,
+    } for code in codes}
+
+    try:
+        rows = execute_query(
+            f"""SELECT stock_code, AVG(ratio) AS avg_payout_ratio
+                FROM (
+                  SELECT stock_code,
+                         dividend_amount / NULLIF(net_profit, 0) * 100 AS ratio,
+                         ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY fiscal_year DESC) AS rn
+                  FROM dividends
+                  WHERE stock_code IN ({placeholders})
+                    AND dividend_amount IS NOT NULL
+                    AND net_profit IS NOT NULL
+                    AND net_profit > 0
+                ) t
+                WHERE rn <= 3
+                GROUP BY stock_code""",
+            tuple(codes),
+        )
+        for r in rows:
+            defaults[r["stock_code"]]["payout_ratio"] = (
+                round(float(r["avg_payout_ratio"]), 2)
+                if r["avg_payout_ratio"] is not None else None
+            )
+    except Exception:
+        pass
+
+    try:
+        rows = execute_query(
+            f"""SELECT stock_code, parent_profit
+                FROM (
+                  SELECT stock_code, parent_profit,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY stock_code
+                           ORDER BY
+                             CASE WHEN report_period='FY' THEN 0 ELSE 1 END,
+                             fiscal_year DESC,
+                             FIELD(report_period,'FY','Q3','Q2','Q1') DESC
+                         ) AS rn
+                  FROM custom_financials
+                  WHERE stock_code IN ({placeholders})
+                    AND parent_profit IS NOT NULL
+                    AND parent_profit > 0
+                ) t
+                WHERE rn=1""",
+            tuple(codes),
+        )
+        for r in rows:
+            defaults[r["stock_code"]]["expected_profit"] = round(float(r["parent_profit"]), 2)
+    except Exception:
+        pass
+
+    shares = _latest_total_shares(codes)
+    for code, value in shares.items():
+        defaults.setdefault(code, {})["total_shares"] = value
+    return defaults
+
+
+def _graham_custom_params(codes):
+    if not codes:
+        return {}
+    _ensure_graham_valuation_table()
+    placeholders = ",".join(["%s"] * len(codes))
+    try:
+        rows = execute_query(
+            f"""SELECT stock_code, growth_rate, payout_ratio, risk_free_rate, expected_profit
+                FROM graham_valuations
+                WHERE stock_code IN ({placeholders})""",
+            tuple(codes),
+        )
+        return {
+            r["stock_code"]: {
+                "growth_rate": float(r["growth_rate"]) if r["growth_rate"] is not None else None,
+                "payout_ratio": float(r["payout_ratio"]) if r["payout_ratio"] is not None else None,
+                "risk_free_rate": float(r["risk_free_rate"]) if r["risk_free_rate"] is not None else None,
+                "expected_profit": float(r["expected_profit"]) if r["expected_profit"] is not None else None,
+            }
+            for r in rows
+        }
+    except Exception:
+        return {}
+
+
+def _graham_payload(code):
+    defaults = _graham_defaults([code]).get(code, {})
+    custom = _graham_custom_params([code]).get(code, {})
+    growth_rate = custom.get("growth_rate")
+    payout_ratio = custom.get("payout_ratio")
+    risk_free_rate = custom.get("risk_free_rate")
+    expected_profit = custom.get("expected_profit")
+    params = {
+        "growth_rate": growth_rate if growth_rate is not None else defaults.get("growth_rate"),
+        "payout_ratio": payout_ratio if payout_ratio is not None else defaults.get("payout_ratio"),
+        "risk_free_rate": risk_free_rate if risk_free_rate is not None else defaults.get("risk_free_rate"),
+        "expected_profit": expected_profit if expected_profit is not None else defaults.get("expected_profit"),
+    }
+    total_shares = defaults.get("total_shares")
+    fair_valuation = None
+    fair_price = None
+    if (
+        params["payout_ratio"] is not None
+        and params["risk_free_rate"] is not None
+        and params["risk_free_rate"] > 0
+    ):
+        fair_valuation = round(params["payout_ratio"] / params["risk_free_rate"] + (params["growth_rate"] or 0), 2)
+    if fair_valuation is not None and params["expected_profit"] is not None and total_shares:
+        fair_price = round(fair_valuation * params["expected_profit"] / total_shares, 2)
+    return {
+        "defaults": defaults,
+        "custom": custom,
+        "params": params,
+        "total_shares": total_shares,
+        "fair_valuation": fair_valuation,
+        "fair_price": fair_price,
+    }
+
+
 def _fetch_realtime_prices(stocks):
     symbols = [_quote_symbol(s["code"], s.get("market")) for s in stocks]
     if not symbols:
@@ -210,25 +379,9 @@ def _enrich_stock_list_metrics(stocks):
     placeholders = ",".join(["%s"] * len(codes))
     prices = _fetch_realtime_prices(stocks)
 
-    latest_shares = {}
-    try:
-        rows = execute_query(
-            f"""SELECT stock_code, total_shares
-                FROM (
-                  SELECT stock_code, total_shares,
-                         ROW_NUMBER() OVER (
-                           PARTITION BY stock_code
-                           ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC
-                         ) AS rn
-                  FROM custom_financials
-                  WHERE stock_code IN ({placeholders}) AND total_shares IS NOT NULL AND total_shares > 0
-                ) t
-                WHERE rn=1""",
-            tuple(codes),
-        )
-        latest_shares = {r["stock_code"]: float(r["total_shares"]) for r in rows}
-    except Exception:
-        latest_shares = {}
+    latest_shares = _latest_total_shares(codes)
+    graham_defaults = _graham_defaults(codes)
+    graham_custom = _graham_custom_params(codes)
 
     latest_equity = {}
     try:
@@ -261,6 +414,36 @@ def _enrich_stock_list_metrics(stocks):
         price = prices.get(code)
         s["price"] = round(price, 2) if price is not None else None
         total_shares = latest_shares.get(code)
+        defaults = graham_defaults.get(code, {})
+        custom = graham_custom.get(code, {})
+        params = {
+            "growth_rate": custom.get("growth_rate") if custom.get("growth_rate") is not None else defaults.get("growth_rate"),
+            "payout_ratio": custom.get("payout_ratio") if custom.get("payout_ratio") is not None else defaults.get("payout_ratio"),
+            "risk_free_rate": custom.get("risk_free_rate") if custom.get("risk_free_rate") is not None else defaults.get("risk_free_rate"),
+            "expected_profit": custom.get("expected_profit") if custom.get("expected_profit") is not None else defaults.get("expected_profit"),
+        }
+        fair_valuation = None
+        fair_price = None
+        if params["payout_ratio"] is not None and params["risk_free_rate"] is not None and params["risk_free_rate"] > 0:
+            fair_valuation = round(params["payout_ratio"] / params["risk_free_rate"] + (params["growth_rate"] or 0), 2)
+        if fair_valuation is not None and params["expected_profit"] is not None and total_shares:
+            fair_price = round(fair_valuation * params["expected_profit"] / total_shares, 2)
+        graham = {
+            "defaults": defaults,
+            "custom": custom,
+            "params": params,
+            "total_shares": total_shares,
+            "fair_valuation": fair_valuation,
+            "fair_price": fair_price,
+        }
+        s["graham"] = graham
+        s["reasonable_valuation"] = graham["fair_valuation"]
+        s["reasonable_price"] = graham["fair_price"]
+        s["reasonable_discount"] = (
+            round((price / graham["fair_price"] - 1) * 100, 2)
+            if price is not None and graham["fair_price"] and graham["fair_price"] > 0
+            else None
+        )
         equity = latest_equity.get(code)
         s["pb_ex_goodwill"] = None
         if price and total_shares and equity:
@@ -776,7 +959,7 @@ def api_stocks():
     keyword = request.args.get("keyword", None)
     sort_by = request.args.get("sort_by", "").strip()
     sort_dir = request.args.get("sort_dir", "asc").lower()
-    sort_fields = {"code", "name", "price", "pe_ttm", "pb_ex_goodwill", "dividend_yield", "ytd_return"}
+    sort_fields = {"code", "name", "price", "pe_ttm", "pb_ex_goodwill", "dividend_yield", "ytd_return", "reasonable_valuation", "reasonable_price", "reasonable_discount"}
 
     if sort_by in sort_fields:
         all_result = Stock.get_all(
@@ -819,6 +1002,56 @@ def api_stocks():
     result["sort_by"] = ""
     result["sort_dir"] = ""
     return jsonify(result)
+
+
+@app.route("/api/stock/<code>/graham-valuation", methods=["GET"])
+def api_graham_valuation_get(code):
+    return jsonify(_graham_payload(code))
+
+
+@app.route("/api/stock/<code>/graham-valuation", methods=["PUT"])
+def api_graham_valuation_put(code):
+    _ensure_graham_valuation_table()
+    data = request.get_json(force=True)
+
+    def parse_optional_number(name):
+        value = data.get(name)
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise ValueError(name)
+
+    try:
+        growth_rate = parse_optional_number("growth_rate")
+        payout_ratio = parse_optional_number("payout_ratio")
+        risk_free_rate = parse_optional_number("risk_free_rate")
+        expected_profit = parse_optional_number("expected_profit")
+    except ValueError as e:
+        return jsonify({"error": f"{e.args[0]} 必须是数字"}), 400
+
+    if payout_ratio is not None and payout_ratio < 0:
+        return jsonify({"error": "分红比例不能小于 0"}), 400
+    if risk_free_rate is not None and risk_free_rate <= 0:
+        return jsonify({"error": "无风险利率必须大于 0"}), 400
+    if expected_profit is not None and expected_profit < 0:
+        return jsonify({"error": "当年预期利润不能小于 0"}), 400
+
+    execute_query(
+        """INSERT INTO graham_valuations
+           (stock_code, growth_rate, payout_ratio, risk_free_rate, expected_profit)
+           VALUES (%s, %s, %s, %s, %s)
+           ON DUPLICATE KEY UPDATE
+             growth_rate=VALUES(growth_rate),
+             payout_ratio=VALUES(payout_ratio),
+             risk_free_rate=VALUES(risk_free_rate),
+             expected_profit=VALUES(expected_profit),
+             updated_at=CURRENT_TIMESTAMP""",
+        (code, growth_rate, payout_ratio, risk_free_rate, expected_profit),
+        fetch=False,
+    )
+    return jsonify({"ok": True, **_graham_payload(code)})
 
 
 @app.route("/api/stocks/reorder", methods=["POST"])
@@ -3056,6 +3289,7 @@ if __name__ == "__main__":
         _ensure_segments_table()
         _ensure_stock_order_column()
         _ensure_portfolio_tables()
+        _ensure_graham_valuation_table()
         print("✓ 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"⚠ 表结构检查异常: {e}")
