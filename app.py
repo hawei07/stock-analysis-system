@@ -57,8 +57,13 @@ CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
 CLOUD_BACKUP_RETAIN_COUNT = 5
+AUTO_CLOUD_BACKUP_DELAY_SECONDS = int(_setting("auto_cloud_backup_delay_seconds", "STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS", 180))
 TIMED_BACKUP_RE = re.compile(r"^stock_analysis_\d{8}_\d{6}\.sql$", re.IGNORECASE)
 PRE_RESTORE_BACKUP_RE = re.compile(r"^pre_restore_\d{8}_\d{6}\.sql$", re.IGNORECASE)
+_auto_backup_lock = threading.Lock()
+_auto_backup_timer = None
+_auto_backup_reasons = set()
+_auto_backup_running = False
 
 _db_overrides = {
     "host": _setting("db_host", "STOCK_DB_HOST"),
@@ -228,6 +233,89 @@ def _read_cloud_state():
 def _write_cloud_state(payload):
     with open(_cloud_state_path(), "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _write_auto_backup_log(message):
+    try:
+        with open(os.path.join(APP_DIR, "auto_cloud_backup.log"), "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')} {message}\n")
+    except OSError:
+        pass
+
+
+def _run_auto_cloud_backup():
+    global _auto_backup_running
+    with _auto_backup_lock:
+        reasons = sorted(_auto_backup_reasons)
+        _auto_backup_reasons.clear()
+        _auto_backup_running = True
+    try:
+        state = _dump_database()
+        _write_auto_backup_log(f"ok latest_backup={state.get('latest_backup')} reasons={','.join(reasons)}")
+    except Exception as e:
+        _write_auto_backup_log(f"failed error={e} reasons={','.join(reasons)}")
+    finally:
+        with _auto_backup_lock:
+            _auto_backup_running = False
+
+
+def _schedule_auto_cloud_backup(reason):
+    global _auto_backup_timer
+    if AUTO_CLOUD_BACKUP_DELAY_SECONDS <= 0:
+        return {"scheduled": False, "delay_seconds": 0}
+
+    with _auto_backup_lock:
+        _auto_backup_reasons.add(reason)
+        if _auto_backup_timer and _auto_backup_timer.is_alive():
+            _auto_backup_timer.cancel()
+        _auto_backup_timer = threading.Timer(AUTO_CLOUD_BACKUP_DELAY_SECONDS, _run_auto_cloud_backup)
+        _auto_backup_timer.daemon = True
+        _auto_backup_timer.start()
+    return {"scheduled": True, "delay_seconds": AUTO_CLOUD_BACKUP_DELAY_SECONDS}
+
+
+def _cancel_pending_auto_cloud_backup():
+    global _auto_backup_timer
+    with _auto_backup_lock:
+        if _auto_backup_timer and _auto_backup_timer.is_alive():
+            _auto_backup_timer.cancel()
+        _auto_backup_timer = None
+        _auto_backup_reasons.clear()
+
+
+AUTO_CLOUD_BACKUP_ENDPOINTS = {
+    "api_add_stock": "stock-add",
+    "api_update_stock": "stock-update",
+    "api_delete_stock": "stock-delete",
+    "api_stocks_reorder": "stocks-reorder",
+    "api_graham_valuation_put": "graham-valuation-update",
+    "api_update_dividends": "dividends-update",
+    "api_update_financials": "financials-update",
+    "api_update_balance_sheet": "balance-sheet-update",
+    "api_update_segments": "segments-update",
+    "api_update_income": "income-update",
+    "api_update_cashflow": "cashflow-update",
+    "api_portfolio_save_position": "portfolio-position-save",
+    "api_portfolio_delete_position": "portfolio-position-delete",
+    "api_portfolio_update_dividend": "portfolio-dividend-update",
+    "api_portfolio_reset_dividend": "portfolio-dividend-reset",
+    "api_portfolio_update_cash": "portfolio-cash-update",
+    "api_portfolio_add_flow": "portfolio-flow-add",
+    "api_portfolio_delete_flow": "portfolio-flow-delete",
+    "api_portfolio_snapshot": "portfolio-snapshot",
+    "api_config_put": "config-update",
+}
+
+
+@app.after_request
+def schedule_auto_cloud_backup_after_change(response):
+    if (
+        request.method in ("POST", "PUT", "DELETE")
+        and response.status_code < 400
+        and request.endpoint in AUTO_CLOUD_BACKUP_ENDPOINTS
+    ):
+        _schedule_auto_cloud_backup(AUTO_CLOUD_BACKUP_ENDPOINTS[request.endpoint])
+    return response
 
 
 def _dump_database(prefix="stock_analysis", update_latest=True):
@@ -1279,6 +1367,7 @@ def api_cloud_backup_files():
 @app.route("/api/cloud-backup/backup", methods=["POST"])
 def api_cloud_backup_create():
     try:
+        _cancel_pending_auto_cloud_backup()
         state = _dump_database()
         return jsonify({"ok": True, **state})
     except Exception as e:
@@ -1288,6 +1377,7 @@ def api_cloud_backup_create():
 @app.route("/api/cloud-backup/restore-file", methods=["POST"])
 def api_cloud_backup_restore_file():
     try:
+        _cancel_pending_auto_cloud_backup()
         data = request.get_json(silent=True) or {}
         filename = data.get("filename", "")
         backup_path = _resolve_backup_file(filename)
@@ -1308,6 +1398,7 @@ def api_cloud_backup_restore_file():
 @app.route("/api/cloud-backup/restore", methods=["POST"])
 def api_cloud_backup_restore():
     try:
+        _cancel_pending_auto_cloud_backup()
         latest_path = _cloud_latest_path()
         if not os.path.exists(latest_path):
             return jsonify({"error": "云端 latest 备份不存在"}), 404

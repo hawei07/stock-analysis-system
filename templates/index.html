@@ -3914,14 +3914,7 @@ async function doUpdateAll(mode) {
       msgs.push(api.name + ': 网络错误');
     }
   }
-  let backupMsg = '';
-  try {
-    const backupRes = await fetch('/api/cloud-backup/backup', { method: 'POST' });
-    const backupData = await backupRes.json();
-    backupMsg = backupData.ok ? ` | 云备份: ${backupData.latest_backup}` : ' | 云备份失败';
-  } catch (e) {
-    backupMsg = ' | 云备份失败';
-  }
+  const backupMsg = ' | 云备份已自动安排';
   showToast(label + '更新完成: ' + msgs.join(' | ') + backupMsg, 'success');
   btn.disabled = false;
   btn.textContent = '\u27f3 更新数据';
