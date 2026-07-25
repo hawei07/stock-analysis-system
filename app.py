@@ -101,12 +101,29 @@ def index(code=None):
     return render_template("index.html")
 
 
+@app.route("/portfolio")
+def portfolio_page():
+    return render_template("portfolio.html")
+
+
 # ==================== API 路由 ====================
 
+def _market_from_code(code, market=None):
+    code = str(code or "")
+    if code.startswith(("6", "5", "9")):
+        return "SH"
+    if code.startswith(("4", "8")):
+        return "BJ"
+    if code.startswith(("0", "2", "3")):
+        return "SZ"
+    return market or "SZ"
+
+
 def _quote_symbol(code, market=None):
-    if market == "SH" or code.startswith(("6", "5", "9")):
+    inferred_market = _market_from_code(code, market)
+    if inferred_market == "SH":
         return f"sh{code}"
-    if market == "BJ" or code.startswith(("4", "8")):
+    if inferred_market == "BJ":
         return f"bj{code}"
     return f"sz{code}"
 
@@ -161,18 +178,27 @@ def _fetch_ytd_return(code, market, current_price=None):
     try:
         year = datetime.now().year
         symbol = _quote_symbol(code, market)
-        url = f"https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param={symbol},day,{year}-01-01,,320"
+        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{year-1}-12-01,,360,qfq"
         resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
         data = resp.json()
         stock_data = (data.get("data") or {}).get(symbol, {})
-        rows = stock_data.get("day") or []
+        rows = stock_data.get("qfqday") or stock_data.get("day") or []
         if not rows:
             return None
-        first_close = float(rows[0][2])
+
+        baseline_close = None
+        for row in rows:
+            if row[0] < f"{year}-01-01":
+                baseline_close = float(row[2])
+            else:
+                break
+        if baseline_close is None:
+            baseline_close = float(rows[0][1])
+
         latest_close = current_price if current_price and current_price > 0 else float(rows[-1][2])
-        if first_close <= 0:
+        if baseline_close <= 0:
             return None
-        return round((latest_close / first_close - 1) * 100, 2)
+        return round((latest_close / baseline_close - 1) * 100, 2)
     except Exception:
         return None
 
@@ -244,6 +270,483 @@ def _enrich_stock_list_metrics(stocks):
                 s["pb_ex_goodwill"] = round(price * total_shares / net_equity, 2)
         s["ytd_return"] = _fetch_ytd_return(code, s.get("market"), price)
     return stocks
+
+
+def _ensure_portfolio_tables():
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS portfolio_positions (
+            id INT NOT NULL AUTO_INCREMENT,
+            stock_code VARCHAR(10) NOT NULL,
+            shares DECIMAL(18,4) NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uk_portfolio_stock (stock_code),
+            CONSTRAINT fk_portfolio_stock FOREIGN KEY (stock_code)
+                REFERENCES stocks (code) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS portfolio_nav_snapshots (
+            id INT NOT NULL AUTO_INCREMENT,
+            snapshot_date DATE NOT NULL,
+            total_market_value DECIMAL(18,2) NOT NULL DEFAULT 0,
+            expected_dividend DECIMAL(18,2) NOT NULL DEFAULT 0,
+            positions_json JSON NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uk_snapshot_date (snapshot_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS portfolio_cash (
+            id TINYINT NOT NULL PRIMARY KEY,
+            amount DECIMAL(18,2) NOT NULL DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+    execute_query(
+        "INSERT IGNORE INTO portfolio_cash (id, amount) VALUES (1, 0)",
+        fetch=False,
+    )
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS portfolio_cash_flows (
+            id INT NOT NULL AUTO_INCREMENT,
+            flow_date DATE NOT NULL,
+            amount DECIMAL(18,2) NOT NULL,
+            note VARCHAR(255) NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_flow_date (flow_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+    try:
+        rows = execute_query("SHOW COLUMNS FROM portfolio_positions LIKE 'custom_dividend_per_share'")
+        if not rows:
+            execute_query(
+                "ALTER TABLE portfolio_positions ADD COLUMN custom_dividend_per_share DECIMAL(10,4) NULL AFTER shares",
+                fetch=False,
+            )
+    except Exception:
+        pass
+    for column_name, column_def in (
+        ("cash_amount", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER expected_dividend"),
+        ("total_asset_value", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER cash_amount"),
+    ):
+        try:
+            rows = execute_query(f"SHOW COLUMNS FROM portfolio_nav_snapshots LIKE '{column_name}'")
+            if not rows:
+                execute_query(
+                    f"ALTER TABLE portfolio_nav_snapshots ADD COLUMN {column_name} {column_def}",
+                    fetch=False,
+                )
+        except Exception:
+            pass
+
+
+def _portfolio_cash_amount():
+    _ensure_portfolio_tables()
+    rows = execute_query("SELECT amount FROM portfolio_cash WHERE id=1")
+    return float(rows[0]["amount"]) if rows else 0.0
+
+
+def _portfolio_flow_rows(limit=100):
+    _ensure_portfolio_tables()
+    return execute_query(
+        """SELECT id, flow_date, amount, note, created_at
+           FROM portfolio_cash_flows
+           ORDER BY flow_date DESC, id DESC
+           LIMIT %s""",
+        (limit,),
+    )
+
+
+def _portfolio_flows_payload():
+    return [
+        {
+            "id": r["id"],
+            "flow_date": str(r["flow_date"]),
+            "amount": round(float(r["amount"]), 2),
+            "note": r.get("note") or "",
+            "created_at": str(r["created_at"]) if r.get("created_at") else None,
+        }
+        for r in _portfolio_flow_rows()
+    ]
+
+
+def _latest_dividend_per_share(codes):
+    if not codes:
+        return {}
+    placeholders = ",".join(["%s"] * len(codes))
+    rows = execute_query(
+        f"""SELECT stock_code, dividend_per_share, fiscal_year
+            FROM (
+              SELECT stock_code, dividend_per_share, fiscal_year,
+                     ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY fiscal_year DESC) AS rn
+              FROM dividends
+              WHERE stock_code IN ({placeholders}) AND dividend_per_share IS NOT NULL
+            ) t
+            WHERE rn=1
+            ORDER BY stock_code, fiscal_year DESC""",
+        tuple(codes),
+    )
+    result = {}
+    for r in rows:
+        code = r["stock_code"]
+        item = result.setdefault(code, {})
+        if "dividend_per_share" not in item:
+            item["dividend_per_share"] = float(r["dividend_per_share"])
+            item["fiscal_year"] = int(r["fiscal_year"])
+    return result
+
+
+def _resolve_portfolio_stock(identifier):
+    ident = str(identifier or "").strip()
+    if not ident:
+        return None
+    if re.fullmatch(r"\d{6}", ident):
+        rows = execute_query(
+            "SELECT code, name, market FROM stocks WHERE code=%s LIMIT 1",
+            (ident,),
+        )
+        return rows[0] if rows else None
+
+    rows = execute_query(
+        "SELECT code, name, market FROM stocks WHERE name=%s LIMIT 1",
+        (ident,),
+    )
+    if rows:
+        return rows[0]
+
+    rows = execute_query(
+        """SELECT code, name, market
+           FROM stocks
+           WHERE code LIKE %s OR name LIKE %s
+           ORDER BY CASE WHEN name LIKE %s THEN 0 ELSE 1 END, display_order IS NULL, display_order, id
+           LIMIT 10""",
+        (f"%{ident}%", f"%{ident}%", ident),
+    )
+    return rows[0] if rows else None
+
+
+def _portfolio_current_state():
+    _ensure_portfolio_tables()
+    cash_amount = _portfolio_cash_amount()
+    rows = execute_query(
+        """SELECT p.id, p.stock_code, p.shares, p.custom_dividend_per_share,
+                  s.name, s.market, s.industry
+           FROM portfolio_positions p
+           JOIN stocks s ON s.code = p.stock_code
+           ORDER BY p.updated_at DESC, p.id DESC"""
+    )
+    positions = []
+    if not rows:
+        return {
+            "positions": [],
+            "summary": {
+                "total_market_value": 0,
+                "cash_amount": round(cash_amount, 2),
+                "total_asset_value": round(cash_amount, 2),
+                "cash_allocation_pct": 100.0 if cash_amount > 0 else 0,
+                "expected_dividend": 0,
+                "count": 0,
+            },
+        }
+
+    stock_refs = [{"code": r["stock_code"], "market": r["market"]} for r in rows]
+    prices = _fetch_realtime_prices(stock_refs)
+    dividends = _latest_dividend_per_share([r["stock_code"] for r in rows])
+    total_market_value = 0.0
+    expected_dividend = 0.0
+
+    for r in rows:
+        code = r["stock_code"]
+        shares = float(r["shares"])
+        price = prices.get(code)
+        div = dividends.get(code, {})
+        custom_dividend = float(r["custom_dividend_per_share"]) if r.get("custom_dividend_per_share") is not None else None
+        dividend_per_share = custom_dividend if custom_dividend is not None else div.get("dividend_per_share")
+        market_value = shares * price if price is not None else None
+        dividend_amount = shares * dividend_per_share if dividend_per_share is not None else None
+        if market_value is not None:
+            total_market_value += market_value
+        if dividend_amount is not None:
+            expected_dividend += dividend_amount
+        positions.append({
+            "id": r["id"],
+            "code": code,
+            "name": r["name"],
+            "market": r["market"],
+            "industry": r.get("industry"),
+            "shares": shares,
+            "price": round(price, 2) if price is not None else None,
+            "market_value": round(market_value, 2) if market_value is not None else None,
+            "dividend_per_share": round(dividend_per_share, 4) if dividend_per_share is not None else None,
+            "dividend_year": div.get("fiscal_year"),
+            "auto_dividend_per_share": round(div.get("dividend_per_share"), 4) if div.get("dividend_per_share") is not None else None,
+            "custom_dividend_per_share": round(custom_dividend, 4) if custom_dividend is not None else None,
+            "dividend_source": "custom" if custom_dividend is not None else "auto",
+            "expected_dividend": round(dividend_amount, 2) if dividend_amount is not None else None,
+        })
+
+    total_asset_value = total_market_value + cash_amount
+    for p in positions:
+        value = p.get("market_value")
+        p["allocation_pct"] = round(value / total_asset_value * 100, 2) if value is not None and total_asset_value > 0 else None
+    positions.sort(key=lambda p: p.get("allocation_pct") or 0, reverse=True)
+
+    return {
+        "positions": positions,
+        "summary": {
+            "total_market_value": round(total_market_value, 2),
+            "cash_amount": round(cash_amount, 2),
+            "total_asset_value": round(total_asset_value, 2),
+            "cash_allocation_pct": round(cash_amount / total_asset_value * 100, 2) if total_asset_value > 0 else 0,
+            "expected_dividend": round(expected_dividend, 2),
+            "count": len(positions),
+        },
+    }
+
+
+def _save_portfolio_snapshot():
+    state = _portfolio_current_state()
+    summary = state["summary"]
+    execute_query(
+        """INSERT INTO portfolio_nav_snapshots
+           (snapshot_date, total_market_value, expected_dividend, cash_amount, total_asset_value, positions_json)
+           VALUES (CURDATE(), %s, %s, %s, %s, %s)
+           ON DUPLICATE KEY UPDATE
+             total_market_value=VALUES(total_market_value),
+             expected_dividend=VALUES(expected_dividend),
+             cash_amount=VALUES(cash_amount),
+             total_asset_value=VALUES(total_asset_value),
+             positions_json=VALUES(positions_json),
+             updated_at=CURRENT_TIMESTAMP""",
+        (
+            summary["total_market_value"],
+            summary["expected_dividend"],
+            summary["cash_amount"],
+            summary["total_asset_value"],
+            json.dumps(state["positions"], ensure_ascii=False),
+        ),
+        fetch=False,
+    )
+    return state
+
+
+@app.route("/api/portfolio", methods=["GET"])
+def api_portfolio_get():
+    return jsonify(_portfolio_current_state())
+
+
+@app.route("/api/portfolio/positions", methods=["POST"])
+def api_portfolio_save_position():
+    _ensure_portfolio_tables()
+    data = request.get_json(force=True)
+    identifier = str(data.get("code", data.get("identifier", ""))).strip()
+    shares = data.get("shares")
+    try:
+        shares = float(shares)
+    except (TypeError, ValueError):
+        return jsonify({"error": "股数必须是数字"}), 400
+    if shares <= 0:
+        return jsonify({"error": "股数必须大于 0"}), 400
+    stock = _resolve_portfolio_stock(identifier)
+    if not stock:
+        return jsonify({"error": "未找到匹配的股票，请输入代码或更准确的名称"}), 404
+    code = stock["code"]
+    execute_query(
+        """INSERT INTO portfolio_positions (stock_code, shares)
+           VALUES (%s, %s)
+           ON DUPLICATE KEY UPDATE shares=VALUES(shares), updated_at=CURRENT_TIMESTAMP""",
+        (code, shares),
+        fetch=False,
+    )
+    state = _save_portfolio_snapshot()
+    state["resolved_stock"] = {"code": stock["code"], "name": stock["name"], "market": stock["market"]}
+    return jsonify({"ok": True, **state})
+
+
+@app.route("/api/portfolio/positions/<code>", methods=["DELETE"])
+def api_portfolio_delete_position(code):
+    _ensure_portfolio_tables()
+    execute_query("DELETE FROM portfolio_positions WHERE stock_code=%s", (code,), fetch=False)
+    return jsonify({"ok": True, **_save_portfolio_snapshot()})
+
+
+@app.route("/api/portfolio/positions/<code>/dividend", methods=["PUT"])
+def api_portfolio_update_dividend(code):
+    _ensure_portfolio_tables()
+    data = request.get_json(force=True)
+    value = data.get("dividend_per_share")
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return jsonify({"error": "每股分红必须是数字"}), 400
+    if value < 0:
+        return jsonify({"error": "每股分红不能小于 0"}), 400
+    rows = execute_query("SELECT id FROM portfolio_positions WHERE stock_code=%s", (code,))
+    if not rows:
+        return jsonify({"error": "持仓中没有这只股票"}), 404
+    execute_query(
+        "UPDATE portfolio_positions SET custom_dividend_per_share=%s WHERE stock_code=%s",
+        (value, code),
+        fetch=False,
+    )
+    return jsonify({"ok": True, **_save_portfolio_snapshot()})
+
+
+@app.route("/api/portfolio/positions/<code>/dividend/reset", methods=["POST"])
+def api_portfolio_reset_dividend(code):
+    _ensure_portfolio_tables()
+    position_rows = execute_query("SELECT id FROM portfolio_positions WHERE stock_code=%s", (code,))
+    if not position_rows:
+        return jsonify({"error": "持仓中没有这只股票"}), 404
+    execute_query(
+        "UPDATE portfolio_positions SET custom_dividend_per_share=NULL WHERE stock_code=%s",
+        (code,),
+        fetch=False,
+    )
+    state = _save_portfolio_snapshot()
+    reset_row = next((p for p in state["positions"] if p["code"] == code), None)
+    if reset_row:
+        state["reset_to"] = {
+            "fiscal_year": reset_row.get("dividend_year"),
+            "dividend_per_share": reset_row.get("auto_dividend_per_share"),
+        }
+    return jsonify({"ok": True, **state})
+
+
+@app.route("/api/portfolio/cash", methods=["PUT"])
+def api_portfolio_update_cash():
+    _ensure_portfolio_tables()
+    data = request.get_json(force=True)
+    value = data.get("amount")
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return jsonify({"error": "现金必须是数字"}), 400
+    if value < 0:
+        return jsonify({"error": "现金不能小于 0"}), 400
+    execute_query(
+        "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+        (round(value, 2),),
+        fetch=False,
+    )
+    return jsonify({"ok": True, **_save_portfolio_snapshot()})
+
+
+@app.route("/api/portfolio/flows", methods=["GET"])
+def api_portfolio_flows():
+    return jsonify(_portfolio_flows_payload())
+
+
+@app.route("/api/portfolio/flows", methods=["POST"])
+def api_portfolio_add_flow():
+    _ensure_portfolio_tables()
+    data = request.get_json(force=True)
+    flow_date = str(data.get("flow_date") or datetime.now().date()).strip()
+    try:
+        datetime.strptime(flow_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "日期格式必须是 YYYY-MM-DD"}), 400
+    try:
+        amount = float(data.get("amount"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "资金金额必须是数字"}), 400
+    if amount == 0:
+        return jsonify({"error": "资金金额不能为 0"}), 400
+    note = str(data.get("note") or "").strip()[:255]
+    cash_amount = _portfolio_cash_amount()
+    new_cash = cash_amount + amount
+    if new_cash < 0:
+        return jsonify({"error": "现金不足，无法记录这笔流出"}), 400
+    execute_query(
+        "INSERT INTO portfolio_cash_flows (flow_date, amount, note) VALUES (%s, %s, %s)",
+        (flow_date, round(amount, 2), note),
+        fetch=False,
+    )
+    execute_query(
+        "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+        (round(new_cash, 2),),
+        fetch=False,
+    )
+    state = _save_portfolio_snapshot()
+    state["flows"] = _portfolio_flows_payload()
+    return jsonify({"ok": True, **state})
+
+
+@app.route("/api/portfolio/flows/<int:flow_id>", methods=["DELETE"])
+def api_portfolio_delete_flow(flow_id):
+    _ensure_portfolio_tables()
+    rows = execute_query("SELECT amount FROM portfolio_cash_flows WHERE id=%s", (flow_id,))
+    if not rows:
+        return jsonify({"error": "未找到这笔资金流水"}), 404
+    amount = float(rows[0]["amount"])
+    cash_amount = _portfolio_cash_amount()
+    new_cash = cash_amount - amount
+    if new_cash < 0:
+        return jsonify({"error": "删除后现金会小于 0，无法删除"}), 400
+    execute_query("DELETE FROM portfolio_cash_flows WHERE id=%s", (flow_id,), fetch=False)
+    execute_query(
+        "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+        (round(new_cash, 2),),
+        fetch=False,
+    )
+    state = _save_portfolio_snapshot()
+    state["flows"] = _portfolio_flows_payload()
+    return jsonify({"ok": True, **state})
+
+
+@app.route("/api/portfolio/snapshot", methods=["POST"])
+def api_portfolio_snapshot():
+    return jsonify({"ok": True, **_save_portfolio_snapshot()})
+
+
+@app.route("/api/portfolio/nav")
+def api_portfolio_nav():
+    _ensure_portfolio_tables()
+    rows = execute_query(
+        """SELECT snapshot_date, total_market_value, expected_dividend,
+                  cash_amount, total_asset_value
+           FROM portfolio_nav_snapshots
+           ORDER BY snapshot_date ASC"""
+    )
+    flow_rows = execute_query(
+        """SELECT flow_date, SUM(amount) AS net_flow
+           FROM portfolio_cash_flows
+           GROUP BY flow_date"""
+    )
+    flow_by_date = {str(r["flow_date"]): float(r["net_flow"] or 0) for r in flow_rows}
+    nav_index = None
+    prev_value = None
+    result = []
+    for r in rows:
+        date_str = str(r["snapshot_date"])
+        value = float(r.get("total_asset_value") or r["total_market_value"])
+        net_flow = flow_by_date.get(date_str, 0.0)
+        if nav_index is None:
+            nav_index = 1.0 if value > 0 else None
+        elif prev_value and prev_value > 0:
+            adjusted_value = max(0.0, value - net_flow)
+            nav_index = nav_index * (adjusted_value / prev_value)
+        result.append({
+            "date": date_str,
+            "total_market_value": round(value, 2),
+            "stock_market_value": round(float(r["total_market_value"]), 2),
+            "cash_amount": round(float(r.get("cash_amount") or 0), 2),
+            "total_asset_value": round(value, 2),
+            "net_flow": round(net_flow, 2),
+            "expected_dividend": round(float(r["expected_dividend"]), 2),
+            "nav_index": round(nav_index, 4) if nav_index is not None else None,
+        })
+        prev_value = value
+    return jsonify(result)
 
 
 @app.route("/api/config", methods=["GET"])
@@ -347,9 +850,7 @@ def api_stock_detail(code):
         # 获取实时行情：股价、PE(TTM)、PB、市值
         realtime = {"price": None, "pe_ttm": None, "pb": None, "market_cap": None}
         try:
-            market = stock.get("market", "SH")
-            prefix = "sh" if market == "SH" else ("sz" if market == "SZ" else "bj")
-            url = f"https://qt.gtimg.cn/q={prefix}{code}"
+            url = f"https://qt.gtimg.cn/q={_quote_symbol(code, stock.get('market'))}"
             resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
             resp.encoding = "gbk"
             text = resp.text
@@ -679,8 +1180,7 @@ def api_update_dividends():
 
             # 4. 更新 PE TTM 和股息率（腾讯行情接口）
             try:
-                prefix = "sh" if market == "SH" else "sz"
-                url = f"https://qt.gtimg.cn/q={prefix}{code}"
+                url = f"https://qt.gtimg.cn/q={_quote_symbol(code, market)}"
                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
                 resp.encoding = 'gbk'
                 text = resp.text
@@ -946,9 +1446,7 @@ def api_stock_financials(code):
     try:
         stock = execute_query("SELECT market FROM stocks WHERE code=%s", (code,))
         if stock:
-            market = stock[0].get("market", "SH")
-            prefix = "sh" if market == "SH" else "sz"
-            url = f"https://qt.gtimg.cn/q={prefix}{code}"
+            url = f"https://qt.gtimg.cn/q={_quote_symbol(code, stock[0].get('market'))}"
             resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
             resp.encoding = "gbk"
             text = resp.text
@@ -1739,10 +2237,71 @@ def api_stock_valuation(code):
 
 @app.route("/api/stock/<code>/kline")
 def api_stock_kline(code):
-    """获取股票日K线数据（腾讯API，前复权）"""
+    """获取股票K线数据（腾讯API，前复权）"""
     days = request.args.get("days", 365, type=int)
-    market = "sh" if code.startswith(("6", "5", "9")) else "sz"
-    symbol = f"{market}{code}"
+    period = request.args.get("period", "day")
+    if period not in {"day", "week", "month", "quarter", "year"}:
+        period = "day"
+    symbol = _quote_symbol(code)
+
+    def row_to_item(row):
+        volume = float(row[5]) if len(row) > 5 else 0
+        close = float(row[2])
+        return {
+            "date": row[0],
+            "open": float(row[1]),
+            "close": close,
+            "high": float(row[3]),
+            "low": float(row[4]),
+            "volume": volume,
+            "amount": round(volume * close * 100, 2),
+        }
+
+    def period_key(date_str):
+        dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+        if period == "week":
+            iso_year, iso_week, _ = dt.isocalendar()
+            return (iso_year, iso_week)
+        if period == "month":
+            return (dt.year, dt.month)
+        if period == "quarter":
+            return (dt.year, (dt.month - 1) // 3 + 1)
+        return (dt.year,)
+
+    def aggregate_items(items):
+        if period == "day":
+            return items
+        groups = []
+        current_key = None
+        current = None
+        for item in items:
+            key = period_key(item["date"])
+            if key != current_key:
+                if current:
+                    groups.append(current)
+                current_key = key
+                current = {
+                    "date": item["date"],
+                    "open": item["open"],
+                    "close": item["close"],
+                    "high": item["high"],
+                    "low": item["low"],
+                    "volume": item["volume"],
+                    "amount": item["amount"],
+                }
+                continue
+            current["date"] = item["date"]
+            current["close"] = item["close"]
+            current["high"] = max(current["high"], item["high"])
+            current["low"] = min(current["low"], item["low"])
+            current["volume"] += item["volume"]
+            current["amount"] += item["amount"]
+        if current:
+            groups.append(current)
+        for item in groups:
+            item["volume"] = round(item["volume"], 2)
+            item["amount"] = round(item["amount"], 2)
+        return groups
 
     try:
         url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,{days},qfq"
@@ -1750,18 +2309,7 @@ def api_stock_kline(code):
         data = resp.json()
         stock_data = data.get("data", {}).get(symbol, {})
         raw = stock_data.get("day") or stock_data.get("qfqday") or []
-
-        result = []
-        for row in raw:
-            # row: [date, open, close, high, low, volume]
-            result.append({
-                "date": row[0],
-                "open": float(row[1]),
-                "close": float(row[2]),
-                "high": float(row[3]),
-                "low": float(row[4]),
-                "volume": float(row[5]) if len(row) > 5 else 0,
-            })
+        result = aggregate_items([row_to_item(row) for row in raw])
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2507,6 +3055,7 @@ if __name__ == "__main__":
         _ensure_financials_columns()
         _ensure_segments_table()
         _ensure_stock_order_column()
+        _ensure_portfolio_tables()
         print("✓ 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"⚠ 表结构检查异常: {e}")

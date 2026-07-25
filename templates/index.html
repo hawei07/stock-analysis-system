@@ -7,6 +7,8 @@
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+:root{color-scheme:light;--bg:#f0f2f5;--surface:#fff;--surface-soft:#f7f9fc;--surface-muted:#fafafa;--text:#333;--text-strong:#1a1a2e;--text-muted:#999;--text-subtle:#666;--border:#e8e8e8;--border-soft:#f0f0f0;--hover:#fafbff;--primary:#4a6cf7;--primary-hover:#3b5de7;--primary-soft:#f0f5ff;--shadow:0 1px 4px rgba(0,0,0,.06);--modal-mask:rgba(0,0,0,.35)}
+html[data-theme="dark"]{color-scheme:dark;--bg:#10141c;--surface:#171d27;--surface-soft:#202838;--surface-muted:#222a37;--text:#d7dde8;--text-strong:#f1f5fb;--text-muted:#8f9aaa;--text-subtle:#b4bdca;--border:#2d3748;--border-soft:#253041;--hover:#20293a;--primary:#7c97ff;--primary-hover:#9aadff;--primary-soft:#1e2a4a;--shadow:0 8px 24px rgba(0,0,0,.28);--modal-mask:rgba(0,0,0,.62)}
 body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
 .header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:16px 32px;display:flex;align-items:center;justify-content:space-between}
 .header h1{font-size:22px;font-weight:600}
@@ -130,6 +132,12 @@ tr:hover td{background:#fafbff}
 .toolbar-row input,.toolbar-row select{padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none}
 .toolbar-row input:focus,.toolbar-row select:focus{border-color:#4a6cf7}
 .toolbar-row input{width:80px}
+.seg-switch{display:inline-flex;align-items:center;background:#f5f7fb;border:1px solid #d9d9d9;border-radius:6px;padding:2px;gap:2px}
+.seg-switch button{height:28px;min-width:44px;padding:0 12px;border:none;border-radius:4px;background:transparent;color:#666;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s}
+.seg-switch button:hover{color:#4a6cf7;background:#fff}
+.seg-switch button.active{background:#4a6cf7;color:#fff;box-shadow:0 1px 3px rgba(74,108,247,.25)}
+.theme-toggle{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);padding:6px 12px;border-radius:6px;font-size:13px;cursor:pointer;transition:all .2s}
+.theme-toggle:hover{background:rgba(255,255,255,.22)}
 
 .fin-table-wrap{overflow-x:auto;max-width:100%;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);position:relative;max-height:70vh;overflow-y:auto}
 .fin-table{border-collapse:separate;border-spacing:0;min-width:100%;font-size:12px}
@@ -258,7 +266,80 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   .pagination{gap:4px;padding:12px}
   .pagination button{padding:4px 10px;font-size:12px}
 }
+html[data-theme="dark"] body{background:var(--bg);color:var(--text)}
+html[data-theme="dark"] .toolbar,
+html[data-theme="dark"] .detail-header,
+html[data-theme="dark"] .realtime-cards,
+html[data-theme="dark"] .tabs,
+html[data-theme="dark"] .table-wrap,
+html[data-theme="dark"] .chart-container,
+html[data-theme="dark"] .segment-summary-card,
+html[data-theme="dark"] .modal,
+html[data-theme="dark"] .chart-modal,
+html[data-theme="dark"] .fin-table-wrap,
+html[data-theme="dark"] .chat-input-bar{background:var(--surface)!important;border-color:var(--border)!important;box-shadow:var(--shadow)}
+html[data-theme="dark"] .realtime-card,
+html[data-theme="dark"] #valSidebar,
+html[data-theme="dark"] #pbSidebar{background:var(--surface-soft)!important;border-color:var(--border)!important}
+html[data-theme="dark"] th,
+html[data-theme="dark"] .fin-table th,
+html[data-theme="dark"] .fin-table thead th.sticky-col{background:var(--surface-muted)!important;color:var(--text-subtle)!important;border-color:var(--border)!important}
+html[data-theme="dark"] td,
+html[data-theme="dark"] .fin-table td{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border-soft)!important}
+html[data-theme="dark"] tr:hover td{background:var(--hover)!important}
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] .chat-input-bar input,
+html[data-theme="dark"] .modal-body input,
+html[data-theme="dark"] .modal-body select,
+html[data-theme="dark"] .toolbar-row input,
+html[data-theme="dark"] .toolbar-row select,
+html[data-theme="dark"] .toolbar input,
+html[data-theme="dark"] .toolbar select{background:#111722!important;color:var(--text)!important;border-color:var(--border)!important}
+html[data-theme="dark"] input::placeholder{color:#697586}
+html[data-theme="dark"] .btn-outline{background:var(--surface)!important;color:var(--primary)!important;border-color:var(--primary)!important}
+html[data-theme="dark"] .btn-outline:hover,
+html[data-theme="dark"] .chart-icon:hover{background:var(--primary-soft)!important}
+html[data-theme="dark"] .pagination button{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .pagination .current,
+html[data-theme="dark"] .seg-switch button.active{background:var(--primary)!important;color:#fff!important;border-color:var(--primary)!important}
+html[data-theme="dark"] .seg-switch{background:#111722!important;border-color:var(--border)!important}
+html[data-theme="dark"] .seg-switch button{color:var(--text-subtle)!important}
+html[data-theme="dark"] .seg-switch button:hover{background:var(--surface)!important;color:var(--primary)!important}
+html[data-theme="dark"] .detail-stock-info .stock-code,
+html[data-theme="dark"] .detail-stock-info .stock-name,
+html[data-theme="dark"] .realtime-card .value,
+html[data-theme="dark"] .segment-summary-card .value,
+html[data-theme="dark"] .segment-chart-title,
+html[data-theme="dark"] .modal-header h3,
+html[data-theme="dark"] .chart-modal-header h3,
+html[data-theme="dark"] .chat-bubble h3,
+html[data-theme="dark"] .chat-bubble strong{color:var(--text-strong)!important}
+html[data-theme="dark"] .label,
+html[data-theme="dark"] .sub,
+html[data-theme="dark"] .stock-meta,
+html[data-theme="dark"] .sort-arrow,
+html[data-theme="dark"] .empty,
+html[data-theme="dark"] .chat-empty{color:var(--text-muted)!important}
+html[data-theme="dark"] .modal-overlay,
+html[data-theme="dark"] .chart-modal-overlay{background:var(--modal-mask)!important}
+html[data-theme="dark"] .munger .chat-bubble{background:var(--surface-soft)!important;color:var(--text)!important}
+html[data-theme="dark"] .chat-delete{background:var(--surface)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .sticky-card{background:#2b2614!important;border-color:#51451f!important;color:var(--text)!important}
+html[data-theme="dark"] .market-SH{background:#3a1c22;color:#ff9aa2}
+html[data-theme="dark"] .market-SZ{background:#143044;color:#8ed4ff}
+html[data-theme="dark"] .market-BJ{background:#163322;color:#8ee6a4}
+html[data-theme="dark"] .status-正常{background:#163322;color:#8ee6a4}
+html[data-theme="dark"] .status-ST{background:#3a2b13;color:#ffd080}
+html[data-theme="dark"] .status-\*ST{background:#3a1c22;color:#ff9aa2}
 </style>
+<script>
+(function() {
+  const saved = localStorage.getItem('stockTheme') || 'light';
+  document.documentElement.dataset.theme = saved === 'dark' ? 'dark' : 'light';
+})();
+</script>
 </head>
 <body>
 
@@ -268,6 +349,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <h1 style="cursor:pointer" onclick="goList()">股票分析系统</h1>
     <button class="btn btn-back" id="btnBack" style="display:none" onclick="goList()">&larr; 返回列表</button>
     <button id="btnSettings" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px 8px;color:#aaa;transition:color .2s" onclick="openSettings()" title="系统设置" onmouseenter="this.style.color='#fff'" onmouseleave="this.style.color='#aaa'">⚙</button>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">深色</button>
   </div>
   <div class="stats" id="statsInfo">加载中...</div>
 </div>
@@ -282,6 +364,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
     <button class="btn btn-outline" id="btnReorderMode" onclick="startReorderMode()">调整默认顺序</button>
     <button class="btn btn-primary" id="btnSaveOrder" onclick="saveDefaultOrder()" style="display:none">保存顺序</button>
     <button class="btn btn-outline" id="btnCancelOrder" onclick="cancelReorderMode()" style="display:none">取消</button>
+    <button class="btn btn-outline" onclick="location.href='/portfolio'">我的持仓</button>
     <span id="listModeHint" style="font-size:12px;color:#999"></span>
   </div>
 
@@ -361,6 +444,13 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   <div class="detail-content">
     <div class="tab-panel active" id="panel-chart">
       <div class="toolbar-row">
+        <div class="seg-switch" id="chartKlinePeriod">
+          <button type="button" class="active" data-period="day" onclick="setKlinePeriod('day')">日K</button>
+          <button type="button" data-period="week" onclick="setKlinePeriod('week')">周K</button>
+          <button type="button" data-period="month" onclick="setKlinePeriod('month')">月K</button>
+          <button type="button" data-period="quarter" onclick="setKlinePeriod('quarter')">季K</button>
+          <button type="button" data-period="year" onclick="setKlinePeriod('year')">年K</button>
+        </div>
         <select id="chartPeriod" onchange="loadKline()" style="width:100px">
           <option value="365">近一年</option>
           <option value="730">近两年</option>
@@ -370,7 +460,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
         <span id="chartStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
       <div class="chart-container">
-        <div class="chart-box" id="chartKline" style="height:500px"></div>
+        <div class="chart-box" id="chartKline" style="height:640px"></div>
       </div>
     </div>
     <div class="tab-panel" id="panel-valuation" style="display:none">
@@ -680,9 +770,106 @@ let segmentLoadSeq = 0;
 
 let currentTab = 'chart';
 
+function isDarkTheme() {
+  return document.documentElement.dataset.theme === 'dark';
+}
+
+function chartTextColor() {
+  return isDarkTheme() ? '#d7dde8' : '#333';
+}
+
+function chartAxisColor() {
+  return isDarkTheme() ? '#8f9aaa' : '#666';
+}
+
+function chartSplitColor() {
+  return isDarkTheme() ? '#2d3748' : '#e8e8e8';
+}
+
+function applyChartThemeOption(option) {
+  if (!option || typeof option !== 'object') return option;
+  option.backgroundColor = isDarkTheme() ? '#171d27' : '#fff';
+  option.textStyle = { color: chartTextColor(), ...(option.textStyle || {}) };
+  if (option.tooltip) {
+    const tooltips = Array.isArray(option.tooltip) ? option.tooltip : [option.tooltip];
+    tooltips.forEach(t => {
+      t.backgroundColor = isDarkTheme() ? 'rgba(23,29,39,.96)' : 'rgba(255,255,255,.96)';
+      t.borderColor = isDarkTheme() ? '#2d3748' : '#e8e8e8';
+      t.textStyle = { color: chartTextColor(), ...(t.textStyle || {}) };
+    });
+  }
+  const axes = [...(Array.isArray(option.xAxis) ? option.xAxis : option.xAxis ? [option.xAxis] : []), ...(Array.isArray(option.yAxis) ? option.yAxis : option.yAxis ? [option.yAxis] : [])];
+  axes.forEach(axis => {
+    axis.axisLabel = { color: chartAxisColor(), ...(axis.axisLabel || {}) };
+    axis.axisLine = { lineStyle: { color: chartSplitColor(), ...((axis.axisLine || {}).lineStyle || {}) }, ...(axis.axisLine || {}) };
+    axis.splitLine = { lineStyle: { color: chartSplitColor(), ...((axis.splitLine || {}).lineStyle || {}) }, ...(axis.splitLine || {}) };
+    if (axis.splitArea) {
+      axis.splitArea = { areaStyle: { color: isDarkTheme() ? ['#171d27', '#1b2330'] : ['rgba(250,250,250,.35)', 'rgba(245,247,250,.35)'], ...((axis.splitArea || {}).areaStyle || {}) }, ...(axis.splitArea || {}) };
+    }
+  });
+  if (option.legend) {
+    const legends = Array.isArray(option.legend) ? option.legend : [option.legend];
+    legends.forEach(l => l.textStyle = { color: chartTextColor(), ...(l.textStyle || {}) });
+  }
+  if (option.title) {
+    const titles = Array.isArray(option.title) ? option.title : [option.title];
+    titles.forEach(t => t.textStyle = { color: chartTextColor(), ...(t.textStyle || {}) });
+  }
+  return option;
+}
+
+if (window.echarts && !window.echarts.__themePatched) {
+  const rawInit = window.echarts.init.bind(window.echarts);
+  window.echarts.init = function(dom, theme, opts) {
+    const instance = rawInit(dom, theme, opts);
+    if (!instance.__themePatched) {
+      const rawSetOption = instance.setOption.bind(instance);
+      instance.setOption = function(option, ...args) {
+        return rawSetOption(applyChartThemeOption(option), ...args);
+      };
+      instance.__themePatched = true;
+    }
+    return instance;
+  };
+  window.echarts.__themePatched = true;
+}
+
+function updateThemeButton() {
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.textContent = isDarkTheme() ? '浅色' : '深色';
+}
+
+function refreshChartsForTheme() {
+  const detailActive = document.getElementById('view-detail')?.classList.contains('active');
+  if (detailActive) {
+    if (currentTab === 'chart') loadKline();
+    if (currentTab === 'valuation') loadValuation(3650);
+    if (currentTab === 'dividends') loadDividends();
+    if (currentTab === 'segments') loadSegments();
+    if (currentTab === 'financials' || currentTab === 'balance' || currentTab === 'income' || currentTab === 'cashflow') {
+      if (window._chartModalInstance) window._chartModalInstance.resize();
+    }
+  }
+  [chartInstance, valInstance, pbInstance, dyInstance, segmentRevenueChart, segmentProfitChart, segmentBubbleChart, window._chartModalInstance].forEach(chart => {
+    if (chart) chart.resize();
+  });
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+  localStorage.setItem('stockTheme', document.documentElement.dataset.theme);
+  updateThemeButton();
+  refreshChartsForTheme();
+}
+
+function toggleTheme() {
+  setTheme(isDarkTheme() ? 'light' : 'dark');
+}
+
 // ==================== 路由 ====================
 
 document.addEventListener('DOMContentLoaded', () => {
+  updateThemeButton();
   const path = window.location.pathname;
   const match = path.match(/^\/stock\/(\d+)$/);
   if (match) {
@@ -977,16 +1164,58 @@ function renderDividendsChart(data) {
 
 let klineInstance = null;
 
+function calcEMA(values, period) {
+  const k = 2 / (period + 1);
+  const ema = [];
+  values.forEach((value, index) => {
+    if (index === 0) {
+      ema.push(value);
+    } else {
+      ema.push(value * k + ema[index - 1] * (1 - k));
+    }
+  });
+  return ema;
+}
+
+function calcMACD(closes) {
+  const ema12 = calcEMA(closes, 12);
+  const ema26 = calcEMA(closes, 26);
+  const dif = closes.map((_, i) => ema12[i] - ema26[i]);
+  const dea = calcEMA(dif, 9);
+  const macd = dif.map((value, i) => 2 * (value - dea[i]));
+  return { dif, dea, macd };
+}
+
+function formatTurnover(value) {
+  if (!Number.isFinite(value)) return '-';
+  if (Math.abs(value) >= 100000000) return `${(value / 100000000).toFixed(2)} 亿`;
+  if (Math.abs(value) >= 10000) return `${(value / 10000).toFixed(2)} 万`;
+  return value.toFixed(0);
+}
+
+function currentKlinePeriod() {
+  return document.querySelector('#chartKlinePeriod button.active')?.dataset.period || 'day';
+}
+
+function setKlinePeriod(period) {
+  document.querySelectorAll('#chartKlinePeriod button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+  loadKline();
+}
+
 async function loadKline() {
   const code = document.getElementById('detailCode').textContent.trim();
   if (!code) return;
   const days = document.getElementById('chartPeriod').value;
+  const period = currentKlinePeriod();
+  const periodTextMap = { day: '日K', week: '周K', month: '月K', quarter: '季K', year: '年K' };
   const dom = document.getElementById('chartKline');
   const statusEl = document.getElementById('chartStatus');
   statusEl.textContent = '加载中...';
 
   try {
-    const res = await fetch(`/api/stock/${code}/kline?days=${days}`);
+    const res = await fetch(`/api/stock/${code}/kline?days=${days}&period=${period}`);
     const data = await res.json();
     if (data.error) { statusEl.textContent = data.error; return; }
     if (!data || data.length === 0) { statusEl.textContent = '无数据'; return; }
@@ -994,6 +1223,11 @@ async function loadKline() {
     const dates = data.map(d => d.date);
     const ohlc = data.map(d => [d.open, d.close, d.low, d.high]);
     const volumes = data.map(d => d.volume);
+    const amounts = data.map(d => d.amount || (d.volume * d.close * 100));
+    const closes = data.map(d => d.close);
+    const macdData = calcMACD(closes);
+    const highest = data.reduce((best, item, index) => item.high > best.value ? { value: item.high, index } : best, { value: -Infinity, index: 0 });
+    const lowest = data.reduce((best, item, index) => item.low < best.value ? { value: item.low, index } : best, { value: Infinity, index: 0 });
 
     if (klineInstance) klineInstance.dispose();
     klineInstance = echarts.init(dom);
@@ -1004,25 +1238,45 @@ async function loadKline() {
         axisPointer: { type: 'cross' },
         formatter: function(params) {
           const d = data[params[0].dataIndex];
-          return `<strong>${d.date}</strong><br/>
+          return `<strong>${d.date} ${periodTextMap[period]}</strong><br/>
             开盘: ${d.open.toFixed(2)}<br/>
             收盘: ${d.close.toFixed(2)}<br/>
             最高: ${d.high.toFixed(2)}<br/>
             最低: ${d.low.toFixed(2)}<br/>
-            成交量: ${(d.volume / 10000).toFixed(0)} 万手`;
+            成交量: ${(d.volume / 10000).toFixed(0)} 万手<br/>
+            成交额: ${formatTurnover(d.amount || (d.volume * d.close * 100))}<br/>
+            DIF: ${macdData.dif[params[0].dataIndex].toFixed(3)}<br/>
+            DEA: ${macdData.dea[params[0].dataIndex].toFixed(3)}<br/>
+            MACD: ${macdData.macd[params[0].dataIndex].toFixed(3)}`;
         }
       },
       grid: [
-        { left: '8%', right: '3%', top: '5%', height: '65%' },
-        { left: '8%', right: '3%', top: '78%', height: '15%' }
+        { left: '8%', right: '8%', top: '5%', height: '52%' },
+        { left: '8%', right: '8%', top: '64%', height: '14%' },
+        { left: '8%', right: '8%', top: '84%', height: '11%' }
       ],
       xAxis: [
         { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false } },
-        { type: 'category', data: dates, gridIndex: 1, axisLabel: { formatter: v => v.slice(5) } }
+        { type: 'category', data: dates, gridIndex: 1, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 2, axisLabel: { formatter: v => v.slice(5) } }
       ],
       yAxis: [
         { type: 'value', gridIndex: 0, scale: true, splitArea: { show: true } },
-        { type: 'value', gridIndex: 1, axisLabel: { formatter: v => (v / 10000).toFixed(0) + '万' } }
+        { type: 'value', gridIndex: 1, axisLabel: { formatter: v => (v / 10000).toFixed(0) + '万' } },
+        {
+          type: 'value',
+          gridIndex: 1,
+          position: 'right',
+          splitLine: { show: false },
+          axisLabel: { formatter: v => formatTurnover(v).replace(' ', '') }
+        },
+        {
+          type: 'value',
+          gridIndex: 2,
+          scale: true,
+          splitLine: { show: true },
+          axisLabel: { formatter: v => v.toFixed(2) }
+        }
       ],
       series: [
         {
@@ -1031,6 +1285,27 @@ async function loadKline() {
           data: ohlc,
           xAxisIndex: 0, yAxisIndex: 0,
           itemStyle: { color: '#cf1322', color0: '#389e0d', borderColor: '#cf1322', borderColor0: '#389e0d' },
+          markPoint: {
+            symbol: 'circle',
+            symbolSize: 1,
+            label: { color: chartTextColor(), fontSize: 12, fontWeight: 600, formatter: p => p.value },
+            data: [
+              {
+                name: '最高价',
+                coord: [dates[highest.index], highest.value],
+                value: highest.value.toFixed(2),
+                label: { position: 'top' },
+                itemStyle: { color: 'transparent' }
+              },
+              {
+                name: '最低价',
+                coord: [dates[lowest.index], lowest.value],
+                value: lowest.value.toFixed(2),
+                label: { position: 'bottom' },
+                itemStyle: { color: 'transparent' }
+              }
+            ]
+          },
         },
         {
           name: '成交量',
@@ -1043,10 +1318,47 @@ async function loadKline() {
               return d.close >= d.open ? '#cf1322' : '#389e0d';
             }
           }
+        },
+        {
+          name: '成交额',
+          type: 'line',
+          data: amounts,
+          xAxisIndex: 1, yAxisIndex: 2,
+          symbol: 'none',
+          smooth: true,
+          lineStyle: { color: '#5470c6', width: 1.8 }
+        },
+        {
+          name: 'MACD',
+          type: 'bar',
+          data: macdData.macd,
+          xAxisIndex: 2, yAxisIndex: 3,
+          barMaxWidth: 8,
+          itemStyle: {
+            color: function(p) {
+              return p.value >= 0 ? '#cf1322' : '#389e0d';
+            }
+          }
+        },
+        {
+          name: 'DIF',
+          type: 'line',
+          data: macdData.dif,
+          xAxisIndex: 2, yAxisIndex: 3,
+          symbol: 'none',
+          lineStyle: { color: '#fa8c16', width: 1.4 }
+        },
+        {
+          name: 'DEA',
+          type: 'line',
+          data: macdData.dea,
+          xAxisIndex: 2, yAxisIndex: 3,
+          symbol: 'none',
+          lineStyle: { color: '#4a6cf7', width: 1.4 }
         }
       ]
     });
-    statusEl.textContent = `${data.length} 条数据`;
+    statusEl.textContent = `${periodTextMap[period]} · ${data.length} 条数据`;
     statusEl.style.color = '#52c41a';
   } catch (e) {
     statusEl.textContent = '加载失败';

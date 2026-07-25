@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的持仓 - 股票分析系统</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{color-scheme:light;--bg:#f0f2f5;--surface:#fff;--surface-soft:#f7f9fc;--surface-muted:#fafafa;--text:#333;--text-strong:#1a1a2e;--text-muted:#999;--text-subtle:#666;--border:#e8e8e8;--border-soft:#f0f0f0;--hover:#fafbff;--primary:#4a6cf7;--primary-hover:#3b5de7;--primary-soft:#f0f5ff;--shadow:0 1px 4px rgba(0,0,0,.06);--modal-mask:rgba(0,0,0,.35)}
+html[data-theme="dark"]{color-scheme:dark;--bg:#10141c;--surface:#171d27;--surface-soft:#202838;--surface-muted:#222a37;--text:#d7dde8;--text-strong:#f1f5fb;--text-muted:#8f9aaa;--text-subtle:#b4bdca;--border:#2d3748;--border-soft:#253041;--hover:#20293a;--primary:#7c97ff;--primary-hover:#9aadff;--primary-soft:#1e2a4a;--shadow:0 8px 24px rgba(0,0,0,.28);--modal-mask:rgba(0,0,0,.62)}
+body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;color:#333;min-height:100vh}
+.header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:16px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.header h1{font-size:22px;font-weight:600}
+.btn{padding:8px 18px;border:none;border-radius:6px;font-size:13px;cursor:pointer;transition:all .2s;font-weight:500}
+.btn-primary{background:#4a6cf7;color:#fff}.btn-primary:hover{background:#3b5de7}
+.btn-outline{background:#fff;color:#4a6cf7;border:1px solid #4a6cf7}.btn-outline:hover{background:#f0f5ff}
+.btn-danger{background:#ff4d4f;color:#fff}.btn-danger:hover{background:#e04345}
+.btn-sm{padding:4px 12px;font-size:12px}
+.content{padding:24px 32px}
+.summary-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.summary-card{background:#fff;border-radius:8px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:3px solid #4a6cf7}
+.summary-card .label{font-size:12px;color:#999;margin-bottom:8px}
+.summary-card .value{font-size:24px;font-weight:700;color:#1a1a2e;line-height:1.25}
+.summary-card .sub{font-size:12px;color:#888;margin-top:6px}
+.panel{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px;overflow:hidden}
+.panel-header{padding:14px 18px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.panel-title{font-size:15px;font-weight:600;color:#1a1a2e}
+.form-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:12px;color:#666;font-weight:500}
+.field input,.field select{padding:9px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none;width:150px;background:#fff}
+.field input:focus,.field select:focus{border-color:#4a6cf7}
+.flow-in{color:#cf1322;font-weight:600}
+.flow-out{color:#389e0d;font-weight:600}
+.dividend-cell{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.dividend-input{width:88px;padding:5px 7px;border:1px solid #d9d9d9;border-radius:6px;font-size:12px;text-align:right}
+.dividend-meta{font-size:11px;color:#999;margin-top:4px;text-align:right}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{background:#fafafa;padding:12px 16px;text-align:left;font-weight:600;font-size:13px;color:#666;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:12px 16px;font-size:13px;border-bottom:1px solid #f5f5f5;white-space:nowrap}
+tr:hover td{background:#fafbff}
+.code{font-family:'Courier New',monospace;font-weight:700;color:#4a6cf7}
+.name-link{color:#4a6cf7;text-decoration:none;font-weight:500}
+.name-link:hover{text-decoration:underline;color:#3b5de7}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.empty{text-align:center;padding:48px 20px;color:#999;font-size:14px}
+.chart-box{width:100%;height:420px;padding:8px 12px 18px}
+.pie-box{width:100%;height:520px}
+.toast{position:fixed;top:24px;right:24px;padding:12px 24px;border-radius:8px;color:#fff;font-size:13px;z-index:200;opacity:0;transform:translateY(-10px);transition:all .3s}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast-success{background:#52c41a}.toast-error{background:#ff4d4f}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:120;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.active{display:flex}
+.modal{background:#fff;border-radius:8px;width:min(920px,96vw);max-height:90vh;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.18);display:flex;flex-direction:column}
+.modal-header{padding:14px 18px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:15px;font-weight:600;color:#1a1a2e}
+.modal-close{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999}
+.modal-close:hover{color:#333}
+.modal-body{padding:16px;overflow:auto}
+html[data-theme="dark"] body{background:var(--bg);color:var(--text)}
+html[data-theme="dark"] .summary-card,
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .modal{background:var(--surface)!important;border-color:var(--border)!important;box-shadow:var(--shadow)}
+html[data-theme="dark"] .panel-header,
+html[data-theme="dark"] .modal-header{border-color:var(--border)!important}
+html[data-theme="dark"] th{background:var(--surface-muted)!important;color:var(--text-subtle)!important;border-color:var(--border)!important}
+html[data-theme="dark"] td{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border-soft)!important}
+html[data-theme="dark"] tr:hover td{background:var(--hover)!important}
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field select,
+html[data-theme="dark"] .dividend-input{background:#111722!important;color:var(--text)!important;border-color:var(--border)!important}
+html[data-theme="dark"] input::placeholder{color:#697586}
+html[data-theme="dark"] .btn-outline{background:var(--surface)!important;color:var(--primary)!important;border-color:var(--primary)!important}
+html[data-theme="dark"] .btn-outline:hover{background:var(--primary-soft)!important}
+html[data-theme="dark"] .summary-card .value,
+html[data-theme="dark"] .panel-title,
+html[data-theme="dark"] .modal-title{color:var(--text-strong)!important}
+html[data-theme="dark"] .summary-card .label,
+html[data-theme="dark"] .summary-card .sub,
+html[data-theme="dark"] .field label,
+html[data-theme="dark"] .dividend-meta,
+html[data-theme="dark"] .empty{color:var(--text-muted)!important}
+html[data-theme="dark"] .modal-overlay{background:var(--modal-mask)!important}
+.theme-toggle{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;transition:all .2s}
+.theme-toggle:hover{background:rgba(255,255,255,.22)}
+@media (max-width:1100px){.summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.content{padding:16px}}
+@media (max-width:760px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.header{padding:12px 16px;align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.field input{width:100%}.field{width:100%}.form-row{align-items:stretch}.btn{width:100%}}
+</style>
+<script>
+(function() {
+  const saved = localStorage.getItem('stockTheme') || 'light';
+  document.documentElement.dataset.theme = saved === 'dark' ? 'dark' : 'light';
+})();
+</script>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>我的持仓</h1>
+    <div style="font-size:12px;opacity:.75;margin-top:4px">按最新股价估算市值，并保留历史净值快照</div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">深色</button>
+    <button class="btn btn-outline" onclick="location.href='/'">返回首页</button>
+    <button class="btn btn-primary" onclick="saveSnapshot()">记录今日净值</button>
+    <button class="btn btn-outline" onclick="openFlowModal()">资金流水</button>
+    <button class="btn btn-outline" onclick="openAllocationModal()">持仓比例</button>
+  </div>
+</div>
+
+<div class="content">
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="label">总资产</div>
+      <div class="value" id="totalAssetValue">--</div>
+      <div class="sub">股票市值 + 现金</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">持仓总市值</div>
+      <div class="value" id="totalValue">--</div>
+      <div class="sub">使用腾讯最新行情，取不到价格时不计入</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">当年预期分红</div>
+      <div class="value" id="expectedDividend">--</div>
+      <div class="sub">按最新每股分红 x 当前股数估算</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">现金</div>
+      <div class="value" id="cashAmount">--</div>
+      <div class="sub" id="cashPct">占比 --</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">组合股息率</div>
+      <div class="value" id="portfolioYield">--</div>
+      <div class="sub">预期分红 / 当前市值</div>
+    </div>
+    <div class="summary-card" style="display:none">
+      <div class="label">持仓股票数</div>
+      <div class="value" id="positionCount">--</div>
+      <div class="sub">每次调整持仓都会覆盖今天的快照</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">录入持仓</div>
+      <div class="form-row">
+        <div class="field">
+          <label>股票代码 / 名称</label>
+          <input id="codeInput" placeholder="例如 600519 或 茅台">
+        </div>
+        <div class="field">
+          <label>股数</label>
+          <input id="sharesInput" type="number" min="0" step="1" placeholder="例如 100">
+        </div>
+        <button class="btn btn-primary" onclick="savePosition()">保存持仓</button>
+        <div class="field">
+          <label>现金金额</label>
+          <input id="cashInput" type="number" min="0" step="0.01" placeholder="例如 50000">
+        </div>
+        <button class="btn btn-outline" onclick="saveCash()">保存现金</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">持仓明细</div>
+      <button class="btn btn-outline btn-sm" onclick="loadPortfolio()">刷新价格</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>代码</th>
+            <th>名称</th>
+            <th class="num">股数</th>
+            <th class="num">最新价</th>
+            <th class="num">市值</th>
+            <th class="num">占比</th>
+            <th class="num">每股分红</th>
+            <th class="num">预期分红</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="flowsBody"></tbody>
+      </table>
+      <div class="empty" id="flowsEmpty" style="display:none">还没有资金流水。</div>
+      <div class="toolbar-row" style="padding:12px 16px;margin-bottom:0">
+        <div class="field">
+          <label>日期</label>
+          <input id="flowDate" type="date">
+        </div>
+        <div class="field">
+          <label>方向</label>
+          <select id="flowType">
+            <option value="in">流入</option>
+            <option value="out">流出</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>金额</label>
+          <input id="flowAmount" type="number" min="0" step="0.01" placeholder="例如 10000">
+        </div>
+        <div class="field">
+          <label>备注</label>
+          <input id="flowNote" placeholder="例如 追加本金">
+        </div>
+        <button class="btn btn-primary" onclick="saveFlow()">保存流水</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">持仓明细</div>
+      <button class="btn btn-outline btn-sm" onclick="loadPortfolio()">刷新价格</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>代码</th>
+            <th>名称</th>
+            <th class="num">股数</th>
+            <th class="num">最新价</th>
+            <th class="num">市值</th>
+            <th class="num">占比</th>
+            <th class="num">每股分红</th>
+            <th class="num">预期分红</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="positionsBody"></tbody>
+      </table>
+      <div class="empty" id="positionsEmpty" style="display:none">还没有持仓，先录入一只股票。</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">净值曲线</div>
+      <div style="font-size:12px;color:#999">历史快照独立保存，后续持仓变动不会改写过去日期</div>
+    </div>
+    <div class="chart-box" id="navChart"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="flowModalOverlay" onclick="if(event.target===this)closeFlowModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">资金流入/流出</div>
+      <button class="modal-close" onclick="closeFlowModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="flowModalBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="allocationModalOverlay" onclick="if(event.target===this)closeAllocationModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">持仓比例</div>
+      <button class="modal-close" onclick="closeAllocationModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="pie-box" id="allocationPie"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let navChart = null;
+let allocationChart = null;
+let latestPortfolioData = {positions: [], summary: {}};
+
+function isDarkTheme() {
+  return document.documentElement.dataset.theme === 'dark';
+}
+
+function chartTextColor() {
+  return isDarkTheme() ? '#d7dde8' : '#333';
+}
+
+function chartAxisColor() {
+  return isDarkTheme() ? '#8f9aaa' : '#666';
+}
+
+function chartSplitColor() {
+  return isDarkTheme() ? '#2d3748' : '#e8e8e8';
+}
+
+function applyChartThemeOption(option) {
+  if (!option || typeof option !== 'object') return option;
+  option.backgroundColor = isDarkTheme() ? '#171d27' : '#fff';
+  option.textStyle = {color: chartTextColor(), ...(option.textStyle || {})};
+  if (option.tooltip) {
+    const tooltips = Array.isArray(option.tooltip) ? option.tooltip : [option.tooltip];
+    tooltips.forEach(t => {
+      t.backgroundColor = isDarkTheme() ? 'rgba(23,29,39,.96)' : 'rgba(255,255,255,.96)';
+      t.borderColor = isDarkTheme() ? '#2d3748' : '#e8e8e8';
+      t.textStyle = {color: chartTextColor(), ...(t.textStyle || {})};
+    });
+  }
+  const axes = [...(Array.isArray(option.xAxis) ? option.xAxis : option.xAxis ? [option.xAxis] : []), ...(Array.isArray(option.yAxis) ? option.yAxis : option.yAxis ? [option.yAxis] : [])];
+  axes.forEach(axis => {
+    axis.axisLabel = {color: chartAxisColor(), ...(axis.axisLabel || {})};
+    axis.axisLine = {lineStyle: {color: chartSplitColor(), ...((axis.axisLine || {}).lineStyle || {})}, ...(axis.axisLine || {})};
+    axis.splitLine = {lineStyle: {color: chartSplitColor(), ...((axis.splitLine || {}).lineStyle || {})}, ...(axis.splitLine || {})};
+  });
+  if (option.legend) {
+    const legends = Array.isArray(option.legend) ? option.legend : [option.legend];
+    legends.forEach(l => l.textStyle = {color: chartTextColor(), ...(l.textStyle || {})});
+  }
+  if (option.title) {
+    const titles = Array.isArray(option.title) ? option.title : [option.title];
+    titles.forEach(t => t.textStyle = {color: chartTextColor(), ...(t.textStyle || {})});
+  }
+  return option;
+}
+
+if (window.echarts && !window.echarts.__themePatched) {
+  const rawInit = window.echarts.init.bind(window.echarts);
+  window.echarts.init = function(dom, theme, opts) {
+    const instance = rawInit(dom, theme, opts);
+    if (!instance.__themePatched) {
+      const rawSetOption = instance.setOption.bind(instance);
+      instance.setOption = function(option, ...args) {
+        return rawSetOption(applyChartThemeOption(option), ...args);
+      };
+      instance.__themePatched = true;
+    }
+    return instance;
+  };
+  window.echarts.__themePatched = true;
+}
+
+function updateThemeButton() {
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.textContent = isDarkTheme() ? '浅色' : '深色';
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+  localStorage.setItem('stockTheme', document.documentElement.dataset.theme);
+  updateThemeButton();
+  if (allocationChart) {
+    allocationChart.dispose();
+    allocationChart = null;
+    if (document.getElementById('allocationModalOverlay')?.classList.contains('active')) renderAllocationChart();
+  }
+  if (navChart) {
+    navChart.dispose();
+    navChart = null;
+    loadNav();
+  }
+}
+
+function toggleTheme() {
+  setTheme(isDarkTheme() ? 'light' : 'dark');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  updateThemeButton();
+  mountFlowPanel();
+  loadPortfolio();
+  loadFlows();
+  loadNav();
+  const flowDate = document.getElementById('flowDate');
+  if (flowDate && !flowDate.value) flowDate.value = new Date().toISOString().slice(0, 10);
+});
+
+function mountFlowPanel() {
+  const body = document.getElementById('flowsBody');
+  const sourcePanel = body ? body.closest('.panel') : null;
+  const modalBody = document.getElementById('flowModalBody');
+  if (!sourcePanel || !modalBody || sourcePanel.dataset.mounted === '1') return;
+  sourcePanel.dataset.mounted = '1';
+  Array.from(sourcePanel.childNodes).forEach(node => modalBody.appendChild(node));
+  const innerHeader = modalBody.querySelector('.panel-header');
+  if (innerHeader) innerHeader.remove();
+  sourcePanel.remove();
+}
+
+function openFlowModal() {
+  document.getElementById('flowModalOverlay').classList.add('active');
+  loadFlows();
+  const flowDate = document.getElementById('flowDate');
+  if (flowDate && !flowDate.value) flowDate.value = new Date().toISOString().slice(0, 10);
+}
+
+function closeFlowModal() {
+  document.getElementById('flowModalOverlay').classList.remove('active');
+}
+
+async function openAllocationModal() {
+  document.getElementById('allocationModalOverlay').classList.add('active');
+  if (!latestPortfolioData.positions || !latestPortfolioData.positions.length) {
+    await loadPortfolio();
+  }
+  setTimeout(renderAllocationPie, 0);
+}
+
+function closeAllocationModal() {
+  document.getElementById('allocationModalOverlay').classList.remove('active');
+}
+
+function renderAllocationPie() {
+  const el = document.getElementById('allocationPie');
+  if (!el) return;
+  if (!allocationChart) allocationChart = echarts.init(el);
+  const summary = latestPortfolioData.summary || {};
+  const rows = (latestPortfolioData.positions || [])
+    .filter(p => Number(p.market_value) > 0)
+    .map(p => ({
+      name: p.name,
+      value: Number(p.market_value),
+      allocation: p.allocation_pct
+    }));
+  if (Number(summary.cash_amount || 0) > 0) {
+    rows.push({
+      name: '现金',
+      value: Number(summary.cash_amount),
+      allocation: summary.cash_allocation_pct
+    });
+  }
+  if (!rows.length) {
+    allocationChart.setOption({
+      title: {text: '暂无资产数据', left: 'center', top: 'center', textStyle: {fontSize: 14, color: '#999'}},
+      series: []
+    }, true);
+    return;
+  }
+  allocationChart.setOption({
+    tooltip: {
+      trigger: 'item',
+      formatter: p => `${p.name}<br/>${money(p.value)} (${p.percent.toFixed(2)}%)`
+    },
+    legend: {type: 'scroll', orient: 'vertical', right: 8, top: 24, bottom: 24},
+    series: [{
+      name: '资产占比',
+      type: 'pie',
+      radius: ['42%', '70%'],
+      center: ['40%', '52%'],
+      minAngle: 3,
+      avoidLabelOverlap: true,
+      data: rows,
+      label: {
+        formatter: p => `${p.name}\n${p.percent.toFixed(2)}%`
+      },
+      emphasis: {
+        itemStyle: {shadowBlur: 12, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,.18)'}
+      }
+    }]
+  }, true);
+  allocationChart.resize();
+}
+
+function money(v) {
+  if (v == null || Number.isNaN(Number(v))) return '--';
+  return Number(v).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function plain(v) {
+  if (v == null || Number.isNaN(Number(v))) return '--';
+  return Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 4});
+}
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function loadPortfolio() {
+  try {
+    const res = await fetch('/api/portfolio');
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
+    latestPortfolioData = data;
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+  } catch (e) {
+    showToast(e.message || '加载持仓失败', 'error');
+  }
+}
+
+function renderSummary(summary) {
+  const total = Number(summary.total_market_value || 0);
+  const cash = Number(summary.cash_amount || 0);
+  const totalAsset = Number(summary.total_asset_value || (total + cash));
+  const dividend = Number(summary.expected_dividend || 0);
+  document.getElementById('totalAssetValue').textContent = money(totalAsset);
+  document.getElementById('totalValue').textContent = money(total);
+  document.getElementById('cashAmount').textContent = money(cash);
+  document.getElementById('cashPct').textContent = '占比 ' + (totalAsset > 0 ? (cash / totalAsset * 100).toFixed(2) + '%' : '--');
+  const cashInput = document.getElementById('cashInput');
+  if (cashInput) cashInput.value = cash ? cash.toFixed(2) : '';
+  document.getElementById('expectedDividend').textContent = money(dividend);
+  document.getElementById('portfolioYield').textContent = totalAsset > 0 ? (dividend / totalAsset * 100).toFixed(2) + '%' : '--';
+  document.getElementById('positionCount').textContent = summary.count || 0;
+}
+
+function renderPositions(rows) {
+  const body = document.getElementById('positionsBody');
+  document.getElementById('positionsEmpty').style.display = rows.length ? 'none' : 'block';
+  body.innerHTML = rows.map(r => `
+    <tr>
+      <td><span class="code">${esc(r.code)}</span></td>
+      <td><a class="name-link" href="/stock/${esc(r.code)}">${esc(r.name)}</a></td>
+      <td class="num">${plain(r.shares)}</td>
+      <td class="num">${money(r.price)}</td>
+      <td class="num">${money(r.market_value)}</td>
+      <td class="num">${r.allocation_pct == null ? '--' : Number(r.allocation_pct).toFixed(2) + '%'}</td>
+      <td class="num">
+        <div class="dividend-cell">
+          <input class="dividend-input" id="dividendInput-${esc(r.code)}" type="number" min="0" step="0.0001" value="${r.dividend_per_share == null ? '' : Number(r.dividend_per_share).toFixed(4)}">
+          <button class="btn btn-outline btn-sm" onclick="saveCustomDividend('${esc(r.code)}')">保存</button>
+          <button class="btn btn-outline btn-sm" onclick="resetDividendAuto('${esc(r.code)}')">重置</button>
+        </div>
+        <div class="dividend-meta">
+          ${r.dividend_source === 'custom' ? '自定义' : '自动'} · 最新历史分红 ${r.auto_dividend_per_share == null ? '--' : money(r.auto_dividend_per_share)}
+        </div>
+      </td>
+      <td class="num">${money(r.expected_dividend)}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="editPosition('${esc(r.code)}', ${Number(r.shares)})">编辑</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePosition('${esc(r.code)}')">删除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function editPosition(code, shares) {
+  document.getElementById('codeInput').value = code;
+  document.getElementById('sharesInput').value = shares;
+  document.getElementById('sharesInput').focus();
+}
+
+async function savePosition() {
+  const identifier = document.getElementById('codeInput').value.trim();
+  const shares = document.getElementById('sharesInput').value;
+  try {
+    const code = await resolveStockCode(identifier);
+    const res = await fetch('/api/portfolio/positions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({code, shares})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    latestPortfolioData = data;
+    document.getElementById('codeInput').value = '';
+    document.getElementById('sharesInput').value = '';
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    await loadNav();
+    showToast('持仓已保存，并记录今日快照', 'success');
+  } catch (e) {
+    showToast(e.message || '保存失败', 'error');
+  }
+}
+
+async function resolveStockCode(identifier) {
+  if (/^\d{6}$/.test(identifier)) return identifier;
+  const res = await fetch('/api/stock-search?keyword=' + encodeURIComponent(identifier));
+  const list = await res.json();
+  if (!Array.isArray(list) || !list.length) {
+    throw new Error('未找到匹配的股票，请输入代码或更准确的名称');
+  }
+  const exact = list.find(item => (item.name || '') === identifier || (item.code || '') === identifier);
+  return (exact || list[0]).code;
+}
+
+async function deletePosition(code) {
+  if (!confirm('确定删除 ' + code + ' 的持仓吗？')) return;
+  try {
+    const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code), {method: 'DELETE'});
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '删除失败');
+    latestPortfolioData = data;
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    await loadNav();
+    showToast('持仓已删除，并记录今日快照', 'success');
+  } catch (e) {
+    showToast(e.message || '删除失败', 'error');
+  }
+}
+
+async function saveCash() {
+  const input = document.getElementById('cashInput');
+  const amount = input ? input.value : '';
+  try {
+    const res = await fetch('/api/portfolio/cash', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({amount})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    latestPortfolioData = data;
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    await loadNav();
+    showToast('现金已保存，并记录今日快照', 'success');
+  } catch (e) {
+    showToast(e.message || '保存现金失败', 'error');
+  }
+}
+
+async function loadFlows() {
+  try {
+    const res = await fetch('/api/portfolio/flows');
+    const rows = await res.json();
+    renderFlows(Array.isArray(rows) ? rows : []);
+  } catch (e) {
+    showToast('加载资金流水失败', 'error');
+  }
+}
+
+function renderFlows(rows) {
+  const body = document.getElementById('flowsBody');
+  const empty = document.getElementById('flowsEmpty');
+  if (!body) return;
+  const table = body.closest('table');
+  if (table) {
+    table.querySelector('thead').innerHTML = '<tr><th>日期</th><th class="num">金额</th><th>备注</th><th>操作</th></tr>';
+  }
+  empty.style.display = rows.length ? 'none' : 'block';
+  body.innerHTML = rows.map(r => {
+    const cls = Number(r.amount) >= 0 ? 'flow-in' : 'flow-out';
+    const sign = Number(r.amount) >= 0 ? '+' : '';
+    return `<tr>
+      <td>${esc(r.flow_date)}</td>
+      <td class="num ${cls}">${sign}${money(r.amount)}</td>
+      <td>${esc(r.note || '')}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteFlow(${r.id})">删除</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function saveFlow() {
+  const flowDate = document.getElementById('flowDate').value;
+  const type = document.getElementById('flowType').value;
+  const rawAmount = Number(document.getElementById('flowAmount').value || 0);
+  const amount = type === 'out' ? -Math.abs(rawAmount) : Math.abs(rawAmount);
+  const note = document.getElementById('flowNote').value.trim();
+  try {
+    const res = await fetch('/api/portfolio/flows', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({flow_date: flowDate, amount, note})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    latestPortfolioData = data;
+    document.getElementById('flowAmount').value = '';
+    document.getElementById('flowNote').value = '';
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    renderFlows(data.flows || []);
+    await loadNav();
+    showToast('资金流水已保存，并记录今日快照', 'success');
+  } catch (e) {
+    showToast(e.message || '保存资金流水失败', 'error');
+  }
+}
+
+async function deleteFlow(id) {
+  if (!confirm('确定删除这笔资金流水吗？')) return;
+  try {
+    const res = await fetch('/api/portfolio/flows/' + id, {method: 'DELETE'});
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '删除失败');
+    latestPortfolioData = data;
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    renderFlows(data.flows || []);
+    await loadNav();
+    showToast('资金流水已删除，并更新今日快照', 'success');
+  } catch (e) {
+    showToast(e.message || '删除资金流水失败', 'error');
+  }
+}
+
+async function saveCustomDividend(code) {
+  const input = document.getElementById('dividendInput-' + code);
+  const value = input ? input.value : '';
+  try {
+    const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code) + '/dividend', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({dividend_per_share: value})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    latestPortfolioData = data;
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    await loadNav();
+    showToast('每股分红已保存', 'success');
+  } catch (e) {
+    showToast(e.message || '保存失败', 'error');
+  }
+}
+
+async function resetDividendAuto(code) {
+  try {
+    const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code) + '/dividend/reset', {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '重置失败');
+    latestPortfolioData = data;
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    await loadNav();
+    const reset = data.reset_to ? `：${data.reset_to.fiscal_year} 年 ${money(data.reset_to.dividend_per_share)}` : '';
+    showToast('已重置为最新历史每股分红' + reset, 'success');
+  } catch (e) {
+    showToast(e.message || '重置失败', 'error');
+  }
+}
+
+async function saveSnapshot() {
+  try {
+    const res = await fetch('/api/portfolio/snapshot', {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '记录失败');
+    latestPortfolioData = data;
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    await loadNav();
+    showToast('今日净值已记录', 'success');
+  } catch (e) {
+    showToast(e.message || '记录失败', 'error');
+  }
+}
+
+async function loadNav() {
+  const res = await fetch('/api/portfolio/nav');
+  const rows = await res.json();
+  renderNav(rows || []);
+}
+
+function renderNav(rows) {
+  const el = document.getElementById('navChart');
+  if (!navChart) navChart = echarts.init(el);
+  if (!rows.length) {
+    navChart.setOption({
+      title: {text: '暂无净值快照', left: 'center', top: 'center', textStyle: {fontSize: 14, color: '#999'}},
+      xAxis: {show: false},
+      yAxis: {show: false},
+      series: []
+    }, true);
+    return;
+  }
+  navChart.setOption({
+    tooltip: {trigger: 'axis'},
+    legend: {top: 8, data: ['净值指数', '总市值']},
+    grid: {left: 56, right: 56, top: 56, bottom: 42},
+    xAxis: {type: 'category', data: rows.map(r => r.date)},
+    yAxis: [
+      {type: 'value', name: '净值指数', min: value => Math.max(0, value.min * .98)},
+      {type: 'value', name: '总市值', axisLabel: {formatter: v => Math.round(v / 10000) + '万'}}
+    ],
+    series: [
+      {name: '净值指数', type: 'line', smooth: true, symbolSize: 7, data: rows.map(r => r.nav_index), connectNulls: true},
+      {name: '总市值', type: 'bar', yAxisIndex: 1, data: rows.map(r => r.total_asset_value || r.total_market_value), itemStyle: {color: '#91caff'}}
+    ]
+  }, true);
+  navChart.setOption({
+    yAxis: [
+      {
+        splitNumber: 4,
+        splitLine: {show: true, lineStyle: {color: '#e6edf5'}}
+      },
+      {
+        splitLine: {show: false}
+      }
+    ],
+    series: [
+      {},
+      {
+        barMaxWidth: 64,
+        itemStyle: {color: '#91caff', borderRadius: [4, 4, 0, 0]}
+      }
+    ]
+  });
+}
+
+window.addEventListener('resize', () => {
+  navChart && navChart.resize();
+  allocationChart && allocationChart.resize();
+});
+
+function showToast(text, type) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.className = 'toast toast-' + (type || 'success') + ' show';
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+</script>
+</body>
+</html>
