@@ -366,6 +366,8 @@ html[data-theme="dark"] .status-\*ST{background:#3a1c22;color:#ff9aa2}
     <input type="text" id="keyword" placeholder="搜索代码或名称..." onkeyup="debounceSearch()">
     <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
     <button class="btn btn-success" id="btnUpdate" onclick="updateAll()">⟳ 更新数据</button>
+    <button class="btn btn-outline" onclick="backupCloud()">云备份</button>
+    <button class="btn btn-outline" onclick="restoreCloud()">云恢复</button>
     <button class="btn btn-outline" id="btnResetSort" onclick="resetListSort()">恢复默认顺序</button>
     <button class="btn btn-outline" id="btnReorderMode" onclick="startReorderMode()">调整默认顺序</button>
     <button class="btn btn-primary" id="btnSaveOrder" onclick="saveDefaultOrder()" style="display:none">保存顺序</button>
@@ -3890,9 +3892,59 @@ async function doUpdateAll(mode) {
       msgs.push(api.name + ': 网络错误');
     }
   }
-  showToast(label + '更新完成: ' + msgs.join(' | '), 'success');
+  let backupMsg = '';
+  try {
+    const backupRes = await fetch('/api/cloud-backup/backup', { method: 'POST' });
+    const backupData = await backupRes.json();
+    backupMsg = backupData.ok ? ` | 云备份: ${backupData.latest_backup}` : ' | 云备份失败';
+  } catch (e) {
+    backupMsg = ' | 云备份失败';
+  }
+  showToast(label + '更新完成: ' + msgs.join(' | ') + backupMsg, 'success');
   btn.disabled = false;
   btn.textContent = '\u27f3 更新数据';
+}
+
+async function backupCloud() {
+  showToast('正在备份到云同步目录...', 'success');
+  try {
+    const res = await fetch('/api/cloud-backup/backup', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showToast(data.error || '云备份失败', 'error');
+      return;
+    }
+    showToast(`云备份完成: ${data.latest_backup}`, 'success');
+  } catch (e) {
+    showToast('云备份失败', 'error');
+  }
+}
+
+async function restoreCloud() {
+  let statusText = '';
+  try {
+    const statusRes = await fetch('/api/cloud-backup/status');
+    const status = await statusRes.json();
+    statusText = status.latest_mtime ? `\n云端备份时间：${status.latest_mtime}\n目录：${status.backup_dir}` : '\n未检测到云端备份';
+    if (!status.latest_exists) {
+      showToast('云端 latest 备份不存在', 'error');
+      return;
+    }
+  } catch (e) {}
+  if (!confirm('从云端备份恢复会覆盖本地数据库。系统会先自动备份当前本地数据。确认恢复？' + statusText)) return;
+  showToast('正在从云端恢复，请稍候...', 'success');
+  try {
+    const res = await fetch('/api/cloud-backup/restore', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showToast(data.error || '云恢复失败', 'error');
+      return;
+    }
+    showToast('云恢复完成，正在刷新页面...', 'success');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    showToast('云恢复失败', 'error');
+  }
 }
 
 async function openSettings() {

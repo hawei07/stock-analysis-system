@@ -7,6 +7,8 @@ import time
 import requests
 import json
 import os
+import shutil
+import subprocess
 import threading
 import base64
 import uuid
@@ -15,10 +17,112 @@ from datetime import datetime
 sys.path.insert(0, r"E:\stock-analysis-system")
 from models import Stock
 from db import execute_query, execute_update
+from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
 
 app = Flask(__name__)
+
+CLOUD_SYNC_DIR = os.environ.get("STOCK_CLOUD_SYNC_DIR", r"D:\stock-cloud-sync")
+MYSQL_BIN_DIR = os.environ.get("MYSQL_BIN_DIR", r"D:\dvptool\mysql\bin")
+CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
+CLOUD_STATE_JSON = "sync_state.json"
+
+
+def _mysql_tool_path(name):
+    exe = f"{name}.exe" if os.name == "nt" else name
+    path = os.path.join(MYSQL_BIN_DIR, exe)
+    return path if os.path.exists(path) else exe
+
+
+def _cloud_backup_dir():
+    os.makedirs(CLOUD_SYNC_DIR, exist_ok=True)
+    return CLOUD_SYNC_DIR
+
+
+def _cloud_state_path():
+    return os.path.join(_cloud_backup_dir(), CLOUD_STATE_JSON)
+
+
+def _cloud_latest_path():
+    return os.path.join(_cloud_backup_dir(), CLOUD_LATEST_SQL)
+
+
+def _read_cloud_state():
+    path = _cloud_state_path()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _write_cloud_state(payload):
+    with open(_cloud_state_path(), "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _dump_database(prefix="stock_analysis"):
+    backup_dir = _cloud_backup_dir()
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{prefix}_{ts}.sql"
+    path = os.path.join(backup_dir, filename)
+    cmd = [
+        _mysql_tool_path("mysqldump"),
+        "--host", DB_CONFIG.get("host", "127.0.0.1"),
+        "--port", str(DB_CONFIG.get("port", 3306)),
+        "--user", DB_CONFIG.get("user", "root"),
+        f"--password={DB_CONFIG.get('password', '')}",
+        "--default-character-set=utf8mb4",
+        "--single-transaction",
+        "--quick",
+        "--routines",
+        "--triggers",
+        "--add-drop-table",
+        DB_CONFIG.get("database", "stock_analysis"),
+    ]
+    with open(path, "wb") as f:
+        result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, cwd=os.path.dirname(os.path.abspath(__file__)), timeout=120)
+    if result.returncode != 0:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysqldump failed")
+    latest_path = _cloud_latest_path()
+    shutil.copyfile(path, latest_path)
+    state = {
+        "backup_dir": backup_dir,
+        "latest_file": CLOUD_LATEST_SQL,
+        "latest_backup": filename,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "database": DB_CONFIG.get("database", "stock_analysis"),
+        "size": os.path.getsize(latest_path),
+    }
+    _write_cloud_state(state)
+    return state
+
+
+def _restore_database(sql_path):
+    if not os.path.exists(sql_path):
+        raise FileNotFoundError(sql_path)
+    cmd = [
+        _mysql_tool_path("mysql"),
+        "--host", DB_CONFIG.get("host", "127.0.0.1"),
+        "--port", str(DB_CONFIG.get("port", 3306)),
+        "--user", DB_CONFIG.get("user", "root"),
+        f"--password={DB_CONFIG.get('password', '')}",
+        "--default-character-set=utf8mb4",
+        DB_CONFIG.get("database", "stock_analysis"),
+    ]
+    with open(sql_path, "rb") as f:
+        result = subprocess.run(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(os.path.abspath(__file__)), timeout=180)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysql restore failed")
+    return True
+
 
 # ==================== 便利贴 JSON 文件存储 ====================
 
@@ -947,6 +1051,46 @@ def api_config_put():
         set_config(k, str(v))
         updated.append(k)
     return jsonify({"ok": True, "updated": updated})
+
+
+@app.route("/api/cloud-backup/status")
+def api_cloud_backup_status():
+    latest_path = _cloud_latest_path()
+    state = _read_cloud_state()
+    return jsonify({
+        "backup_dir": _cloud_backup_dir(),
+        "latest_path": latest_path,
+        "latest_exists": os.path.exists(latest_path),
+        "latest_size": os.path.getsize(latest_path) if os.path.exists(latest_path) else 0,
+        "latest_mtime": datetime.fromtimestamp(os.path.getmtime(latest_path)).isoformat(timespec="seconds") if os.path.exists(latest_path) else None,
+        "state": state,
+    })
+
+
+@app.route("/api/cloud-backup/backup", methods=["POST"])
+def api_cloud_backup_create():
+    try:
+        state = _dump_database()
+        return jsonify({"ok": True, **state})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cloud-backup/restore", methods=["POST"])
+def api_cloud_backup_restore():
+    try:
+        latest_path = _cloud_latest_path()
+        if not os.path.exists(latest_path):
+            return jsonify({"error": "云端 latest 备份不存在"}), 404
+        pre_restore_state = _dump_database(prefix="pre_restore")
+        _restore_database(latest_path)
+        return jsonify({
+            "ok": True,
+            "restored_from": latest_path,
+            "pre_restore_backup": pre_restore_state.get("latest_backup"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/stocks")
