@@ -23,10 +23,12 @@ from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_
 
 app = Flask(__name__)
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CLOUD_SYNC_DIR = os.environ.get("STOCK_CLOUD_SYNC_DIR", r"D:\stock-cloud-sync")
 MYSQL_BIN_DIR = os.environ.get("MYSQL_BIN_DIR", r"D:\dvptool\mysql\bin")
 CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
+LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
 
 
 def _mysql_tool_path(name):
@@ -48,6 +50,49 @@ def _cloud_latest_path():
     return os.path.join(_cloud_backup_dir(), CLOUD_LATEST_SQL)
 
 
+def _read_local_cloud_state():
+    if not os.path.exists(LOCAL_CLOUD_STATE_JSON):
+        return {}
+    try:
+        with open(LOCAL_CLOUD_STATE_JSON, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _write_local_cloud_state(payload):
+    os.makedirs(os.path.dirname(LOCAL_CLOUD_STATE_JSON), exist_ok=True)
+    with open(LOCAL_CLOUD_STATE_JSON, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _cloud_latest_mtime():
+    path = _cloud_latest_path()
+    return os.path.getmtime(path) if os.path.exists(path) else None
+
+
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_cloud_applied(action, extra=None):
+    latest_mtime = _cloud_latest_mtime()
+    state = {
+        "action": action,
+        "latest_path": _cloud_latest_path(),
+        "latest_mtime": latest_mtime,
+        "latest_mtime_iso": datetime.fromtimestamp(latest_mtime).isoformat(timespec="seconds") if latest_mtime else None,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    if extra:
+        state.update(extra)
+    _write_local_cloud_state(state)
+    return state
+
+
 def _read_cloud_state():
     path = _cloud_state_path()
     if not os.path.exists(path):
@@ -64,7 +109,7 @@ def _write_cloud_state(payload):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
-def _dump_database(prefix="stock_analysis"):
+def _dump_database(prefix="stock_analysis", update_latest=True):
     backup_dir = _cloud_backup_dir()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{prefix}_{ts}.sql"
@@ -92,16 +137,19 @@ def _dump_database(prefix="stock_analysis"):
             pass
         raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysqldump failed")
     latest_path = _cloud_latest_path()
-    shutil.copyfile(path, latest_path)
+    if update_latest:
+        shutil.copyfile(path, latest_path)
     state = {
         "backup_dir": backup_dir,
-        "latest_file": CLOUD_LATEST_SQL,
+        "latest_file": CLOUD_LATEST_SQL if update_latest else None,
         "latest_backup": filename,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "database": DB_CONFIG.get("database", "stock_analysis"),
-        "size": os.path.getsize(latest_path),
+        "size": os.path.getsize(latest_path) if update_latest and os.path.exists(latest_path) else os.path.getsize(path),
     }
-    _write_cloud_state(state)
+    if update_latest:
+        _write_cloud_state(state)
+        _mark_cloud_applied("backup", {"latest_backup": filename})
     return state
 
 
@@ -1057,13 +1105,19 @@ def api_config_put():
 def api_cloud_backup_status():
     latest_path = _cloud_latest_path()
     state = _read_cloud_state()
+    local_state = _read_local_cloud_state()
+    latest_mtime = _cloud_latest_mtime()
+    local_mtime = _to_float(local_state.get("latest_mtime"))
+    cloud_newer = bool(latest_mtime and (local_mtime is None or latest_mtime > local_mtime + 1))
     return jsonify({
         "backup_dir": _cloud_backup_dir(),
         "latest_path": latest_path,
         "latest_exists": os.path.exists(latest_path),
         "latest_size": os.path.getsize(latest_path) if os.path.exists(latest_path) else 0,
         "latest_mtime": datetime.fromtimestamp(os.path.getmtime(latest_path)).isoformat(timespec="seconds") if os.path.exists(latest_path) else None,
+        "cloud_newer": cloud_newer,
         "state": state,
+        "local_state": local_state,
     })
 
 
@@ -1082,8 +1136,9 @@ def api_cloud_backup_restore():
         latest_path = _cloud_latest_path()
         if not os.path.exists(latest_path):
             return jsonify({"error": "云端 latest 备份不存在"}), 404
-        pre_restore_state = _dump_database(prefix="pre_restore")
+        pre_restore_state = _dump_database(prefix="pre_restore", update_latest=False)
         _restore_database(latest_path)
+        _mark_cloud_applied("restore", {"restored_from": latest_path})
         return jsonify({
             "ok": True,
             "restored_from": latest_path,
