@@ -153,6 +153,9 @@ tr:hover td{background:#fafbff}
 
 /* 数据行：原值列放大加粗 */
 .fin-table tbody tr[data-indicator-field] td:not([class]){font-size:14px;font-weight:600;color:#222}
+.fin-table tbody tr.fin-row-highlight td{background:#fff2b8!important;color:#1a1a2e!important}
+.fin-table tbody tr.fin-row-highlight .sticky-col{background:#ffe58f!important;color:#1a1a2e!important}
+.fin-table-wrap tbody tr:not(.unit-row):not(.section-row){cursor:pointer}
 /* 同比列缩小 + 颜色编码：涨红跌绿 */
 .fin-yoy-up{font-size:11px;background:#fff1f0!important;color:#cf1322!important}
 .fin-yoy-down{font-size:11px;background:#f6ffed!important;color:#389e0d!important}
@@ -327,6 +330,8 @@ html[data-theme="dark"] .chart-modal-overlay{background:var(--modal-mask)!import
 html[data-theme="dark"] .munger .chat-bubble{background:var(--surface-soft)!important;color:var(--text)!important}
 html[data-theme="dark"] .chat-delete{background:var(--surface)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .sticky-card{background:#2b2614!important;border-color:#51451f!important;color:var(--text)!important}
+html[data-theme="dark"] .fin-table tbody tr.fin-row-highlight td{background:#3b3419!important;color:#fff4c2!important}
+html[data-theme="dark"] .fin-table tbody tr.fin-row-highlight .sticky-col{background:#4d421f!important;color:#fff4c2!important}
 html[data-theme="dark"] .market-SH{background:#3a1c22;color:#ff9aa2}
 html[data-theme="dark"] .market-SZ{background:#143044;color:#8ed4ff}
 html[data-theme="dark"] .market-BJ{background:#163322;color:#8ee6a4}
@@ -866,10 +871,36 @@ function toggleTheme() {
   setTheme(isDarkTheme() ? 'light' : 'dark');
 }
 
+function bindFinanceRowHighlight() {
+  const highlightWrapIds = new Set([
+    'tableFinancialsWrap',
+    'tableBalanceSheetWrap',
+    'tableIncomeWrap',
+    'tableCashflowWrap'
+  ]);
+
+  document.addEventListener('click', (event) => {
+    const wrap = event.target.closest('.fin-table-wrap');
+    if (!wrap || !highlightWrapIds.has(wrap.id)) return;
+    if (event.target.closest('.chart-icon, .sort-handle, button, input, select, textarea, a')) return;
+
+    const row = event.target.closest('tbody tr');
+    if (!row || row.classList.contains('unit-row') || row.classList.contains('section-row')) return;
+
+    const table = row.closest('table');
+    if (table?.classList.contains('sort-mode') || document.body.classList.contains('reorder-active')) return;
+
+    const alreadyActive = row.classList.contains('fin-row-highlight');
+    table.querySelectorAll('tbody tr.fin-row-highlight').forEach(r => r.classList.remove('fin-row-highlight'));
+    if (!alreadyActive) row.classList.add('fin-row-highlight');
+  });
+}
+
 // ==================== 路由 ====================
 
 document.addEventListener('DOMContentLoaded', () => {
   updateThemeButton();
+  bindFinanceRowHighlight();
   const path = window.location.pathname;
   const match = path.match(/^\/stock\/(\d+)$/);
   if (match) {
