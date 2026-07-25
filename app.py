@@ -56,6 +56,9 @@ APP_PORT = int(_setting("app_port", "STOCK_APP_PORT", 5002))
 CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
+CLOUD_BACKUP_RETAIN_COUNT = 5
+TIMED_BACKUP_RE = re.compile(r"^stock_analysis_\d{8}_\d{6}\.sql$", re.IGNORECASE)
+PRE_RESTORE_BACKUP_RE = re.compile(r"^pre_restore_\d{8}_\d{6}\.sql$", re.IGNORECASE)
 
 _db_overrides = {
     "host": _setting("db_host", "STOCK_DB_HOST"),
@@ -121,12 +124,41 @@ def _backup_file_payload(path):
 
 def _cloud_backup_files():
     backup_dir = _cloud_backup_dir()
+    _cleanup_cloud_backup_files(backup_dir)
     files = []
     for name in os.listdir(backup_dir):
         path = os.path.join(backup_dir, name)
         if os.path.isfile(path) and name.lower().endswith(".sql"):
             files.append(_backup_file_payload(path))
     return sorted(files, key=lambda item: item["mtime"], reverse=True)
+
+
+def _cleanup_cloud_backup_files(backup_dir=None, retain_count=CLOUD_BACKUP_RETAIN_COUNT):
+    backup_dir = backup_dir or _cloud_backup_dir()
+    groups = {
+        "stock_analysis": TIMED_BACKUP_RE,
+        "pre_restore": PRE_RESTORE_BACKUP_RE,
+    }
+    deleted = []
+
+    for group_name, pattern in groups.items():
+        files = []
+        for name in os.listdir(backup_dir):
+            if not pattern.match(name):
+                continue
+            path = os.path.join(backup_dir, name)
+            if os.path.isfile(path):
+                files.append((os.path.getmtime(path), name, path))
+
+        files.sort(reverse=True)
+        for _, name, path in files[retain_count:]:
+            try:
+                os.remove(path)
+                deleted.append({"type": group_name, "name": name})
+            except OSError:
+                pass
+
+    return deleted
 
 
 def _resolve_backup_file(filename):
@@ -228,6 +260,7 @@ def _dump_database(prefix="stock_analysis", update_latest=True):
     latest_path = _cloud_latest_path()
     if update_latest:
         shutil.copyfile(path, latest_path)
+    deleted = _cleanup_cloud_backup_files(backup_dir)
     state = {
         "backup_dir": backup_dir,
         "latest_file": CLOUD_LATEST_SQL if update_latest else None,
@@ -235,6 +268,7 @@ def _dump_database(prefix="stock_analysis", update_latest=True):
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "database": DB_CONFIG.get("database", "stock_analysis"),
         "size": os.path.getsize(latest_path) if update_latest and os.path.exists(latest_path) else os.path.getsize(path),
+        "cleanup_deleted": deleted,
     }
     if update_latest:
         _write_cloud_state(state)
