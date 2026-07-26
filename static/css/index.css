@@ -5,6 +5,10 @@ body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;c
 .header{background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:16px 32px;display:flex;align-items:center;justify-content:space-between}
 .header h1{font-size:22px;font-weight:600}
 .header .stats{font-size:13px;opacity:.85}
+.header-cloud-actions{display:flex;align-items:center;gap:10px}
+.header-cloud-actions .btn-outline{background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.35)}
+.header-cloud-actions .btn-outline:hover{background:rgba(255,255,255,.16)}
+.toolbar-stats{font-size:13px;color:#666;white-space:nowrap}
 
 .toolbar{display:flex;align-items:center;gap:12px;padding:16px 32px;background:#fff;border-bottom:1px solid #e8e8e8;flex-wrap:wrap}
 .toolbar input,.toolbar select{padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none;transition:border-color .2s}
@@ -356,6 +360,9 @@ html[data-theme="dark"] input::placeholder{color:#697586}
 html[data-theme="dark"] .btn-outline{background:var(--surface)!important;color:var(--primary)!important;border-color:var(--primary)!important}
 html[data-theme="dark"] .btn-outline:hover,
 html[data-theme="dark"] .chart-icon:hover{background:var(--primary-soft)!important}
+html[data-theme="dark"] .header-cloud-actions .btn-outline{background:rgba(255,255,255,.08)!important;color:#fff!important;border-color:rgba(255,255,255,.35)!important}
+html[data-theme="dark"] .header-cloud-actions .btn-outline:hover{background:rgba(255,255,255,.16)!important}
+html[data-theme="dark"] .toolbar-stats{color:var(--text-subtle)!important}
 html[data-theme="dark"] .icon-btn{color:var(--text-muted)!important}
 html[data-theme="dark"] .icon-btn-delete:hover{background:#3a1c22!important;color:#ff9aa2!important}
 html[data-theme="dark"] .bs-composition-icon{color:var(--text-muted)!important}
