@@ -1857,13 +1857,29 @@ async function openIncomeSankey(key) {
   addLink(revenueNode, grossNode, gross, red);
   addLink(revenueNode, costNode, cost, green);
 
+  const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red, 4);
+
+  const adjustmentDefs = [
+    ['投资收益', 'invest_income', amber, false],
+    ['公允价值变动收益', 'fair_value_change', amber, false],
+    ['利息收入', 'interest_income', amber, false],
+    ['信用减值损失', 'credit_impairment_loss', green, true],
+  ];
+  for (const def of adjustmentDefs) {
+    const raw = incomeValue(row, def[1]);
+    const value = Math.abs(raw);
+    const node = addNode(def[0], value, def[1], def[2], 3);
+    addLink(node, opNode, value, def[2]);
+  }
+
+  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red, 3);
+  addLink(grossNode, coreNode, coreProfit, red);
+  addLink(coreNode, opNode, coreProfit, red);
+
   const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green, 3);
   addLink(grossNode, periodNode, periodExpense, green);
   const taxSurchargeNode = addNode('税金及附加', taxSurcharge, 'tax_surcharge', green, 3);
   addLink(grossNode, taxSurchargeNode, taxSurcharge, green);
-
-  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red, 3);
-  addLink(grossNode, coreNode, coreProfit, red);
 
   const expenseDefs = [
     ['销售费用', 'selling_expense'],
@@ -1875,22 +1891,6 @@ async function openIncomeSankey(key) {
     const value = positiveIncomeValue(row, def[1]);
     const node = addNode(def[0], value, def[1], green, 4);
     addLink(periodNode, node, value, green);
-  }
-
-  const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red, 4);
-  addLink(coreNode, opNode, coreProfit, red);
-
-  const adjustmentDefs = [
-    ['利息收入', 'interest_income', amber, false],
-    ['投资收益', 'invest_income', amber, false],
-    ['公允价值变动收益', 'fair_value_change', amber, false],
-    ['信用减值损失', 'credit_impairment_loss', green, true],
-  ];
-  for (const def of adjustmentDefs) {
-    const raw = incomeValue(row, def[1]);
-    const value = Math.abs(raw);
-    const node = addNode(def[0], value, def[1], def[2], 3);
-    addLink(node, opNode, value, def[2]);
   }
 
   const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 4);
