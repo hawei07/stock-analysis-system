@@ -1937,10 +1937,10 @@ async function openIncomeSankey(key) {
     addLink(periodNode, node, value, green);
   }
 
-  const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 4);
+  const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 5);
   const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green, 4);
 
-  const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 5);
+  const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 4);
   const netNode = addNode('净利润', netProfit, 'net_profit', red, 5);
   const opToNet = Math.max(netProfit - nonopIncome, 0);
   addLink(nonopIncomeNode, netNode, nonopIncome, amber);
