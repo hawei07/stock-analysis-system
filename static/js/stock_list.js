@@ -47,8 +47,15 @@ function renderTable(stocks) {
       <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
       <td>${fmtPct(s.ytd_return)}</td>
       <td>
-        <button class="btn btn-outline btn-sm" onclick="openEditModal('${esc(s.code)}')">编辑</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteStock('${esc(s.code)}','${esc(s.name)}')">删除</button>
+        <button class="icon-btn icon-btn-delete" onclick="deleteStock('${esc(s.code)}','${esc(s.name)}')" title="删除" aria-label="删除 ${esc(s.name)}">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4h8v2"></path>
+            <path d="M6 6l1 15h10l1-15"></path>
+            <path d="M10 11v6"></path>
+            <path d="M14 11v6"></path>
+          </svg>
+        </button>
       </td>
     </tr>
   `).join('');

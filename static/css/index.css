@@ -22,6 +22,9 @@ body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;c
 .btn-sm{padding:4px 12px;font-size:12px}
 .btn-back{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);padding:6px 16px}
 .btn-back:hover{background:rgba(255,255,255,.25)}
+.icon-btn{width:30px;height:30px;border:none;border-radius:6px;background:transparent;color:#8c8c8c;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+.icon-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn-delete:hover{background:#fff1f0;color:#ff4d4f}
 
 .view{display:none}
 .view.active{display:block}
@@ -353,6 +356,8 @@ html[data-theme="dark"] input::placeholder{color:#697586}
 html[data-theme="dark"] .btn-outline{background:var(--surface)!important;color:var(--primary)!important;border-color:var(--primary)!important}
 html[data-theme="dark"] .btn-outline:hover,
 html[data-theme="dark"] .chart-icon:hover{background:var(--primary-soft)!important}
+html[data-theme="dark"] .icon-btn{color:var(--text-muted)!important}
+html[data-theme="dark"] .icon-btn-delete:hover{background:#3a1c22!important;color:#ff9aa2!important}
 html[data-theme="dark"] .bs-composition-icon{color:var(--text-muted)!important}
 html[data-theme="dark"] .bs-composition-icon:hover{background:var(--primary-soft)!important;color:var(--primary)!important}
 html[data-theme="dark"] .bs-composition-section{border-color:var(--border)!important}
