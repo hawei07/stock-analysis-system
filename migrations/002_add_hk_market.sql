@@ -1,0 +1,2 @@
+ALTER TABLE stocks
+  MODIFY COLUMN market ENUM('SH','SZ','BJ','HK') NOT NULL;
