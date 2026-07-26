@@ -47,6 +47,20 @@ function getCurrentCode() {
   return el ? el.textContent.trim() : '';
 }
 
+function refreshCurrentDetailTab(code) {
+  const tab = typeof currentTab === 'string' ? currentTab : 'chart';
+  if (tab === 'chart') loadKline();
+  else if (tab === 'valuation') loadValuation(3650);
+  else if (tab === 'dividends') loadDividends(code);
+  else if (tab === 'segments') loadSegments();
+  else if (tab === 'financials') loadFinancials();
+  else if (tab === 'balance') loadBalanceSheet();
+  else if (tab === 'income') loadIncome();
+  else if (tab === 'cashflow') loadCashflow();
+  else if (tab === 'munger-chat') loadMungerChat();
+  else if (tab === 'sticky') loadStickyNotes();
+}
+
 async function loadDetail(code) {
   divYearsPopulated = false;
   try {
@@ -66,6 +80,10 @@ async function loadDetail(code) {
     document.getElementById('bsToYear').value = curYear;
     document.getElementById('segFromYear').value = startYear;
     document.getElementById('segToYear').value = curYear;
+    document.getElementById('incFromYear').value = startYear;
+    document.getElementById('incToYear').value = curYear;
+    document.getElementById('cfFromYear').value = startYear;
+    document.getElementById('cfToYear').value = curYear;
     resetSegmentsPanel();
     document.getElementById('detailMarket').textContent = stock.market;
     document.getElementById('detailMarket').className = 'market-tag market-' + stock.market;
@@ -91,13 +109,7 @@ async function loadDetail(code) {
     mcEl.className = 'value';
     loadPortfolioPositionCard(stock.code, rt.price);
 
-    // 加载K线图
-    loadKline();
-    // 加载分红数据并渲染图表
-    loadDividends(code);
-    if (currentTab === 'segments') loadSegments();
-    // 如果当前在便利贴标签，切换股票后自动刷新
-    if (document.getElementById('panel-sticky')?.style.display === 'block') loadStickyNotes();
+    refreshCurrentDetailTab(stock.code);
   } catch (e) {
     showToast('加载详情失败', 'error');
   }
@@ -147,6 +159,7 @@ async function loadDividends(code) {
     if (params.length) url += '?' + params.join('&');
     const res = await fetch(url);
     const data = await res.json();
+    if (code !== getCurrentCode()) return;
     
     // 首次加载时用全部年份数据填充下拉框
     if (!divYearsPopulated && !from && !to) {
@@ -364,6 +377,7 @@ async function loadKline() {
   try {
     const res = await fetch(`/api/stock/${code}/kline?days=${days}&period=${period}`);
     const data = await res.json();
+    if (code !== getCurrentCode()) return;
     if (data.error) { statusEl.textContent = data.error; return; }
     if (!data || data.length === 0) { statusEl.textContent = '无数据'; return; }
 
@@ -536,6 +550,7 @@ async function loadValuation(days) {
   try {
     const res = await fetch(`/api/stock/${code}/valuation`);
     const data = await res.json();
+    if (code !== getCurrentCode()) return;
     if (data.error) { statusEl.textContent = data.error; return; }
 
     // Filter by days

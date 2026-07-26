@@ -1,13 +1,14 @@
 let chatLoaded = false;
 
 async function loadMungerChat() {
-  const code = document.getElementById('detailCode').textContent;
+  const code = document.getElementById('detailCode').textContent.trim();
   if (!code) return;
   const container = document.getElementById('chatMessages');
 
   try {
     const res = await fetch('/api/stock/' + code + '/munger-chat');
     const msgs = await res.json();
+    if (code !== document.getElementById('detailCode').textContent.trim()) return;
     container.innerHTML = '';
     if (!msgs.length) {
       container.innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
@@ -128,11 +129,12 @@ function goSticky() {
 }
 
 async function loadStickyNotes() {
-  const code = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
+  const code = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent.trim() : '';
   if (!code) return;
   try {
     const res = await fetch('/api/sticky-notes?stock_code=' + code);
     const notes = await res.json();
+    if (code !== (document.getElementById('detailCode')?.textContent.trim() || '')) return;
     const list = document.getElementById('stickyList');
     if (!notes.length) {
       list.innerHTML = '<div style="text-align:center;color:#bbb;padding:60px">还没有便利贴，点击「+ 新建」开始</div>';

@@ -586,6 +586,7 @@ function switchTab(name) {
   } else if (name === 'munger-chat') {
     loadMungerChat();
   } else if (name === 'dividends') {
+    loadDividends(getCurrentCode());
     setTimeout(() => { if (chartInstance) chartInstance.resize(); }, 50);
   } else if (name === 'sticky') {
     loadStickyNotes();

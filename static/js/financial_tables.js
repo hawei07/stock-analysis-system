@@ -48,6 +48,7 @@ async function loadFinancials() {
   const actualPeriod = period === 'all' ? quarter : period;
   const cmpCodeRaw = document.getElementById('finCompare').value.trim();
   const cmpCode = await resolveStockCode(cmpCodeRaw);
+  if (code !== document.getElementById('detailCode').textContent.trim()) return;
   const wrap = document.getElementById('tableFinancialsWrap');
   wrap.innerHTML = '<div class="empty">加载中...</div>';
 
@@ -55,6 +56,7 @@ async function loadFinancials() {
     const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
     const res = await fetch(`/api/stock/${code}/financials?${params}`);
     let data = await res.json();
+    if (code !== document.getElementById('detailCode').textContent.trim()) return;
 
     let cmpData = null, cmpName = '';
     if (cmpCode && cmpCode !== code) {
@@ -63,9 +65,11 @@ async function loadFinancials() {
         cmpData = await cmpRes.json();
         const infoRes = await fetch('/api/stock/' + cmpCode);
         const info = await infoRes.json();
+        if (code !== document.getElementById('detailCode').textContent.trim()) return;
         if (!info.error) cmpName = info.name;
       } catch {}
     }
+    if (code !== document.getElementById('detailCode').textContent.trim()) return;
     if (!data || data.length === 0) {
       wrap.innerHTML = '<div class="empty">暂无财务数据，请点击"更新数据"拉取</div>';
       return;
@@ -766,6 +770,7 @@ async function loadBalanceSheet() {
   const actualPeriod = period === 'all' ? quarter : period;
   const cmpCodeRaw = document.getElementById('bsCompare').value.trim();
   const cmpCode = await resolveStockCode(cmpCodeRaw);
+  if (code !== document.getElementById('detailCode').textContent.trim()) return;
   const wrap = document.getElementById('tableBalanceSheetWrap');
   wrap.innerHTML = '<div class="empty">加载中...</div>';
 
@@ -773,6 +778,7 @@ async function loadBalanceSheet() {
     const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
     const res = await fetch(`/api/stock/${code}/balance-sheet?${params}`);
     let data = await res.json();
+    if (code !== document.getElementById('detailCode').textContent.trim()) return;
 
     let cmpData = null, cmpName = '';
     if (cmpCode && cmpCode !== code) {
@@ -781,9 +787,11 @@ async function loadBalanceSheet() {
         cmpData = await cmpRes.json();
         const infoRes = await fetch('/api/stock/' + cmpCode);
         const info = await infoRes.json();
+        if (code !== document.getElementById('detailCode').textContent.trim()) return;
         if (!info.error) cmpName = info.name;
       } catch {}
     }
+    if (code !== document.getElementById('detailCode').textContent.trim()) return;
     if (!data || data.length === 0) {
       wrap.innerHTML = '<div class="empty">暂无资产负债表数据，请点击"更新数据"拉取</div>';
       return;
@@ -1611,6 +1619,7 @@ async function loadFinanceTable(prefix) {
   const actualPeriod = period === 'all' ? quarter : period;
   const cmpCodeRaw = document.getElementById(t.cmpId).value.trim();
   const cmpCode = await resolveStockCode(cmpCodeRaw);
+  if (code !== document.getElementById('detailCode').textContent.trim()) return;
   const wrap = document.getElementById(t.wrapId);
   wrap.innerHTML = '<div class="empty">加载中...</div>';
 
@@ -1618,6 +1627,7 @@ async function loadFinanceTable(prefix) {
     const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
     const res = await fetch(`/api/stock/${code}/${t.api}?${params}`);
     let data = await res.json();
+    if (code !== document.getElementById('detailCode').textContent.trim()) return;
 
     let cmpData = null, cmpName = '';
     if (cmpCode && cmpCode !== code) {
@@ -1626,9 +1636,11 @@ async function loadFinanceTable(prefix) {
         cmpData = await cmpRes.json();
         const infoRes = await fetch('/api/stock/' + cmpCode);
         const info = await infoRes.json();
+        if (code !== document.getElementById('detailCode').textContent.trim()) return;
         if (!info.error) cmpName = info.name;
       } catch {}
     }
+    if (code !== document.getElementById('detailCode').textContent.trim()) return;
     if (!data || data.length === 0) {
       wrap.innerHTML = '<div class="empty">暂无数据，请点击"更新数据"拉取</div>';
       return;
