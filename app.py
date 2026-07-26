@@ -3507,6 +3507,8 @@ INCOME_ROW_MAP = [
     ("销售费用", "selling_expense"),
     ("管理费用", "admin_expense"),
     ("财务费用", "finance_expense"),
+    ("利息费用", "finance_interest_expense"),
+    ("其中：利息收入", "finance_interest_income"),
     ("研发费用", "rd_expense"),
     ("利息收入", "interest_income"),
     ("公允价值变动收益", "fair_value_change"),
@@ -3532,6 +3534,8 @@ INCOME_ROW_MAP = [
 INCOME_COLUMNS = [c for _, c in INCOME_ROW_MAP]
 INCOME_SUPPLEMENT_COLUMNS = [
     "interest_income",
+    "finance_interest_expense",
+    "finance_interest_income",
     "credit_impairment_loss",
     "asset_impairment_loss",
     "asset_disposal_income",
@@ -3547,6 +3551,8 @@ EASTMONEY_INCOME_FIELD_MAP = {
     "SALE_EXPENSE": ("selling_expense", True),
     "MANAGE_EXPENSE": ("admin_expense", True),
     "FINANCE_EXPENSE": ("finance_expense", True),
+    "FE_INTEREST_EXPENSE": ("finance_interest_expense", True),
+    "FE_INTEREST_INCOME": ("finance_interest_income", True),
     "RESEARCH_EXPENSE": ("rd_expense", True),
     "INTEREST_INCOME": ("interest_income", True),
     "FAIRVALUE_CHANGE_INCOME": ("fair_value_change", True),
