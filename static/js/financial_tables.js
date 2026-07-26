@@ -1134,6 +1134,96 @@ function bsCompositionTotal(items) {
   return items.reduce((sum, item) => sum + item.value, 0);
 }
 
+function bsFillRemainder(items, total, name) {
+  if (!Number.isFinite(total) || total <= 0) return items;
+  const itemTotal = bsCompositionTotal(items);
+  const remainder = total - itemTotal;
+  if (remainder > Math.max(total * 0.005, 0.01)) {
+    return [...items, { name, value: remainder }];
+  }
+  return items;
+}
+
+function prepareChartModalBox() {
+  const dom = document.getElementById('chartModalBox');
+  if (window._chartModalInstances) {
+    window._chartModalInstances.forEach(chart => {
+      if (chart) chart.dispose();
+    });
+    window._chartModalInstances = null;
+  }
+  if (window._chartModalInstance) {
+    window._chartModalInstance.dispose();
+    window._chartModalInstance = null;
+  }
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) existing.dispose();
+  dom.innerHTML = '';
+  dom.classList.remove('bs-composition-box');
+  return dom;
+}
+
+function bsSafeTotal(row, preferredField, fallbackTotal) {
+  const value = Number(row[preferredField]);
+  if (Number.isFinite(value) && value > 0) return value;
+  return fallbackTotal;
+}
+
+function bsFormatAmount(value) {
+  if (!Number.isFinite(value)) return '-';
+  return Math.abs(value) >= 100 ? value.toFixed(2) + '亿' : value.toFixed(2) + '亿';
+}
+
+function bsFormatPercent(value, total) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return '-';
+  return (value / total * 100).toFixed(2) + '%';
+}
+
+function bsCompositionTableRows(items, groupTotal, baseTotal) {
+  if (!items.length) return '<tr><td colspan="4" class="bs-composition-empty">暂无明细数据</td></tr>';
+  return items.map(item => (
+    `<tr><td>${esc(item.name)}</td><td>${bsFormatAmount(item.value)}</td><td>${bsFormatPercent(item.value, groupTotal)}</td><td>${bsFormatPercent(item.value, baseTotal)}</td></tr>`
+  )).join('');
+}
+
+function renderBSCompositionSection(container, id, title, items, groupTotal, baseTotal, summaryLabel) {
+  const chartId = 'bsCompositionPie' + id;
+  container.insertAdjacentHTML('beforeend', `
+    <section class="bs-composition-section">
+      <div class="bs-composition-pie" id="${chartId}"></div>
+      <div class="bs-composition-table-wrap">
+        <h4>${esc(title)}</h4>
+        <table class="bs-composition-table">
+          <thead><tr><th>科目</th><th>金额</th><th>占本组</th><th>占总资产</th></tr></thead>
+          <tbody>${bsCompositionTableRows(items, groupTotal, baseTotal)}</tbody>
+          <tfoot><tr><td>${esc(summaryLabel)}</td><td>${bsFormatAmount(groupTotal)}</td><td>100%</td><td>${bsFormatPercent(groupTotal, baseTotal)}</td></tr></tfoot>
+        </table>
+      </div>
+    </section>
+  `);
+  const chartDom = document.getElementById(chartId);
+  const chart = echarts.init(chartDom);
+  chart.setOption({
+    tooltip: {
+      trigger: 'item',
+      formatter: function(p) {
+        return p.seriesName + '<br/>' + p.marker + ' ' + p.name + ': ' + bsFormatAmount(p.value) + ' (' + p.percent.toFixed(2) + '%)';
+      }
+    },
+    series: [{
+      name: title,
+      type: 'pie',
+      radius: ['0%', '72%'],
+      center: ['50%', '50%'],
+      minAngle: 4,
+      label: { show: false },
+      labelLine: { show: false },
+      data: items
+    }]
+  });
+  return chart;
+}
+
 function openBSComposition(key) {
   const dataMap = window._bsDataMap;
   if (!dataMap || !key || !dataMap[key]) return;
@@ -1141,66 +1231,36 @@ function openBSComposition(key) {
   const row = dataMap[key];
   const stockName = document.getElementById('detailName').textContent.trim();
   const label = bsPeriodLabel(key);
-  const assetItems = bsCompositionItems(row, _bsCompositionDefs.assets, _bsCompositionDefs.assetFallback);
-  const liabilityItems = bsCompositionItems(row, _bsCompositionDefs.liabilities, _bsCompositionDefs.liabilityFallback);
-  const assetTotal = bsCompositionTotal(assetItems);
-  const liabilityTotal = bsCompositionTotal(liabilityItems);
+  const rawAssetItems = bsCompositionItems(row, _bsCompositionDefs.assets, _bsCompositionDefs.assetFallback);
+  const rawLiabilityItems = bsCompositionItems(row, _bsCompositionDefs.liabilities, _bsCompositionDefs.liabilityFallback);
+  const assetTotal = bsSafeTotal(row, 'total_assets', bsCompositionTotal(rawAssetItems));
+  const liabilityTotal = bsSafeTotal(row, 'total_liabilities', bsCompositionTotal(rawLiabilityItems));
+  const assetItems = bsFillRemainder(rawAssetItems, assetTotal, '其他/未列示资产');
+  const liabilityItems = bsFillRemainder(rawLiabilityItems, liabilityTotal, '其他/未列示负债');
+  const equityValueRaw = Number(row.total_equity);
+  const equityValue = Number.isFinite(equityValueRaw) && equityValueRaw > 0
+    ? equityValueRaw
+    : Math.max(assetTotal - liabilityTotal, 0);
+  const structureItems = [
+    { name: '负债合计', value: liabilityTotal },
+    { name: '股东权益', value: equityValue },
+  ].filter(item => Number.isFinite(item.value) && item.value > 0);
 
-  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + label + ' 资产/负债构成';
+  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + label + ' 资产负债结构  财报单位：亿元';
   document.getElementById('chartModalOverlay').classList.add('active');
 
-  const dom = document.getElementById('chartModalBox');
-  const existing = echarts.getInstanceByDom(dom);
-  if (existing) existing.dispose();
+  const dom = prepareChartModalBox();
+  dom.classList.add('bs-composition-box');
+  dom.innerHTML = '<div class="bs-composition-report"></div>';
+  const report = dom.querySelector('.bs-composition-report');
 
-  const chart = echarts.init(dom);
-  const emptyGraphic = [];
-  if (!assetItems.length) {
-    emptyGraphic.push({ type: 'text', left: '25%', top: '52%', style: { text: '暂无资产明细', fill: '#999', fontSize: 14, textAlign: 'center' } });
-  }
-  if (!liabilityItems.length) {
-    emptyGraphic.push({ type: 'text', left: '75%', top: '52%', style: { text: '暂无负债明细', fill: '#999', fontSize: 14, textAlign: 'center' } });
-  }
+  const charts = [];
+  charts.push(renderBSCompositionSection(report, 'Structure', '总资产结构', structureItems, assetTotal, assetTotal, '资产总计'));
+  charts.push(renderBSCompositionSection(report, 'Assets', '资产构成', assetItems, assetTotal, assetTotal, '资产合计'));
+  charts.push(renderBSCompositionSection(report, 'Liabilities', '负债构成', liabilityItems, liabilityTotal, assetTotal, '负债合计'));
 
-  chart.setOption({
-    tooltip: {
-      trigger: 'item',
-      formatter: function(p) {
-        if (p.value == null) return '';
-        return p.seriesName + '<br/>' + p.marker + ' ' + p.name + ': ' + p.value.toFixed(2) + ' 亿元 (' + p.percent.toFixed(2) + '%)';
-      }
-    },
-    legend: { type: 'scroll', bottom: 0, left: 20, right: 20 },
-    title: [
-      { text: '资产构成', subtext: assetTotal ? '合计 ' + assetTotal.toFixed(2) + ' 亿元' : '暂无数据', left: '25%', top: 6, textAlign: 'center', textStyle: { fontSize: 14 }, subtextStyle: { fontSize: 11 } },
-      { text: '负债构成', subtext: liabilityTotal ? '合计 ' + liabilityTotal.toFixed(2) + ' 亿元' : '暂无数据', left: '75%', top: 6, textAlign: 'center', textStyle: { fontSize: 14 }, subtextStyle: { fontSize: 11 } },
-    ],
-    graphic: emptyGraphic,
-    series: [
-      {
-        name: '资产构成',
-        type: 'pie',
-        radius: ['36%', '62%'],
-        center: ['25%', '55%'],
-        avoidLabelOverlap: true,
-        minAngle: 4,
-        label: { formatter: '{b}\n{d}%', fontSize: 11 },
-        data: assetItems
-      },
-      {
-        name: '负债构成',
-        type: 'pie',
-        radius: ['36%', '62%'],
-        center: ['75%', '55%'],
-        avoidLabelOverlap: true,
-        minAngle: 4,
-        label: { formatter: '{b}\n{d}%', fontSize: 11 },
-        data: liabilityItems
-      }
-    ]
-  });
-
-  window._chartModalInstance = chart;
+  window._chartModalInstances = charts;
+  setTimeout(() => charts.forEach(chart => chart.resize()), 0);
 }
 
 function openBSChart(field, name) {
@@ -1266,10 +1326,7 @@ function openBSChart(field, name) {
   document.getElementById('chartModalTitle').textContent = title;
   document.getElementById('chartModalOverlay').classList.add('active');
 
-  const dom = document.getElementById('chartModalBox');
-  const existing = echarts.getInstanceByDom(dom);
-  if (existing) existing.dispose();
-
+  const dom = prepareChartModalBox();
   const chart = echarts.init(dom);
   const series = [];
 
@@ -1617,8 +1674,7 @@ function openFinanceChart(field, name, prefix) {
 
   document.getElementById('chartModalTitle').textContent = title;
   document.getElementById('chartModalOverlay').classList.add('active');
-  const dom = document.getElementById('chartModalBox');
-  const existing = echarts.getInstanceByDom(dom); if (existing) existing.dispose();
+  const dom = prepareChartModalBox();
   const chart = echarts.init(dom); const series = [];
   series.push({ name: stockName, type: 'bar', data: values, yAxisIndex: 0, itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] }, label: { show: true, position: 'top', fontSize: 11, formatter(p) { if (p.value == null) return ''; return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2); } } });
   if (cmpValues) series.push({ name: cmpName || cmpCode, type: 'bar', data: cmpValues, yAxisIndex: 0, itemStyle: { color: '#fa8c16', borderRadius: [4, 4, 0, 0] }, label: { show: true, position: 'top', fontSize: 11, formatter(p) { if (p.value == null) return ''; return Math.abs(p.value) >= 100 ? p.value.toFixed(0) : p.value.toFixed(2); } } });
@@ -1716,10 +1772,7 @@ function openIndicatorChart(field, name) {
   document.getElementById('chartModalTitle').textContent = title;
   document.getElementById('chartModalOverlay').classList.add('active');
 
-  const dom = document.getElementById('chartModalBox');
-  const existing = echarts.getInstanceByDom(dom);
-  if (existing) existing.dispose();
-
+  const dom = prepareChartModalBox();
   const chart = echarts.init(dom);
   const series = [];
 
@@ -1837,9 +1890,20 @@ function isQuarterlyChart(labels) {
 
 function closeIndicatorChart() {
   document.getElementById('chartModalOverlay').classList.remove('active');
+  if (window._chartModalInstances) {
+    window._chartModalInstances.forEach(chart => {
+      if (chart) chart.dispose();
+    });
+    window._chartModalInstances = null;
+  }
   if (window._chartModalInstance) {
     window._chartModalInstance.dispose();
     window._chartModalInstance = null;
+  }
+  const dom = document.getElementById('chartModalBox');
+  if (dom) {
+    dom.classList.remove('bs-composition-box');
+    dom.innerHTML = '';
   }
 }
 

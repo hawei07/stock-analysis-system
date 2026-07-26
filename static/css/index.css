@@ -194,11 +194,27 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 /* 图表弹窗 */
 .chart-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center}
 .chart-modal-overlay.active{display:flex}
-.chart-modal{background:#fff;border-radius:12px;width:980px;max-width:95vw;box-shadow:0 8px 40px rgba(0,0,0,.15);overflow:hidden}
+.chart-modal{background:#fff;border-radius:12px;width:1120px;max-width:96vw;max-height:92vh;box-shadow:0 8px 40px rgba(0,0,0,.15);overflow:hidden;display:flex;flex-direction:column}
 .chart-modal-header{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:flex-start}
 .chart-modal-header h3{font-size:14px;font-weight:600;line-height:1.5;white-space:normal;word-break:break-all}
-.chart-modal-body{padding:24px}
+.chart-modal-body{padding:24px;overflow:auto}
 .chart-modal-box{width:100%;height:460px}
+.chart-modal-box.bs-composition-box{height:auto;min-height:720px}
+.bs-composition-report{display:flex;flex-direction:column;gap:0}
+.bs-composition-section{display:grid;grid-template-columns:250px minmax(0,1fr);gap:28px;align-items:center;padding:18px 4px;border-bottom:1px solid #e8eef7}
+.bs-composition-section:first-child{padding-top:4px}
+.bs-composition-section:last-child{border-bottom:0}
+.bs-composition-pie{width:250px;height:190px}
+.bs-composition-table-wrap h4{margin:0 0 8px;font-size:18px;color:#005cff;font-weight:700}
+.bs-composition-table{width:100%;border-collapse:collapse;font-size:14px}
+.bs-composition-table th{padding:0 8px 7px;color:#667085;font-weight:500;text-align:right;border-bottom:1px solid #d8dee9}
+.bs-composition-table th:first-child{text-align:left}
+.bs-composition-table td{padding:7px 8px;text-align:right;border-bottom:1px dashed #d8dee9;white-space:nowrap}
+.bs-composition-table td:first-child{text-align:left;color:#005cff}
+.bs-composition-table td:nth-child(3){color:#005cff}
+.bs-composition-table td:nth-child(4){color:#00a6ff}
+.bs-composition-table tfoot td{font-weight:700;border-bottom:0;border-top:1px solid #d8dee9;padding-top:10px;color:#111827}
+.bs-composition-empty{text-align:center!important;color:#999!important}
 /* 资产负债表分组行 */
 .section-row td{padding:8px 16px !important;border-bottom:2px solid #4a6cf7 !important}
 #bsMainTable .sticky-col{min-width:auto;white-space:nowrap;padding-right:18px}
@@ -266,6 +282,11 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   #panel-valuation>div[style]{flex-direction:column}
   #valSidebar,#pbSidebar,#dySidebar{width:auto!important;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
   .chart-box,.chart-modal-box{height:300px}
+  .chart-modal-box.bs-composition-box{height:auto;min-height:0}
+  .bs-composition-section{grid-template-columns:1fr;gap:8px;padding:14px 0}
+  .bs-composition-pie{width:100%;height:180px}
+  .bs-composition-table{font-size:12px}
+  .bs-composition-table th,.bs-composition-table td{padding:6px 4px}
   .segment-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .segment-chart-grid{grid-template-columns:1fr}
   .segment-chart-grid .chart-container:last-child{grid-column:auto}
@@ -326,6 +347,14 @@ html[data-theme="dark"] .btn-outline:hover,
 html[data-theme="dark"] .chart-icon:hover{background:var(--primary-soft)!important}
 html[data-theme="dark"] .bs-composition-icon{color:var(--text-muted)!important}
 html[data-theme="dark"] .bs-composition-icon:hover{background:var(--primary-soft)!important;color:var(--primary)!important}
+html[data-theme="dark"] .bs-composition-section{border-color:var(--border)!important}
+html[data-theme="dark"] .bs-composition-table-wrap h4,
+html[data-theme="dark"] .bs-composition-table td:first-child,
+html[data-theme="dark"] .bs-composition-table td:nth-child(3){color:var(--primary)!important}
+html[data-theme="dark"] .bs-composition-table th,
+html[data-theme="dark"] .bs-composition-table td{border-color:var(--border)!important}
+html[data-theme="dark"] .bs-composition-table th{color:var(--text-subtle)!important}
+html[data-theme="dark"] .bs-composition-table tfoot td{color:var(--text)!important}
 html[data-theme="dark"] .pagination button{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .pagination .current,
 html[data-theme="dark"] .seg-switch button.active{background:var(--primary)!important;color:#fff!important;border-color:var(--primary)!important}
