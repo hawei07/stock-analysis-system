@@ -17,6 +17,7 @@
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">深色</button>
+    <button class="theme-toggle" id="amountPrivacyToggle" onclick="toggleAmountPrivacy()">隐藏金额</button>
     <button class="btn btn-outline" onclick="location.href='/'">返回首页</button>
     <button class="btn btn-primary" onclick="saveSnapshot()">记录今日净值</button>
     <button class="btn btn-outline" onclick="openFlowModal()">资金流水</button>
@@ -192,6 +193,7 @@
 let navChart = null;
 let allocationChart = null;
 let latestPortfolioData = {positions: [], summary: {}};
+let amountPrivacyMode = localStorage.getItem('portfolioAmountPrivacy') === 'hidden';
 
 window.onThemeChanged = function() {
   if (allocationChart) {
@@ -207,6 +209,7 @@ window.onThemeChanged = function() {
 };
 document.addEventListener('DOMContentLoaded', () => {
   updateThemeButton();
+  updateAmountPrivacyButton();
   checkCloudUpdateOnStartup();
   startCloudBackupStatusPolling();
   mountFlowPanel();
@@ -308,6 +311,29 @@ function money(v) {
   return Number(v).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
+function maskedMoney() {
+  return '******';
+}
+
+function privateMoney(v) {
+  return amountPrivacyMode ? maskedMoney() : money(v);
+}
+
+function updateAmountPrivacyButton() {
+  const btn = document.getElementById('amountPrivacyToggle');
+  if (btn) {
+    btn.textContent = amountPrivacyMode ? '显示金额' : '隐藏金额';
+    btn.classList.toggle('active', amountPrivacyMode);
+  }
+}
+
+function toggleAmountPrivacy() {
+  amountPrivacyMode = !amountPrivacyMode;
+  localStorage.setItem('portfolioAmountPrivacy', amountPrivacyMode ? 'hidden' : 'visible');
+  updateAmountPrivacyButton();
+  renderSummary(latestPortfolioData.summary || {});
+}
+
 function plain(v) {
   if (v == null || Number.isNaN(Number(v))) return '--';
   return Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 4});
@@ -335,9 +361,9 @@ function renderSummary(summary) {
   const cash = Number(summary.cash_amount || 0);
   const totalAsset = Number(summary.total_asset_value || (total + cash));
   const dividend = Number(summary.expected_dividend || 0);
-  document.getElementById('totalAssetValue').textContent = money(totalAsset);
-  document.getElementById('totalValue').textContent = money(total);
-  document.getElementById('cashAmount').textContent = money(cash);
+  document.getElementById('totalAssetValue').textContent = privateMoney(totalAsset);
+  document.getElementById('totalValue').textContent = privateMoney(total);
+  document.getElementById('cashAmount').textContent = privateMoney(cash);
   document.getElementById('cashPct').textContent = '占比 ' + (totalAsset > 0 ? (cash / totalAsset * 100).toFixed(2) + '%' : '--');
   const cashInput = document.getElementById('cashInput');
   if (cashInput) cashInput.value = cash ? cash.toFixed(2) : '';
