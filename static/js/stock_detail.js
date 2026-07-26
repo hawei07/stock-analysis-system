@@ -1,0 +1,724 @@
+function onPopState() {
+  const path = window.location.pathname;
+  const match = path.match(/^\/stock\/(\d+)$/);
+  if (match) {
+    showDetailView(match[1]);
+  } else {
+    showListView();
+    loadStocks();
+    loadStats();
+  }
+}
+
+function navigateTo(url) {
+  history.pushState(null, '', url);
+  const path = new URL(url, location.origin).pathname;
+  const match = path.match(/^\/stock\/(\d+)$/);
+  if (match) {
+    showDetailView(match[1]);
+  } else {
+    showListView();
+    loadStocks();
+    loadStats();
+  }
+}
+
+function goList() {
+  navigateTo('/');
+}
+
+function showDetailView(code) {
+  document.getElementById('view-list').classList.remove('active');
+  document.getElementById('view-detail').classList.add('active');
+  document.getElementById('btnBack').style.display = 'inline-block';
+  loadDetail(code);
+}
+
+function showListView() {
+  document.getElementById('view-detail').classList.remove('active');
+  document.getElementById('view-list').classList.add('active');
+  document.getElementById('btnBack').style.display = 'none';
+}
+
+// ==================== 详情页 ====================
+
+function getCurrentCode() {
+  const el = document.getElementById('detailCode');
+  return el ? el.textContent.trim() : '';
+}
+
+async function loadDetail(code) {
+  divYearsPopulated = false;
+  try {
+    // 加载股票基本信息
+    const stockRes = await fetch('/api/stock/' + code);
+    const stock = await stockRes.json();
+    if (stock.error) { showToast(stock.error, 'error'); goList(); return; }
+    document.getElementById('detailCode').textContent = stock.code;
+    document.getElementById('detailName').textContent = stock.name;
+    populateStockSwitcher(stock.code);
+    const curYear = new Date().getFullYear();
+    let startYear = curYear - 9;
+    if (stock.list_date) { const listYear = parseInt(stock.list_date.substring(0,4)); if (listYear > startYear) startYear = listYear; }
+    document.getElementById('finFromYear').value = startYear;
+    document.getElementById('finToYear').value = curYear;
+    document.getElementById('bsFromYear').value = startYear;
+    document.getElementById('bsToYear').value = curYear;
+    document.getElementById('segFromYear').value = startYear;
+    document.getElementById('segToYear').value = curYear;
+    resetSegmentsPanel();
+    document.getElementById('detailMarket').textContent = stock.market;
+    document.getElementById('detailMarket').className = 'market-tag market-' + stock.market;
+    document.getElementById('detailIndustry').textContent = stock.industry ? '行业: ' + stock.industry : '';
+    document.getElementById('detailListDate').textContent = stock.list_date ? '上市: ' + stock.list_date : '';
+    document.getElementById('detailStatus').innerHTML = '<span class="status-tag status-' + stock.status + '">' + stock.status + '</span>';
+
+    // 填充实时指标卡片
+    const rt = stock.realtime || {};
+    document.getElementById('rtPrice').textContent = rt.price != null ? rt.price.toFixed(2) + ' 元' : '--';
+    const peEl = document.getElementById('rtPE');
+    peEl.textContent = rt.pe_ttm != null ? rt.pe_ttm.toFixed(2) : '--';
+    peEl.className = 'value';
+    if (rt.pe_ttm != null && rt.pe_ttm < 0) peEl.classList.add('neg');
+
+    const divYield = parseFloat(stock.dividend_yield);
+    const dyEl = document.getElementById('rtDivYield');
+    dyEl.textContent = !isNaN(divYield) ? divYield.toFixed(2) + '%' : '--';
+    dyEl.className = 'value';
+
+    const mcEl = document.getElementById('rtMarketCap');
+    mcEl.textContent = rt.market_cap != null ? rt.market_cap.toFixed(2) + ' 亿' : '--';
+    mcEl.className = 'value';
+    loadPortfolioPositionCard(stock.code, rt.price);
+
+    // 加载K线图
+    loadKline();
+    // 加载分红数据并渲染图表
+    loadDividends(code);
+    if (currentTab === 'segments') loadSegments();
+    // 如果当前在便利贴标签，切换股票后自动刷新
+    if (document.getElementById('panel-sticky')?.style.display === 'block') loadStickyNotes();
+  } catch (e) {
+    showToast('加载详情失败', 'error');
+  }
+}
+
+async function loadPortfolioPositionCard(code, price) {
+  const sharesEl = document.getElementById('portfolioShares');
+  const valueEl = document.getElementById('portfolioValue');
+  if (!sharesEl || !valueEl) return;
+  sharesEl.textContent = '--';
+  valueEl.textContent = '读取中...';
+  try {
+    const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code));
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '读取持仓失败');
+    if (!data.held) {
+      sharesEl.textContent = '未持仓';
+      valueEl.textContent = '可在“我的持仓”添加';
+      return;
+    }
+    const shares = Number(data.shares || 0);
+    const marketValue = price != null ? shares * Number(price) : null;
+    const dividendPerShare = data.dividend_per_share != null ? Number(data.dividend_per_share) : null;
+    const expectedDividend = dividendPerShare != null ? shares * dividendPerShare : null;
+    sharesEl.textContent = shares.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 股';
+    const parts = [];
+    if (marketValue != null) parts.push('市值 ' + marketValue.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
+    if (expectedDividend != null) parts.push('预计分红 ' + expectedDividend.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
+    valueEl.textContent = parts.length ? parts.join(' · ') : '已加入持仓';
+  } catch (e) {
+    sharesEl.textContent = '--';
+    valueEl.textContent = e.message || '读取失败';
+  }
+}
+
+let divYearsPopulated = false;
+
+async function loadDividends(code) {
+  if (!code) return;
+  try {
+    const from = document.getElementById('divFromYear').value;
+    const to = document.getElementById('divToYear').value;
+    let url = '/api/stock/' + code + '/dividends';
+    const params = [];
+    if (from) params.push('start_year=' + from);
+    if (to) params.push('end_year=' + to);
+    if (params.length) url += '?' + params.join('&');
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    // 首次加载时用全部年份数据填充下拉框
+    if (!divYearsPopulated && !from && !to) {
+      populateDivYearSelects(data);
+    }
+    
+    renderDividendsChart(data);
+  } catch (e) {
+    showToast('加载分红数据失败', 'error');
+  }
+}
+
+function populateDivYearSelects(data) {
+  const years = data.map(d => d.fiscal_year).sort((a, b) => a - b);
+  if (years.length === 0) return;
+  const fromSelect = document.getElementById('divFromYear');
+  const toSelect = document.getElementById('divToYear');
+  fromSelect.innerHTML = '<option value="">全部</option>';
+  toSelect.innerHTML = '<option value="">全部</option>';
+  years.forEach(y => {
+    fromSelect.innerHTML += `<option value="${y}">${y}</option>`;
+    toSelect.innerHTML += `<option value="${y}">${y}</option>`;
+  });
+  fromSelect.value = years[0];
+  toSelect.value = years[years.length - 1];
+  divYearsPopulated = true;
+}
+
+function onDivYearChange() {
+  loadDividends(getCurrentCode());
+}
+
+function resetDivYears() {
+  const fromSelect = document.getElementById('divFromYear');
+  const toSelect = document.getElementById('divToYear');
+  const fromOpts = fromSelect.options;
+  const toOpts = toSelect.options;
+  if (fromOpts.length > 1) fromSelect.value = fromOpts[1].value;
+  if (toOpts.length > 1) toSelect.value = toOpts[toOpts.length - 1].value;
+  loadDividends(getCurrentCode());
+}
+
+function renderDividendsChart(data) {
+  const dom = document.getElementById('chartDividends');
+  if (!dom) return;
+  if (chartInstance) chartInstance.dispose();
+
+  const years = data.map(d => d.fiscal_year + '');
+  const netProfits = data.map(d => d.net_profit);
+  const dividends = data.map(d => d.dividend_amount);
+  const payoutRatios = data.map(d => d.net_profit > 0 ? +(d.dividend_amount / d.net_profit * 100).toFixed(1) : null);
+  const showLabel = data.length <= 15;
+
+  chartInstance = echarts.init(dom);
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      formatter: function(params) {
+        const year = params[0].axisValue;
+        let html = '<strong>' + year + '</strong><br/>';
+        params.forEach(p => {
+          if (p.seriesName === '分红比例') {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value !== null ? p.value + '%' : '-') + '<br/>';
+          } else {
+            html += p.marker + ' ' + p.seriesName + ': ' + (p.value !== null ? p.value.toFixed(2) + ' 亿元' : '-') + '<br/>';
+          }
+        });
+        return html;
+      }
+    },
+    legend: {
+      data: ['净利润', '分红金额', '分红比例'],
+      top: 4
+    },
+    dataZoom: [
+      { type: 'slider', start: data.length > 15 ? Math.max(0, 100 - (15 / data.length * 100)) : 0, end: 100, height: 20, bottom: 10 },
+      { type: 'inside' }
+    ],
+    grid: {
+      left: 60,
+      right: 80,
+      top: 50,
+      bottom: data.length > 15 ? 50 : 40
+    },
+    xAxis: {
+      type: 'category',
+      data: years,
+      name: '财年',
+      axisLabel: { fontSize: 12 }
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '金额（亿元）',
+        axisLabel: { fontSize: 12 }
+      },
+      {
+        type: 'value',
+        name: '分红比例（%）',
+        axisLabel: { fontSize: 12 },
+        splitLine: { show: false }
+      }
+    ],
+    series: [
+      {
+        name: '净利润',
+        type: 'bar',
+        yAxisIndex: 0,
+        data: netProfits,
+        barMaxWidth: 40,
+        itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] },
+        label: {
+          show: showLabel,
+          position: 'top',
+          fontSize: 11,
+          formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
+        }
+      },
+      {
+        name: '分红金额',
+        type: 'bar',
+        yAxisIndex: 0,
+        data: dividends,
+        barMaxWidth: 40,
+        itemStyle: { color: '#52c41a', borderRadius: [4, 4, 0, 0] },
+        label: {
+          show: showLabel,
+          position: 'top',
+          fontSize: 11,
+          formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
+        }
+      },
+      {
+        name: '分红比例',
+        type: 'line',
+        yAxisIndex: 1,
+        data: payoutRatios,
+        lineStyle: { color: '#fa8c16', width: 2.5 },
+        itemStyle: { color: '#fa8c16' },
+        symbol: 'circle',
+        symbolSize: 6,
+        label: {
+          show: showLabel,
+          position: 'top',
+          fontSize: 10,
+          color: '#fa8c16',
+          formatter: p => p.value !== null ? p.value + '%' : ''
+        }
+      }
+    ]
+  };
+  chartInstance.setOption(option);
+  window.addEventListener('resize', () => {
+    chartInstance && chartInstance.resize();
+    valInstance && valInstance.resize();
+    pbInstance && pbInstance.resize();
+  });
+}
+
+// ==================== K线图 ====================
+
+let klineInstance = null;
+
+function calcEMA(values, period) {
+  const k = 2 / (period + 1);
+  const ema = [];
+  values.forEach((value, index) => {
+    if (index === 0) {
+      ema.push(value);
+    } else {
+      ema.push(value * k + ema[index - 1] * (1 - k));
+    }
+  });
+  return ema;
+}
+
+function calcMACD(closes) {
+  const ema12 = calcEMA(closes, 12);
+  const ema26 = calcEMA(closes, 26);
+  const dif = closes.map((_, i) => ema12[i] - ema26[i]);
+  const dea = calcEMA(dif, 9);
+  const macd = dif.map((value, i) => 2 * (value - dea[i]));
+  return { dif, dea, macd };
+}
+
+function formatTurnover(value) {
+  if (!Number.isFinite(value)) return '-';
+  if (Math.abs(value) >= 100000000) return `${(value / 100000000).toFixed(2)} 亿`;
+  if (Math.abs(value) >= 10000) return `${(value / 10000).toFixed(2)} 万`;
+  return value.toFixed(0);
+}
+
+function currentKlinePeriod() {
+  return document.querySelector('#chartKlinePeriod button.active')?.dataset.period || 'day';
+}
+
+function setKlinePeriod(period) {
+  document.querySelectorAll('#chartKlinePeriod button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+  loadKline();
+}
+
+async function loadKline() {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const days = document.getElementById('chartPeriod').value;
+  const period = currentKlinePeriod();
+  const periodTextMap = { day: '日K', week: '周K', month: '月K', quarter: '季K', year: '年K' };
+  const dom = document.getElementById('chartKline');
+  const statusEl = document.getElementById('chartStatus');
+  statusEl.textContent = '加载中...';
+
+  try {
+    const res = await fetch(`/api/stock/${code}/kline?days=${days}&period=${period}`);
+    const data = await res.json();
+    if (data.error) { statusEl.textContent = data.error; return; }
+    if (!data || data.length === 0) { statusEl.textContent = '无数据'; return; }
+
+    const dates = data.map(d => d.date);
+    const ohlc = data.map(d => [d.open, d.close, d.low, d.high]);
+    const volumes = data.map(d => d.volume);
+    const amounts = data.map(d => d.amount || (d.volume * d.close * 100));
+    const closes = data.map(d => d.close);
+    const macdData = calcMACD(closes);
+    const highest = data.reduce((best, item, index) => item.high > best.value ? { value: item.high, index } : best, { value: -Infinity, index: 0 });
+    const lowest = data.reduce((best, item, index) => item.low < best.value ? { value: item.low, index } : best, { value: Infinity, index: 0 });
+
+    if (klineInstance) klineInstance.dispose();
+    klineInstance = echarts.init(dom);
+
+    klineInstance.setOption({
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' },
+        formatter: function(params) {
+          const d = data[params[0].dataIndex];
+          return `<strong>${d.date} ${periodTextMap[period]}</strong><br/>
+            开盘: ${d.open.toFixed(2)}<br/>
+            收盘: ${d.close.toFixed(2)}<br/>
+            最高: ${d.high.toFixed(2)}<br/>
+            最低: ${d.low.toFixed(2)}<br/>
+            成交量: ${(d.volume / 10000).toFixed(0)} 万手<br/>
+            成交额: ${formatTurnover(d.amount || (d.volume * d.close * 100))}<br/>
+            DIF: ${macdData.dif[params[0].dataIndex].toFixed(3)}<br/>
+            DEA: ${macdData.dea[params[0].dataIndex].toFixed(3)}<br/>
+            MACD: ${macdData.macd[params[0].dataIndex].toFixed(3)}`;
+        }
+      },
+      grid: [
+        { left: '8%', right: '8%', top: '5%', height: '52%' },
+        { left: '8%', right: '8%', top: '64%', height: '14%' },
+        { left: '8%', right: '8%', top: '84%', height: '11%' }
+      ],
+      xAxis: [
+        { type: 'category', data: dates, gridIndex: 0, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 1, axisLabel: { show: false } },
+        { type: 'category', data: dates, gridIndex: 2, axisLabel: { formatter: v => v.slice(5) } }
+      ],
+      yAxis: [
+        { type: 'value', gridIndex: 0, scale: true, splitArea: { show: true } },
+        { type: 'value', gridIndex: 1, axisLabel: { formatter: v => (v / 10000).toFixed(0) + '万' } },
+        {
+          type: 'value',
+          gridIndex: 1,
+          position: 'right',
+          splitLine: { show: false },
+          axisLabel: { formatter: v => formatTurnover(v).replace(' ', '') }
+        },
+        {
+          type: 'value',
+          gridIndex: 2,
+          scale: true,
+          splitLine: { show: true },
+          axisLabel: { formatter: v => v.toFixed(2) }
+        }
+      ],
+      series: [
+        {
+          name: 'K线',
+          type: 'candlestick',
+          data: ohlc,
+          xAxisIndex: 0, yAxisIndex: 0,
+          itemStyle: { color: '#cf1322', color0: '#389e0d', borderColor: '#cf1322', borderColor0: '#389e0d' },
+          markPoint: {
+            symbol: 'circle',
+            symbolSize: 1,
+            label: { color: chartTextColor(), fontSize: 12, fontWeight: 600, formatter: p => p.value },
+            data: [
+              {
+                name: '最高价',
+                coord: [dates[highest.index], highest.value],
+                value: highest.value.toFixed(2),
+                label: { position: 'top' },
+                itemStyle: { color: 'transparent' }
+              },
+              {
+                name: '最低价',
+                coord: [dates[lowest.index], lowest.value],
+                value: lowest.value.toFixed(2),
+                label: { position: 'bottom' },
+                itemStyle: { color: 'transparent' }
+              }
+            ]
+          },
+        },
+        {
+          name: '成交量',
+          type: 'bar',
+          data: volumes,
+          xAxisIndex: 1, yAxisIndex: 1,
+          itemStyle: {
+            color: function(p) {
+              const d = data[p.dataIndex];
+              return d.close >= d.open ? '#cf1322' : '#389e0d';
+            }
+          }
+        },
+        {
+          name: '成交额',
+          type: 'line',
+          data: amounts,
+          xAxisIndex: 1, yAxisIndex: 2,
+          symbol: 'none',
+          smooth: true,
+          lineStyle: { color: '#5470c6', width: 1.8 }
+        },
+        {
+          name: 'MACD',
+          type: 'bar',
+          data: macdData.macd,
+          xAxisIndex: 2, yAxisIndex: 3,
+          barMaxWidth: 8,
+          itemStyle: {
+            color: function(p) {
+              return p.value >= 0 ? '#cf1322' : '#389e0d';
+            }
+          }
+        },
+        {
+          name: 'DIF',
+          type: 'line',
+          data: macdData.dif,
+          xAxisIndex: 2, yAxisIndex: 3,
+          symbol: 'none',
+          lineStyle: { color: '#fa8c16', width: 1.4 }
+        },
+        {
+          name: 'DEA',
+          type: 'line',
+          data: macdData.dea,
+          xAxisIndex: 2, yAxisIndex: 3,
+          symbol: 'none',
+          lineStyle: { color: '#4a6cf7', width: 1.4 }
+        }
+      ]
+    });
+    statusEl.textContent = `${periodTextMap[period]} · ${data.length} 条数据`;
+    statusEl.style.color = '#52c41a';
+  } catch (e) {
+    statusEl.textContent = '加载失败';
+    statusEl.style.color = '#ff4d4f';
+  }
+}
+
+// ==================== 估值分析 ====================
+
+let valInstance = null;
+let pbInstance = null;
+let dyInstance = null;
+
+async function loadValuation(days) {
+  const code = document.getElementById('detailCode').textContent.trim();
+  if (!code) return;
+  const dom = document.getElementById('chartValuation');
+  const sidebar = document.getElementById('valSidebar');
+  const statusEl = document.getElementById('valStatus');
+  statusEl.textContent = '加载中...';
+
+  // Highlight active button
+  document.querySelectorAll('#panel-valuation .btn-sm').forEach(b => {
+    b.style.background = b.onclick && b.onclick.toString().includes(days) ? '#333' : '#f0f0f0';
+    b.style.color = b.onclick && b.onclick.toString().includes(days) ? '#fff' : '#333';
+  });
+
+  try {
+    const res = await fetch(`/api/stock/${code}/valuation`);
+    const data = await res.json();
+    if (data.error) { statusEl.textContent = data.error; return; }
+
+    // Filter by days
+    const cutoff = days > 3650 ? '2000-01-01' : new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+    const peFiltered = data.pe_data.filter(p => p.date >= cutoff);
+    const priceFiltered = data.price_data.filter(p => p.date >= cutoff);
+
+    // Build chart - use price dates as unified x-axis, align PE via date map
+    const peMap = {}; peFiltered.forEach(p => peMap[p.date] = p.pe);
+    const dates = priceFiltered.map(p => p.date);
+    const peValues = dates.map(d => peMap[d] != null ? peMap[d] : null);
+    const priceValues = priceFiltered.map(p => p.close);
+    const pMin = priceValues.length ? Math.min(...priceValues) : null;
+    const pMax = priceValues.length ? Math.max(...priceValues) : null;
+
+    // Recalculate percentiles & stats from filtered PE data
+    const filteredPeVals = peValues.filter(v => v != null).sort((a, b) => a - b);
+    const n = filteredPeVals.length;
+    const fp80 = n > 0 ? filteredPeVals[Math.floor(n * 0.8)] : null;
+    const fp50 = n > 0 ? filteredPeVals[Math.floor(n * 0.5)] : null;
+    const fp20 = n > 0 ? filteredPeVals[Math.floor(n * 0.2)] : null;
+    const fmax = n > 0 ? filteredPeVals[n - 1] : null;
+    const fmin = n > 0 ? filteredPeVals[0] : null;
+    const favg = n > 0 ? +(filteredPeVals.reduce((a, b) => a + b, 0) / n).toFixed(2) : null;
+    // Current PE and its percentile (优先使用腾讯实时 PE-TTM)
+    const currentPE = data.realtime_pe || data.current_pe;
+    const fpct = currentPE && n > 0 ? +(filteredPeVals.filter(v => v <= currentPE).length / n * 100).toFixed(2) : null;
+
+    // Percentile lines
+    const p80Line = dates.map(() => fp80);
+    const p50Line = dates.map(() => fp50);
+    const p20Line = dates.map(() => fp20);
+
+    if (valInstance) valInstance.dispose();
+    valInstance = echarts.init(dom);
+    valInstance.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['PE-TTM', '80%分位', '50%分位', '20%分位', '股价(前复权)'], top: 4 },
+      grid: { left: 60, right: 80, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: dates, axisLabel: { formatter: v => v.slice(0, 7) } },
+      yAxis: [
+        { type: 'value', name: 'PE', min: fmin ? +(fmin * 0.99).toFixed(2) : 0, max: fmax ? +(fmax * 1.01).toFixed(2) : undefined, splitNumber: 5 },
+        { type: 'value', name: '股价(元)', splitLine: { show: false }, min: pMin ? +(pMin * 0.99).toFixed(2) : undefined, max: pMax ? +(pMax * 1.01).toFixed(2) : undefined, splitNumber: 5 }
+      ],
+      series: [
+        { name: 'PE-TTM', type: 'line', data: peValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', markPoint: { data: [{ type: 'max', name: '最高', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#4a6cf7' }, label: { formatter: '{c}' } }, { type: 'min', name: '最低', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#389e0d' }, label: { formatter: '{c}' } }] } },
+        { name: '80%分位', type: 'line', data: p80Line, yAxisIndex: 0, lineStyle: { color: '#cf1322', type: 'dashed', width: 1 }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
+        { name: '50%分位', type: 'line', data: p50Line, yAxisIndex: 0, lineStyle: { color: '#666', type: 'dashed', width: 1 }, itemStyle: { color: '#666' }, symbol: 'none' },
+        { name: '20%分位', type: 'line', data: p20Line, yAxisIndex: 0, lineStyle: { color: '#389e0d', type: 'dashed', width: 1 }, itemStyle: { color: '#389e0d' }, symbol: 'none' },
+        { name: '股价(前复权)', type: 'line', data: priceValues, yAxisIndex: 1, lineStyle: { color: '#fa8c16', width: 1.5 }, itemStyle: { color: '#fa8c16' }, symbol: 'none' },
+      ]
+    });
+
+    // Sidebar
+    sidebar.innerHTML = `
+      <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">PE-TTM</div>
+      <div style="margin-bottom:4px">当前值: <b style="color:#4a6cf7">${currentPE || '-'}</b></div>
+      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${fpct != null ? fpct + '%' : '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">80%: <b>${fp80 || '-'}</b></div>
+      <div style="color:#666;margin-bottom:2px">50%: <b>${fp50 || '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:8px">20%: <b>${fp20 || '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">最大: <b>${fmax || '-'}</b></div>
+      <div style="color:#333;margin-bottom:2px">平均: <b>${favg || '-'}</b></div>
+      <div style="color:#389e0d">最小: <b>${fmin || '-'}</b></div>`;
+
+    // ===== PB 估值（扣商誉）=====
+    const pbFiltered = (data.pb_data || []).filter(p => p.date >= cutoff);
+    const pbMap = {}; pbFiltered.forEach(p => pbMap[p.date] = p.pb);
+    const pbValues = dates.map(d => pbMap[d] != null ? pbMap[d] : null);
+    const filteredPbVals = pbValues.filter(v => v != null).sort((a, b) => a - b);
+    const pbn = filteredPbVals.length;
+    const bp80 = pbn > 0 ? filteredPbVals[Math.floor(pbn * 0.8)] : null;
+    const bp50 = pbn > 0 ? filteredPbVals[Math.floor(pbn * 0.5)] : null;
+    const bp20 = pbn > 0 ? filteredPbVals[Math.floor(pbn * 0.2)] : null;
+    const bmax = pbn > 0 ? filteredPbVals[pbn - 1] : null;
+    const bmin = pbn > 0 ? filteredPbVals[0] : null;
+    const bavg = pbn > 0 ? +(filteredPbVals.reduce((a, b) => a + b, 0) / pbn).toFixed(2) : null;
+    // 优先使用计算 PB，实时 PB 仅作参考（腾讯行情 PB 可能与扣商誉后的计算值偏差较大）
+    const currentPB = data.current_pb;
+    const realtimePB = data.realtime_pb;
+    const bpct = currentPB && pbn > 0 ? +(filteredPbVals.filter(v => v <= currentPB).length / pbn * 100).toFixed(2) : null;
+
+    // PB Y轴 padding: fmin<1 时扩到 5%，PE 的 1% 对 PB 太紧
+    const pbPad = (bmin != null && bmin < 1) ? 0.05 : 0.01;
+    const pb80Line = dates.map(() => bp80);
+    const pb50Line = dates.map(() => bp50);
+    const pb20Line = dates.map(() => bp20);
+
+    if (pbInstance) pbInstance.dispose();
+    pbInstance = echarts.init(document.getElementById('chartPb'));
+    pbInstance.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['PB(扣商誉)', '80%分位', '50%分位', '20%分位', '股价(前复权)'], top: 4 },
+      grid: { left: 60, right: 80, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: dates, axisLabel: { formatter: v => v.slice(0, 7) }, boundaryGap: false },
+      yAxis: [
+        { type: 'value', name: 'PB', min: bmin ? +(bmin * (1 - pbPad)).toFixed(2) : 0, max: bmax ? +(bmax * (1 + pbPad)).toFixed(2) : undefined, splitNumber: 5 },
+        { type: 'value', name: '股价(元)', splitLine: { show: false }, min: pMin ? +(pMin * 0.99).toFixed(2) : undefined, max: pMax ? +(pMax * 1.01).toFixed(2) : undefined, splitNumber: 5 }
+      ],
+      series: [
+        { name: 'PB(扣商誉)', type: 'line', data: pbValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', connectNulls: false, markPoint: { data: [{ type: 'max', name: '最高', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#4a6cf7' }, label: { formatter: '{c}' } }, { type: 'min', name: '最低', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#389e0d' }, label: { formatter: '{c}' } }] } },
+        { name: '80%分位', type: 'line', data: pb80Line, yAxisIndex: 0, lineStyle: { color: '#cf1322', type: 'dashed', width: 1 }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
+        { name: '50%分位', type: 'line', data: pb50Line, yAxisIndex: 0, lineStyle: { color: '#666', type: 'dashed', width: 1 }, itemStyle: { color: '#666' }, symbol: 'none' },
+        { name: '20%分位', type: 'line', data: pb20Line, yAxisIndex: 0, lineStyle: { color: '#389e0d', type: 'dashed', width: 1 }, itemStyle: { color: '#389e0d' }, symbol: 'none' },
+        { name: '股价(前复权)', type: 'line', data: priceValues, yAxisIndex: 1, lineStyle: { color: '#fa8c16', width: 1.5 }, itemStyle: { color: '#fa8c16' }, symbol: 'none' },
+      ]
+    });
+
+    // PB 侧边栏 — 显示计算 PB（主值）和实时 PB（参考）
+    const realtimePBText = (realtimePB != null && realtimePB !== currentPB) 
+      ? `<div style="font-size:11px;color:#999;margin-top:2px">实时 PB: <b style="color:#999">${realtimePB.toFixed(2)}</b>（腾讯行情）</div>` 
+      : '';
+    document.getElementById('pbSidebar').innerHTML = `
+      <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">PB(扣商誉)</div>
+      <div style="margin-bottom:4px">计算 PB: <b style="color:#4a6cf7">${currentPB ? currentPB.toFixed(2) : '-'}</b></div>
+      ${realtimePBText}
+      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${bpct != null ? bpct + '%' : '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">80%: <b>${bp80 || '-'}</b></div>
+      <div style="color:#666;margin-bottom:2px">50%: <b>${bp50 || '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:8px">20%: <b>${bp20 || '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:2px">最大: <b>${bmax || '-'}</b></div>
+      <div style="color:#333;margin-bottom:2px">平均: <b>${bavg || '-'}</b></div>
+      <div style="color:#389e0d">最小: <b>${bmin || '-'}</b></div>`;
+
+    // ===== 股息率估值 =====
+    const dyFiltered = (data.dividend_yield_data || []).filter(p => p.date >= cutoff);
+    const dyMap = {}; dyFiltered.forEach(p => dyMap[p.date] = p.dividend_yield);
+    const dyValues = dates.map(d => dyMap[d] != null ? dyMap[d] : null);
+    const filteredDyVals = dyValues.filter(v => v != null).sort((a, b) => a - b);
+    const dyn = filteredDyVals.length;
+    const dy80 = dyn > 0 ? filteredDyVals[Math.floor(dyn * 0.8)] : null;
+    const dy50 = dyn > 0 ? filteredDyVals[Math.floor(dyn * 0.5)] : null;
+    const dy20 = dyn > 0 ? filteredDyVals[Math.floor(dyn * 0.2)] : null;
+    const dymax = dyn > 0 ? filteredDyVals[dyn - 1] : null;
+    const dymin = dyn > 0 ? filteredDyVals[0] : null;
+    const dyavg = dyn > 0 ? +(filteredDyVals.reduce((a, b) => a + b, 0) / dyn).toFixed(2) : null;
+    const currentDY = data.current_dividend_yield || (dyFiltered.length ? dyFiltered[dyFiltered.length - 1].dividend_yield : null);
+    const dypct = currentDY && dyn > 0 ? +(filteredDyVals.filter(v => v <= currentDY).length / dyn * 100).toFixed(2) : null;
+    const dy80Line = dates.map(() => dy80);
+    const dy50Line = dates.map(() => dy50);
+    const dy20Line = dates.map(() => dy20);
+    const dyPad = (dymin != null && dymin < 1) ? 0.08 : 0.04;
+
+    if (dyInstance) dyInstance.dispose();
+    dyInstance = echarts.init(document.getElementById('chartDividendYield'));
+    dyInstance.setOption({
+      tooltip: {
+        trigger: 'axis',
+        valueFormatter: v => v == null ? '-' : Number(v).toFixed(2) + '%'
+      },
+      legend: { data: ['股息率', '80%分位', '50%分位', '20%分位', '股价(前复权)'], top: 4 },
+      grid: { left: 60, right: 80, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: dates, axisLabel: { formatter: v => v.slice(0, 7) }, boundaryGap: false },
+      yAxis: [
+        { type: 'value', name: '股息率(%)', min: dymin ? Math.max(0, +(dymin * (1 - dyPad)).toFixed(2)) : 0, max: dymax ? +(dymax * (1 + dyPad)).toFixed(2) : undefined, splitNumber: 5, axisLabel: { formatter: v => v + '%' } },
+        { type: 'value', name: '股价(元)', splitLine: { show: false }, min: pMin ? +(pMin * 0.99).toFixed(2) : undefined, max: pMax ? +(pMax * 1.01).toFixed(2) : undefined, splitNumber: 5 }
+      ],
+      series: [
+        { name: '股息率', type: 'line', data: dyValues, yAxisIndex: 0, lineStyle: { color: '#4a6cf7', width: 2 }, itemStyle: { color: '#4a6cf7' }, symbol: 'none', connectNulls: false, markPoint: { data: [{ type: 'max', name: '最高', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#52c41a' }, label: { formatter: p => Number(p.value).toFixed(2) + '%' } }, { type: 'min', name: '最低', symbol: 'pin', symbolSize: 40, itemStyle: { color: '#ff4d4f' }, label: { formatter: p => Number(p.value).toFixed(2) + '%' } }] } },
+        { name: '80%分位', type: 'line', data: dy80Line, yAxisIndex: 0, lineStyle: { color: '#389e0d', type: 'dashed', width: 1 }, itemStyle: { color: '#389e0d' }, symbol: 'none' },
+        { name: '50%分位', type: 'line', data: dy50Line, yAxisIndex: 0, lineStyle: { color: '#666', type: 'dashed', width: 1 }, itemStyle: { color: '#666' }, symbol: 'none' },
+        { name: '20%分位', type: 'line', data: dy20Line, yAxisIndex: 0, lineStyle: { color: '#cf1322', type: 'dashed', width: 1 }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
+        { name: '股价(前复权)', type: 'line', data: priceValues, yAxisIndex: 1, lineStyle: { color: '#fa8c16', width: 1.5 }, itemStyle: { color: '#fa8c16' }, symbol: 'none' },
+      ]
+    });
+
+    document.getElementById('dySidebar').innerHTML = `
+      <div style="color:#4a6cf7;font-weight:700;margin-bottom:8px">股息率</div>
+      <div style="margin-bottom:4px">当前值: <b style="color:#4a6cf7">${currentDY != null ? currentDY.toFixed(2) + '%' : '-'}</b></div>
+      <div style="margin-bottom:8px">分位点: <b style="color:#4a6cf7">${dypct != null ? dypct + '%' : '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:2px">80%: <b>${dy80 != null ? dy80.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#666;margin-bottom:2px">50%: <b>${dy50 != null ? dy50.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#cf1322;margin-bottom:8px">20%: <b>${dy20 != null ? dy20.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#389e0d;margin-bottom:2px">最大: <b>${dymax != null ? dymax.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#333;margin-bottom:2px">平均: <b>${dyavg != null ? dyavg.toFixed(2) + '%' : '-'}</b></div>
+      <div style="color:#cf1322">最小: <b>${dymin != null ? dymin.toFixed(2) + '%' : '-'}</b></div>`;
+
+    statusEl.textContent = `${peFiltered.length} 个数据点`;
+    statusEl.style.color = '#52c41a';
+  } catch (e) {
+    statusEl.textContent = '加载失败';
+    statusEl.style.color = '#ff4d4f';
+  }
+}
+
+// ==================== 列表页 ====================
