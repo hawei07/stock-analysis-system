@@ -1852,10 +1852,10 @@ async function openIncomeSankey(key) {
     addLink(node, revenueNode, segment.value, red);
   }
 
-  const costNode = addNode('营业成本', cost, 'cost_of_revenue', green, 2);
   const grossNode = addNode('毛利', gross, incomeGrossValue, red, 2);
-  addLink(revenueNode, costNode, cost, green);
+  const costNode = addNode('营业成本', cost, 'cost_of_revenue', green, 2);
   addLink(revenueNode, grossNode, gross, red);
+  addLink(revenueNode, costNode, cost, green);
 
   const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green, 3);
   addLink(grossNode, periodNode, periodExpense, green);
@@ -1935,8 +1935,8 @@ async function openIncomeSankey(key) {
       draggable: false,
       nodeAlign: 'justify',
       nodeWidth: 18,
-      nodeGap: 18,
-      layoutIterations: 80,
+      nodeGap: 0,
+      layoutIterations: 0,
       emphasis: { focus: 'adjacency' },
       label: {
         formatter: function(p) { return p.data.labelText || p.name; },
