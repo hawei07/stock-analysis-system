@@ -69,7 +69,7 @@ MySQL stock_analysis
 | `migrations.py` | 轻量数据库迁移执行器，按顺序执行 `migrations/*.sql` 并写入 `schema_migrations` |
 | `migrations/001_current_schema.sql` | 当前数据库结构基线迁移，覆盖股票、财务、持仓、芒格、配置等核心表 |
 | `services/cloud_backup_service.py` | 云备份保留策略、自动备份延迟策略、SQL 备份文件校验 |
-| `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、历史恢复弹窗 |
+| `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、备份管理弹窗 |
 | `templates/portfolio.html` | 我的持仓页面，含持仓、现金、资金流水、净值曲线 |
 | `static/css/index.css` | 首页和股票详情页样式 |
 | `static/css/portfolio.css` | 我的持仓页样式 |
@@ -80,7 +80,7 @@ MySQL stock_analysis
 | `static/js/stock_detail.js` | 股票详情、K 线、分红、PE/PB/股息率估值图、详情页持仓卡片 |
 | `static/js/financial_tables.js` | 财务表格、营收构成、指标趋势图 |
 | `static/js/notes_chat.js` | 便利贴、图片粘贴、对话芒格 |
-| `static/js/cloud_backup.js` | 云备份、云恢复、历史恢复、备份管理 |
+| `static/js/cloud_backup.js` | 云备份、云恢复、备份管理、历史版本恢复 |
 | `static/js/local_settings.js` | 本机环境配置读取、测试、保存 |
 | `models.py` | `Stock` 模型，封装股票基础 CRUD |
 | `db.py` | MySQL 连接池和统一查询入口 |
@@ -238,7 +238,7 @@ stock_analysis_latest.sql
 pre_restore_YYYYMMDD_HHMMSS.sql
 ```
 
-这样即使恢复错了，也可以从 `历史恢复` 中选择恢复前版本回滚。
+这样即使恢复错了，也可以从 `备份管理` 中选择恢复前版本回滚。
 
 后端接口：
 
@@ -246,9 +246,9 @@ pre_restore_YYYYMMDD_HHMMSS.sql
 POST /api/cloud-backup/restore
 ```
 
-### 5.5 历史恢复
+### 5.5 备份管理与历史版本恢复
 
-点击 `历史恢复` 会打开项目内弹窗表格，不再使用浏览器原生 `prompt()`。用户可以直接选中某个版本，然后点击 `恢复选中版本`。
+首页不再保留单独的 `历史恢复` 按钮。历史版本恢复统一进入 `备份管理`，在项目内弹窗表格中查看 ordinary 备份、latest 备份和 `pre_restore` 备份。用户可以直接选中某个版本，然后点击 `恢复选中版本`。
 
 备份列表接口：
 
@@ -282,7 +282,7 @@ POST /api/cloud-backup/restore-file
 
 - 新建普通云备份后
 - 新建恢复前备份后
-- 打开历史恢复列表时
+- 打开备份管理列表时
 
 ### 5.7 恢复兼容处理
 
@@ -316,7 +316,7 @@ templates/index.html
 - K 线图
 - 对话芒格
 - 便利贴
-- 云备份、云恢复、历史恢复
+- 云备份、云恢复、备份管理、历史版本恢复
 - 深色模式
 - 移动端适配
 
@@ -798,7 +798,7 @@ temp/
 - 恢复类接口不接入自动云备份，恢复前使用 `pre_restore` 保护备份。
 - 新增本机路径配置时，优先放入 `local_settings.example.json`，并通过 `_setting()` 支持环境变量覆盖。
 - 新增数据库表或字段时，优先新增 `migrations/*.sql`，已执行迁移不要修改；必要时再保留 `_ensure_xxx_table()` 作为老库兼容兜底。
-- 前端历史恢复等关键操作使用项目内 modal，不使用浏览器原生 `prompt()` 做复杂交互。
+- 前端备份管理、历史版本恢复等关键操作使用项目内 modal，不使用浏览器原生 `prompt()` 做复杂交互。
 - 跨电脑同步以数据库 SQL 备份为主，代码通过 Git 同步，本机配置各自维护。
 
 ### 11.1 前端拆分原则
@@ -830,7 +830,7 @@ JavaScript 按功能模块拆分：
 | `static/js/stock_detail.js` | 股票详情、路由切换、K 线、分红、PE/PB/股息率估值图、详情页持仓卡片 |
 | `static/js/financial_tables.js` | 自定义财报、资产负债表、利润表、现金流量表、营收构成、指标趋势图 |
 | `static/js/notes_chat.js` | 便利贴、图片粘贴、对话芒格 |
-| `static/js/cloud_backup.js` | 云备份、云恢复、历史恢复、备份管理、云端更新提示 |
+| `static/js/cloud_backup.js` | 云备份、云恢复、备份管理、历史版本恢复、云端更新提示 |
 | `static/js/local_settings.js` | 本机环境配置读取、测试、保存 |
 
 新增功能放置规则：
@@ -860,6 +860,6 @@ JavaScript 按功能模块拆分：
   -> 公司电脑恢复 latest
 ```
 
-恢复前系统会自动生成 `pre_restore` 备份，因此误恢复后可以通过 `历史恢复` 回到恢复前版本。
+恢复前系统会自动生成 `pre_restore` 备份，因此误恢复后可以通过 `备份管理` 回到恢复前版本。
 
 这套机制使同一份代码可以在家里和公司两台电脑上运行，各自使用不同的 MySQL、Python 和 Dropbox 路径，同时共享同一份业务数据备份。

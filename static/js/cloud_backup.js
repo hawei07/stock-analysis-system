@@ -204,25 +204,6 @@ async function restoreCloud() {
   }
 }
 
-async function restoreBackupFile() {
-  try {
-    const res = await fetch('/api/cloud-backup/files');
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '读取备份列表失败', 'error');
-      return;
-    }
-    const files = (data.files || []).filter(f => f.name.endsWith('.sql')).slice(0, 20);
-    if (!files.length) {
-      showToast('没有找到可恢复的备份文件', 'error');
-      return;
-    }
-    showBackupRestoreModal(files, data.backup_dir || '');
-  } catch (e) {
-    showToast('历史恢复失败', 'error');
-  }
-}
-
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
     '&': '&amp;',
@@ -241,84 +222,6 @@ function backupFileType(name) {
 
 function formatBackupSize(bytes) {
   return `${((Number(bytes) || 0) / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function closeBackupRestoreModal() {
-  document.getElementById('backupRestoreModal')?.remove();
-}
-
-function showBackupRestoreModal(files, backupDir) {
-  closeBackupRestoreModal();
-  let selectedIndex = 0;
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay active';
-  overlay.id = 'backupRestoreModal';
-  overlay.innerHTML = `
-    <div class="modal backup-restore-modal">
-      <div class="modal-header">
-        <h3>历史恢复</h3>
-        <button class="modal-close" type="button" aria-label="关闭">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="backup-restore-summary">
-          当前备份目录：<span class="code">${escapeHtml(backupDir)}</span>
-        </div>
-        <div class="backup-restore-table-wrap">
-          <table class="backup-restore-table">
-            <thead>
-              <tr>
-                <th style="width:90px">类型</th>
-                <th>文件名</th>
-                <th style="width:170px">备份时间</th>
-                <th style="width:100px">大小</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${files.map((file, index) => {
-                const type = backupFileType(file.name);
-                return `
-                  <tr data-index="${index}" class="${index === 0 ? 'selected' : ''}">
-                    <td><span class="backup-type-badge ${type.cls}">${type.label}</span></td>
-                    <td class="backup-file-name">${escapeHtml(file.name)}</td>
-                    <td>${escapeHtml(file.mtime_iso)}</td>
-                    <td>${formatBackupSize(file.size)}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div class="backup-restore-hint">
-          选中一个版本后点击恢复。恢复会覆盖当前本地数据库，系统会先自动生成新的 pre_restore 备份。
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" type="button" data-action="cancel">取消</button>
-        <button class="btn btn-primary" type="button" data-action="restore">恢复选中版本</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const close = () => closeBackupRestoreModal();
-  overlay.querySelector('.modal-close').onclick = close;
-  overlay.querySelector('[data-action="cancel"]').onclick = close;
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-
-  overlay.querySelectorAll('tbody tr').forEach(row => {
-    row.onclick = () => {
-      selectedIndex = Number(row.dataset.index);
-      overlay.querySelectorAll('tbody tr').forEach(item => item.classList.remove('selected'));
-      row.classList.add('selected');
-    };
-  });
-
-  overlay.querySelector('[data-action="restore"]').onclick = async () => {
-    const btn = overlay.querySelector('[data-action="restore"]');
-    const file = files[selectedIndex];
-    if (!file || btn.disabled) return;
-    await restoreSelectedBackupFile(file.name, btn);
-  };
 }
 
 async function restoreSelectedBackupFile(filename, btn) {
