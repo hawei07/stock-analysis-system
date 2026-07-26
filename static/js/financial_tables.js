@@ -1535,6 +1535,7 @@ function getIncomeSections() {
     { title: '收入', items: [{ name: '营业总收入', field: 'total_revenue', bold: true }, { name: '营业收入', field: 'operating_revenue' }, { name: '利息收入', field: 'interest_income' }] },
     { title: '成本与费用', items: [
       { name: '营业总成本', field: 'operating_cost', bold: true }, { name: '营业成本', field: 'cost_of_revenue' },
+      { name: '利息支出', field: 'interest_expense' }, { name: '手续费及佣金支出', field: 'fee_commission_expense' },
       { name: '营业税金及附加', field: 'tax_surcharge' }, { name: '销售费用', field: 'selling_expense' },
       { name: '管理费用', field: 'admin_expense' }, { name: '财务费用', field: 'finance_expense' },
       { name: '（其中）利息费用', field: 'finance_interest_expense' }, { name: '（其中）利息收入', field: 'finance_interest_income' },
@@ -1771,13 +1772,27 @@ function incomeInterestIncludedInRevenue(row) {
   return Math.abs((totalRevenue - operatingRevenue) - interestIncome) <= Math.max(Math.abs(interestIncome) * 0.05, 0.05);
 }
 
+function incomeFinanceExpenseBeforeInterestIncomeValue(row) {
+  const financeExpense = incomeValue(row, 'finance_expense');
+  const financeInterestIncome = positiveIncomeValue(row, 'finance_interest_income');
+  if (financeInterestIncome > 0) return Math.max(financeExpense + financeInterestIncome, 0);
+  return Math.max(financeExpense, 0);
+}
+
 function incomePeriodExpenseValue(row) {
-  return ['selling_expense', 'admin_expense', 'finance_expense', 'rd_expense']
-    .reduce((sum, field) => sum + positiveIncomeValue(row, field), 0);
+  return ['selling_expense', 'admin_expense', 'rd_expense']
+    .reduce((sum, field) => sum + positiveIncomeValue(row, field), 0)
+    + incomeFinanceExpenseBeforeInterestIncomeValue(row);
 }
 
 function incomeGrossValue(row) {
-  return Math.max(incomeRevenueValue(row) - positiveIncomeValue(row, 'cost_of_revenue'), 0);
+  return Math.max(
+    incomeRevenueValue(row)
+      - positiveIncomeValue(row, 'cost_of_revenue')
+      - positiveIncomeValue(row, 'interest_expense')
+      - positiveIncomeValue(row, 'fee_commission_expense'),
+    0
+  );
 }
 
 function incomeCoreProfitValue(row) {
@@ -1911,6 +1926,8 @@ async function openIncomeSankey(key) {
   const operatingRevenue = incomeOperatingRevenueValue(row);
   const revenueInterestIncome = positiveIncomeValue(row, 'interest_income');
   const cost = positiveIncomeValue(row, 'cost_of_revenue');
+  const interestExpense = positiveIncomeValue(row, 'interest_expense');
+  const feeCommissionExpense = positiveIncomeValue(row, 'fee_commission_expense');
   const gross = incomeGrossValue(row);
   const periodExpense = incomePeriodExpenseValue(row);
   const taxSurcharge = positiveIncomeValue(row, 'tax_surcharge');
@@ -1943,8 +1960,12 @@ async function openIncomeSankey(key) {
 
   const grossNode = addNode('毛利', gross, incomeGrossValue, red, 3);
   const costNode = addNode('营业成本', cost, 'cost_of_revenue', green, 3);
+  const interestExpenseNode = addNode('利息支出', interestExpense, 'interest_expense', green, 3);
+  const feeCommissionExpenseNode = addNode('手续费及佣金支出', feeCommissionExpense, 'fee_commission_expense', green, 3);
   addLink(revenueNode, grossNode, gross, red);
   addLink(revenueNode, costNode, cost, green);
+  addLink(revenueNode, interestExpenseNode, interestExpense, green);
+  addLink(revenueNode, feeCommissionExpenseNode, feeCommissionExpense, green);
 
   const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 5);
   const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green, 5);
@@ -1990,14 +2011,14 @@ async function openIncomeSankey(key) {
   addLink(grossNode, taxSurchargeNode, taxSurcharge, green);
 
   const expenseDefs = [
-    ['销售费用', 'selling_expense'],
-    ['管理费用', 'admin_expense'],
-    ['研发费用', 'rd_expense'],
-    ['财务费用', 'finance_expense'],
+    ['销售费用', 'selling_expense', null],
+    ['管理费用', 'admin_expense', null],
+    ['研发费用', 'rd_expense', null],
+    ['财务费用', 'finance_expense', incomeFinanceExpenseBeforeInterestIncomeValue],
   ];
   for (const def of expenseDefs) {
-    const value = positiveIncomeValue(row, def[1]);
-    const node = addNode(def[0], value, def[1], green, 5);
+    const value = def[2] ? def[2](row) : positiveIncomeValue(row, def[1]);
+    const node = addNode(def[0], value, def[2] || def[1], green, 5);
     addLink(periodNode, node, value, green);
   }
   const netNode = addNode('净利润', netProfit, 'net_profit', red, 6);
