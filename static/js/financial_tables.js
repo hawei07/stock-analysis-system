@@ -2015,7 +2015,7 @@ async function openIncomeSankey(key) {
       draggable: false,
       nodeAlign: 'justify',
       nodeWidth: 18,
-      nodeGap: 32,
+      nodeGap: 42,
       layoutIterations: 0,
       emphasis: { focus: 'adjacency' },
       label: {
