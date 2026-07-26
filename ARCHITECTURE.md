@@ -336,6 +336,7 @@ templates/portfolio.html
 - 总资产
 - 预计分红
 - 股息率
+- 港股持仓按自动获取的 `HKD -> CNY` 汇率折算进人民币总资产
 - 自定义每股分红
 - 资金流水
 - 每日净值快照
@@ -714,6 +715,7 @@ GET /api/db/migrations
 | 股票搜索 | 本地数据库优先，未命中再查东方财富 suggest |
 | 实时股价、PE、PB、市值 | 腾讯行情接口 |
 | K 线 | 腾讯 K 线接口 |
+| 港币人民币汇率 | Frankfurter API，缓存到 `data/exchange_rates.json` |
 | 分红 | 东方财富 datacenter-web |
 | 净利润辅助 | 东方财富 datacenter-web |
 | 财务摘要 | 东方财富 datacenter-web |

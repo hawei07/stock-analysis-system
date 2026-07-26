@@ -67,6 +67,8 @@ APP_PORT = int(_setting("app_port", "STOCK_APP_PORT", 5002))
 CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
+EXCHANGE_RATE_CACHE_JSON = os.path.join(APP_DIR, "data", "exchange_rates.json")
+EXCHANGE_RATE_CACHE_SECONDS = 12 * 60 * 60
 AUTO_CLOUD_BACKUP_DELAY_SECONDS = int(_setting("auto_cloud_backup_delay_seconds", "STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS", 180))
 _auto_backup_lock = threading.Lock()
 _auto_backup_timer = None
@@ -202,6 +204,66 @@ def _write_local_cloud_state(payload):
     os.makedirs(os.path.dirname(LOCAL_CLOUD_STATE_JSON), exist_ok=True)
     with open(LOCAL_CLOUD_STATE_JSON, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _read_exchange_rate_cache():
+    if not os.path.exists(EXCHANGE_RATE_CACHE_JSON):
+        return {}
+    try:
+        with open(EXCHANGE_RATE_CACHE_JSON, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _write_exchange_rate_cache(payload):
+    os.makedirs(os.path.dirname(EXCHANGE_RATE_CACHE_JSON), exist_ok=True)
+    with open(EXCHANGE_RATE_CACHE_JSON, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _currency_for_market(market):
+    return "HKD" if market == "HK" else "CNY"
+
+
+def _exchange_rate_to_cny(currency):
+    currency = (currency or "CNY").upper()
+    if currency == "CNY":
+        return {"rate": 1.0, "base": "CNY", "target": "CNY", "date": None, "source": "native", "cached": False}
+
+    key = f"{currency}_CNY"
+    now = time.time()
+    cache = _read_exchange_rate_cache()
+    cached = (cache.get("rates") or {}).get(key)
+    if cached and now - float(cached.get("fetched_at") or 0) < EXCHANGE_RATE_CACHE_SECONDS:
+        return {**cached, "cached": True}
+
+    if currency == "HKD":
+        try:
+            resp = requests.get(
+                "https://api.frankfurter.dev/v2/rate/HKD/CNY",
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=8,
+            )
+            data = resp.json()
+            rate = float(data.get("rate"))
+            payload = {
+                "rate": rate,
+                "base": "HKD",
+                "target": "CNY",
+                "date": data.get("date"),
+                "source": "Frankfurter",
+                "fetched_at": now,
+                "cached": False,
+            }
+            cache.setdefault("rates", {})[key] = payload
+            _write_exchange_rate_cache(cache)
+            return payload
+        except Exception:
+            if cached:
+                return {**cached, "cached": True, "stale": True}
+
+    return None
 
 
 def _cloud_latest_mtime():
@@ -1181,6 +1243,7 @@ def _portfolio_current_state():
     stock_refs = [{"code": r["stock_code"], "market": r["market"]} for r in rows]
     prices = _fetch_realtime_prices(stock_refs)
     dividends = _latest_dividend_per_share([r["stock_code"] for r in rows])
+    exchange_rates = {}
     total_market_value = 0.0
     expected_dividend = 0.0
 
@@ -1188,11 +1251,19 @@ def _portfolio_current_state():
         code = r["stock_code"]
         shares = float(r["shares"])
         price = prices.get(code)
+        currency = _currency_for_market(r.get("market"))
+        fx = exchange_rates.get(currency)
+        if fx is None:
+            fx = _exchange_rate_to_cny(currency)
+            exchange_rates[currency] = fx
+        fx_rate = float(fx["rate"]) if fx and fx.get("rate") is not None else None
         div = dividends.get(code, {})
         custom_dividend = float(r["custom_dividend_per_share"]) if r.get("custom_dividend_per_share") is not None else None
         dividend_per_share = custom_dividend if custom_dividend is not None else div.get("dividend_per_share")
-        market_value = shares * price if price is not None else None
-        dividend_amount = shares * dividend_per_share if dividend_per_share is not None else None
+        original_market_value = shares * price if price is not None else None
+        market_value = original_market_value * fx_rate if original_market_value is not None and fx_rate is not None else None
+        original_dividend_amount = shares * dividend_per_share if dividend_per_share is not None else None
+        dividend_amount = original_dividend_amount * fx_rate if original_dividend_amount is not None and fx_rate is not None else None
         if market_value is not None:
             total_market_value += market_value
         if dividend_amount is not None:
@@ -1205,13 +1276,23 @@ def _portfolio_current_state():
             "industry": r.get("industry"),
             "shares": shares,
             "price": round(price, 2) if price is not None else None,
+            "price_currency": currency,
+            "fx_rate_to_cny": round(fx_rate, 6) if fx_rate is not None else None,
+            "fx_rate_date": fx.get("date") if fx else None,
+            "fx_rate_source": fx.get("source") if fx else None,
+            "original_market_value": round(original_market_value, 2) if original_market_value is not None else None,
+            "original_market_value_currency": currency,
             "market_value": round(market_value, 2) if market_value is not None else None,
+            "market_value_currency": "CNY",
             "dividend_per_share": round(dividend_per_share, 4) if dividend_per_share is not None else None,
             "dividend_year": div.get("fiscal_year"),
             "auto_dividend_per_share": round(div.get("dividend_per_share"), 4) if div.get("dividend_per_share") is not None else None,
             "custom_dividend_per_share": round(custom_dividend, 4) if custom_dividend is not None else None,
             "dividend_source": "custom" if custom_dividend is not None else "auto",
+            "original_expected_dividend": round(original_dividend_amount, 2) if original_dividend_amount is not None else None,
+            "original_expected_dividend_currency": currency,
             "expected_dividend": round(dividend_amount, 2) if dividend_amount is not None else None,
+            "expected_dividend_currency": "CNY",
         })
 
     total_asset_value = total_market_value + cash_amount
@@ -1229,6 +1310,18 @@ def _portfolio_current_state():
             "cash_allocation_pct": round(cash_amount / total_asset_value * 100, 2) if total_asset_value > 0 else 0,
             "expected_dividend": round(expected_dividend, 2),
             "count": len(positions),
+            "currency": "CNY",
+            "exchange_rates": {
+                f"{currency}_CNY": {
+                    "rate": round(info["rate"], 6) if info and info.get("rate") is not None else None,
+                    "date": info.get("date") if info else None,
+                    "source": info.get("source") if info else None,
+                    "cached": bool(info.get("cached")) if info else False,
+                    "stale": bool(info.get("stale")) if info else False,
+                }
+                for currency, info in exchange_rates.items()
+                if currency != "CNY"
+            },
         },
     }
 

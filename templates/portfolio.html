@@ -38,7 +38,7 @@
     <div class="summary-card">
       <div class="label">持仓总市值</div>
       <div class="value" id="totalValue">--</div>
-      <div class="sub">使用腾讯最新行情，取不到价格时不计入</div>
+      <div class="sub" id="totalValueSub">统一折算为人民币，取不到价格时不计入</div>
     </div>
     <div class="summary-card">
       <div class="label">当年预期分红</div>
@@ -371,6 +371,10 @@ function renderSummary(summary) {
   document.getElementById('totalValue').textContent = privateMoney(total);
   document.getElementById('cashAmount').textContent = privateMoney(cash);
   document.getElementById('cashPct').textContent = '占比 ' + (totalAsset > 0 ? (cash / totalAsset * 100).toFixed(2) + '%' : '--');
+  const hkdRate = summary.exchange_rates?.HKD_CNY;
+  document.getElementById('totalValueSub').textContent = hkdRate?.rate
+    ? `统一折算为人民币；HKD→CNY ${Number(hkdRate.rate).toFixed(4)}（${hkdRate.date || '最新'}）`
+    : '统一折算为人民币，取不到价格时不计入';
   const cashInput = document.getElementById('cashInput');
   if (cashInput) cashInput.value = cash ? cash.toFixed(2) : '';
   document.getElementById('expectedDividend').textContent = money(dividend);
@@ -386,8 +390,13 @@ function renderPositions(rows) {
       <td><span class="code">${esc(r.code)}</span></td>
       <td><a class="name-link" href="/stock/${esc(r.code)}">${esc(r.name)}</a></td>
       <td class="num">${plain(r.shares)}</td>
-      <td class="num">${money(r.price)}</td>
-      <td class="num">${money(r.market_value)}</td>
+      <td class="num">${money(r.price)} ${r.price_currency || ''}</td>
+      <td class="num">
+        ${money(r.market_value)} CNY
+        ${r.original_market_value_currency && r.original_market_value_currency !== 'CNY'
+          ? `<div class="dividend-meta">${money(r.original_market_value)} ${r.original_market_value_currency} × ${r.fx_rate_to_cny == null ? '--' : Number(r.fx_rate_to_cny).toFixed(4)}</div>`
+          : ''}
+      </td>
       <td class="num">${r.allocation_pct == null ? '--' : Number(r.allocation_pct).toFixed(2) + '%'}</td>
       <td class="num">
         <div class="dividend-cell">

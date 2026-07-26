@@ -31,3 +31,4 @@ data/images/
 # Machine-local runtime config/state
 local_settings.json
 data/cloud_sync_state.json
+data/exchange_rates.json
