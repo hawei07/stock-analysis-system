@@ -1196,7 +1196,7 @@ const _bsCompositionPalette = [
 function bsColorItems(items) {
   return items.map((item, index) => ({
     ...item,
-    itemStyle: { color: _bsCompositionPalette[index % _bsCompositionPalette.length] },
+    itemStyle: { color: item.color || (item.itemStyle && item.itemStyle.color) || _bsCompositionPalette[index % _bsCompositionPalette.length] },
   }));
 }
 
@@ -1268,8 +1268,8 @@ function openBSComposition(key) {
     ? equityValueRaw
     : Math.max(assetTotal - liabilityTotal, 0);
   const structureItems = [
-    { name: '负债合计', value: liabilityTotal },
-    { name: '股东权益', value: equityValue },
+    { name: '股东权益', value: equityValue, color: '#1677ff' },
+    { name: '负债合计', value: liabilityTotal, color: '#ff4d4f' },
   ].filter(item => Number.isFinite(item.value) && item.value > 0);
 
   document.getElementById('chartModalTitle').textContent = stockName + ' - ' + label + ' 资产负债结构  财报单位：亿元';
