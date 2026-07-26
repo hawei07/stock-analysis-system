@@ -1942,9 +1942,9 @@ async function openIncomeSankey(key) {
 
   const netNode = addNode('净利润', netProfit, 'net_profit', red, 5);
   const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 5);
-  const opToNet = Math.max(netProfit - nonopIncome, 0);
+  const opToNet = Math.max(netProfit - nonopIncome - nonopExpense, 0);
   addLink(nonopIncomeNode, netNode, nonopIncome, amber, 0.85);
-  addLink(opNode, nonopExpenseNode, nonopExpense, green);
+  addLink(nonopExpenseNode, netNode, nonopExpense, green, 0.85);
   addLink(opNode, taxNode, incomeTax, green, 0.85);
   addLink(opNode, netNode, opToNet, red);
 
