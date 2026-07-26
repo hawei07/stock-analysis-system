@@ -66,6 +66,8 @@ MySQL stock_analysis
 | 文件 | 职责 |
 |---|---|
 | `app.py` | Flask 入口、页面路由、REST API、数据抓取、云备份/恢复、自动备份调度 |
+| `migrations.py` | 轻量数据库迁移执行器，按顺序执行 `migrations/*.sql` 并写入 `schema_migrations` |
+| `migrations/001_current_schema.sql` | 当前数据库结构基线迁移，覆盖股票、财务、持仓、芒格、配置等核心表 |
 | `services/cloud_backup_service.py` | 云备份保留策略、自动备份延迟策略、SQL 备份文件校验 |
 | `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、历史恢复弹窗 |
 | `templates/portfolio.html` | 我的持仓页面，含持仓、现金、资金流水、净值曲线 |
@@ -570,6 +572,37 @@ data/images/
 
 保存时会把 base64 图片提取为文件，正文中保留本地图片路径。
 
+### 7.15 schema_migrations
+
+数据库迁移记录表，由 `migrations.py` 自动创建和维护。
+
+字段：
+
+| 字段 | 说明 |
+|---|---|
+| `version` | 迁移版本，等于 SQL 文件名去掉 `.sql` |
+| `name` | SQL 文件名 |
+| `checksum` | 文件 SHA-256，用于防止已执行迁移被修改 |
+| `applied_at` | 执行时间 |
+
+迁移文件放在：
+
+```text
+migrations/*.sql
+```
+
+启动 `app.py` 时会先执行 `run_migrations()`，再执行旧的 `_ensure_xxx()` 幂等补齐逻辑。这样新电脑首次运行时能创建完整当前结构，老电脑升级时也能记录已应用版本。当前基线迁移为：
+
+```text
+migrations/001_current_schema.sql
+```
+
+查询迁移状态：
+
+```text
+GET /api/db/migrations
+```
+
 ---
 
 ## 8. REST API 总览
@@ -650,6 +683,7 @@ data/images/
 |---|---|---|
 | `GET` | `/api/config` | 读取系统配置 |
 | `PUT` | `/api/config` | 修改系统配置 |
+| `GET` | `/api/db/migrations` | 查询数据库迁移状态 |
 | `GET` | `/api/stock/<code>/munger-chat` | 读取对话历史 |
 | `POST` | `/api/stock/<code>/munger-chat` | 发送对话 |
 | `DELETE` | `/api/stock/<code>/munger-chat` | 删除单条或清空对话 |
@@ -752,7 +786,7 @@ temp/
 - 后端修改数据库的接口，应接入 `AUTO_CLOUD_BACKUP_ENDPOINTS`，除非该操作不应影响云端 latest。
 - 恢复类接口不接入自动云备份，恢复前使用 `pre_restore` 保护备份。
 - 新增本机路径配置时，优先放入 `local_settings.example.json`，并通过 `_setting()` 支持环境变量覆盖。
-- 新增数据库表时，优先使用幂等 `_ensure_xxx_table()` 或迁移函数，保证老电脑启动时可自动补齐结构。
+- 新增数据库表或字段时，优先新增 `migrations/*.sql`，已执行迁移不要修改；必要时再保留 `_ensure_xxx_table()` 作为老库兼容兜底。
 - 前端历史恢复等关键操作使用项目内 modal，不使用浏览器原生 `prompt()` 做复杂交互。
 - 跨电脑同步以数据库 SQL 备份为主，代码通过 Git 同步，本机配置各自维护。
 

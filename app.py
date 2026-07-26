@@ -47,6 +47,7 @@ from db import execute_query, execute_update
 from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
+from migrations import run_migrations, migration_status
 from services.cloud_backup_service import (
     CLOUD_BACKUP_RETAIN_COUNT,
     auto_backup_delay_for_reasons,
@@ -1438,6 +1439,14 @@ def api_config_put():
         set_config(k, str(v))
         updated.append(k)
     return jsonify({"ok": True, "updated": updated})
+
+
+@app.route("/api/db/migrations")
+def api_db_migrations():
+    try:
+        return jsonify(migration_status())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cloud-backup/status")
@@ -3866,6 +3875,11 @@ def serve_sticky_image(filename):
 if __name__ == "__main__":
     print("股票分析系统 Web 服务启动: http://127.0.0.1:5002")
     try:
+        migration_result = run_migrations()
+        if migration_result["count"]:
+            print(f"✓ 已执行数据库迁移: {', '.join(migration_result['applied'])}")
+        else:
+            print("✓ 数据库迁移已是最新")
         _ensure_financials_columns()
         _ensure_segments_table()
         _ensure_stock_order_column()
