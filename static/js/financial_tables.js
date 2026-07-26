@@ -1762,6 +1762,27 @@ function incomeCoreProfitValue(row) {
   );
 }
 
+function incomeOperatingSignedAdjustmentSum(row) {
+  const defs = [
+    ['other_income', false],
+    ['invest_income', false],
+    ['fair_value_change', false],
+    ['interest_income', false],
+    ['credit_impairment_loss', true],
+    ['asset_impairment_loss', true],
+    ['asset_disposal_income', false],
+  ];
+  return defs.reduce((sum, def) => {
+    const raw = incomeValue(row, def[0]);
+    if (!Number.isFinite(raw) || raw === 0) return sum;
+    return sum + (def[1] ? -Math.abs(raw) : raw);
+  }, 0);
+}
+
+function incomeOperatingAdjustmentResidual(row) {
+  return incomeValue(row, 'operating_profit') - incomeCoreProfitValue(row) - incomeOperatingSignedAdjustmentSum(row);
+}
+
 function incomePrevKey(key) {
   if (!key) return null;
   if (key.indexOf('|') === -1) return (parseInt(key) - 1) + '';
@@ -1772,12 +1793,13 @@ function incomePrevKey(key) {
 function incomeNodeLabel(name, value, row, prevRow, field) {
   const cur = typeof field === 'function' ? field(row) : incomeValue(row, field);
   const prev = typeof field === 'function' ? field(prevRow) : incomeValue(prevRow, field);
+  const displayValue = cur < 0 && Math.abs(Math.abs(cur) - value) < 0.01 ? -value : value;
   let yoy = '';
   if (field && prev !== 0) {
     const rate = (cur - prev) / Math.abs(prev) * 100;
     if (Number.isFinite(rate)) yoy = '\n' + (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
   }
-  return name + '\n' + bsFormatAmount(value) + yoy;
+  return name + '\n' + bsFormatAmount(displayValue) + yoy;
 }
 
 function incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color, depth) {
@@ -1875,9 +1897,21 @@ async function openIncomeSankey(key) {
   ];
   for (const def of adjustmentDefs) {
     const raw = incomeValue(row, def[1]);
-    const value = Math.abs(raw);
+    const signedValue = def[3] ? -Math.abs(raw) : raw;
+    const value = Math.abs(signedValue);
     const node = addNode(def[0], value, def[1], def[2], 3);
-    addLink(node, opNode, value, def[2]);
+    if (signedValue >= 0) addLink(node, opNode, value, def[2]);
+    else addLink(opNode, node, value, def[2]);
+  }
+
+  const residual = incomeOperatingAdjustmentResidual(row);
+  const residualValue = Math.abs(residual);
+  if (residualValue > Math.max(operatingProfit * 0.001, 0.01)) {
+    const residualColor = residual >= 0 ? amber : green;
+    const residualDepth = residual >= 0 ? 3 : 5;
+    const residualNode = addNode('其他营业利润调整项', residualValue, incomeOperatingAdjustmentResidual, residualColor, residualDepth);
+    if (residual >= 0) addLink(residualNode, opNode, residualValue, residualColor);
+    else addLink(opNode, residualNode, residualValue, residualColor);
   }
 
   const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red, 3);
