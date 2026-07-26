@@ -1979,7 +1979,8 @@ async function openIncomeSankey(key) {
 
   const minorityColor = minorityProfitSigned < 0 ? green : purple;
   const parentNode = addNode('归属于母公司普通股股东的净利润', parentProfit, incomeParentProfitValue, blue, 6);
-  const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', minorityColor, 6);
+  const minorityDepth = minorityProfitSigned < 0 ? 5 : 6;
+  const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', minorityColor, minorityDepth);
   if (minorityProfitSigned < 0) {
     addLink(netNode, parentNode, netProfit, blue);
     addLink(minorityNode, parentNode, minorityProfit, minorityColor);
