@@ -1758,6 +1758,14 @@ function incomeRevenueValue(row) {
   return incomeValue(row, 'total_revenue') || incomeValue(row, 'operating_revenue');
 }
 
+function incomeInterestIncludedInRevenue(row) {
+  const totalRevenue = incomeValue(row, 'total_revenue');
+  const operatingRevenue = incomeValue(row, 'operating_revenue');
+  const interestIncome = incomeValue(row, 'interest_income');
+  if (!totalRevenue || !operatingRevenue || !interestIncome) return false;
+  return Math.abs((totalRevenue - operatingRevenue) - interestIncome) <= Math.max(Math.abs(interestIncome) * 0.05, 0.05);
+}
+
 function incomePeriodExpenseValue(row) {
   return ['selling_expense', 'admin_expense', 'finance_expense', 'rd_expense']
     .reduce((sum, field) => sum + positiveIncomeValue(row, field), 0);
@@ -1941,6 +1949,7 @@ async function openIncomeSankey(key) {
     ['资产处置收益', 'asset_disposal_income', amber, false],
   ];
   for (const def of adjustmentDefs) {
+    if (def[1] === 'interest_income' && incomeInterestIncludedInRevenue(row)) continue;
     const raw = incomeValue(row, def[1]);
     const signedValue = def[3] ? -Math.abs(raw) : raw;
     const value = Math.abs(signedValue);
