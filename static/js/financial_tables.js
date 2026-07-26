@@ -1885,6 +1885,7 @@ async function openIncomeSankey(key) {
   addLink(revenueNode, costNode, cost, green);
 
   const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 4);
+  const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green, 4);
   const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red, 4);
 
   const adjustmentDefs = [
@@ -1937,9 +1938,6 @@ async function openIncomeSankey(key) {
     const node = addNode(def[0], value, def[1], green, 4);
     addLink(periodNode, node, value, green);
   }
-
-  const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green, 4);
-
   const netNode = addNode('净利润', netProfit, 'net_profit', red, 5);
   const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 5);
   const opToNet = Math.max(netProfit - nonopIncome - nonopExpense, 0);
