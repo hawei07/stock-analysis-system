@@ -199,6 +199,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .chart-modal-header h3{font-size:14px;font-weight:600;line-height:1.5;white-space:normal;word-break:break-all}
 .chart-modal-body{padding:24px;overflow:auto}
 .chart-modal-box{width:100%;height:460px}
+.chart-modal-box.income-sankey-box{height:760px;min-height:760px}
 .chart-modal-box.bs-composition-box{height:auto;min-height:720px}
 .bs-composition-report{display:flex;flex-direction:column;gap:0}
 .bs-composition-section{display:grid;grid-template-columns:minmax(560px,38%) minmax(0,1fr);gap:28px;align-items:center;padding:16px 4px;border-bottom:1px solid #e8eef7}
@@ -288,6 +289,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   #panel-valuation>div[style]{flex-direction:column}
   #valSidebar,#pbSidebar,#dySidebar{width:auto!important;display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
   .chart-box,.chart-modal-box{height:300px}
+  .chart-modal-box.income-sankey-box{height:560px;min-height:560px}
   .chart-modal-box.bs-composition-box{height:auto;min-height:0}
   .bs-composition-section{grid-template-columns:1fr;gap:8px;padding:14px 0}
   .bs-composition-pie{width:100%;height:180px}

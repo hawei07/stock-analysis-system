@@ -1168,6 +1168,7 @@ function prepareChartModalBox() {
   if (existing) existing.dispose();
   dom.innerHTML = '';
   dom.classList.remove('bs-composition-box');
+  dom.classList.remove('income-sankey-box');
   return dom;
 }
 
@@ -1673,7 +1674,15 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
 
   html += `<table class="fin-table" id="${t.tableId}"><thead><tr>`;
   html += '<th class="sticky-col sticky-header" rowspan="2">科目</th>';
-  for (const lbl of keyLabels) html += `<th class="sticky-header year-header" colspan="2">${lbl}</th>`;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const lbl = keyLabels[i];
+    if (t.prefix === 'inc') {
+      html += `<th class="sticky-header year-header" colspan="2"><span class="bs-period-header"><span>${lbl}</span><button type="button" class="bs-composition-icon income-sankey-icon" data-key="${esc(key)}" title="查看利润流向图" aria-label="查看${esc(lbl)}利润流向图"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h4v3H2z"></path><path d="M10 2h4v3h-4z"></path><path d="M10 11h4v3h-4z"></path><path d="M6 5.5c2 0 2-2 4-2"></path><path d="M6 5.5c2 0 2 7 4 7"></path></svg></button></span></th>`;
+    } else {
+      html += `<th class="sticky-header year-header" colspan="2">${lbl}</th>`;
+    }
+  }
   html += '</tr><tr>';
   for (const lbl of keyLabels) { html += '<th class="sticky-header sub-header">原值</th>'; html += '<th class="sticky-header sub-header">同比%</th>'; }
   html += '</tr></thead><tbody>';
@@ -1709,6 +1718,177 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
       openFinanceChart(this.dataset.field, this.dataset.name, this.dataset.prefix);
     });
   });
+  if (t.prefix === 'inc') {
+    wrap.querySelectorAll('.income-sankey-icon').forEach(icon => {
+      icon.addEventListener('click', function(e) {
+        e.stopPropagation();
+        openIncomeSankey(this.dataset.key);
+      });
+    });
+  }
+}
+
+function incomeValue(row, field) {
+  const value = row ? Number(row[field]) : null;
+  return Number.isFinite(value) ? value : 0;
+}
+
+function positiveIncomeValue(row, field) {
+  return Math.max(incomeValue(row, field), 0);
+}
+
+function incomePrevKey(key) {
+  if (!key) return null;
+  if (key.indexOf('|') === -1) return (parseInt(key) - 1) + '';
+  const parts = key.split('|');
+  return (parseInt(parts[0]) - 1) + '|' + parts[1];
+}
+
+function incomeNodeLabel(name, value, row, prevRow, field) {
+  const prev = incomeValue(prevRow, field);
+  let yoy = '';
+  if (field && prev !== 0) {
+    const rate = (incomeValue(row, field) - prev) / Math.abs(prev) * 100;
+    if (Number.isFinite(rate)) yoy = '\n' + (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
+  }
+  return name + '\n' + bsFormatAmount(value) + yoy;
+}
+
+function incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color) {
+  if (!Number.isFinite(value) || value <= 0 || nodeMap[name]) return name;
+  nodeMap[name] = true;
+  nodes.push({ name, labelText: incomeNodeLabel(name, value, row, prevRow, field), itemStyle: { color }, label: { color } });
+  return name;
+}
+
+function incomeAddLink(links, nodeMap, source, target, value, color) {
+  if (!source || !target || !nodeMap[source] || !nodeMap[target] || !Number.isFinite(value) || value <= 0) return;
+  links.push({ source, target, value, lineStyle: { color, opacity: 0.28 } });
+}
+
+function openIncomeSankey(key) {
+  const dataMap = window._incDataMap;
+  if (!dataMap || !key || !dataMap[key]) return;
+
+  const row = dataMap[key];
+  const prevRow = dataMap[incomePrevKey(key)];
+  const stockName = document.getElementById('detailName').textContent.trim();
+  const label = bsPeriodLabel(key);
+
+  const red = '#ef4444';
+  const green = '#22a866';
+  const blue = '#1677ff';
+  const amber = '#f59e0b';
+  const purple = '#7c3aed';
+
+  const revenue = incomeValue(row, 'total_revenue') || incomeValue(row, 'operating_revenue');
+  const cost = positiveIncomeValue(row, 'cost_of_revenue');
+  const gross = Math.max(revenue - cost, 0);
+  const operatingProfit = positiveIncomeValue(row, 'operating_profit');
+  const totalProfit = positiveIncomeValue(row, 'total_profit');
+  const netProfit = positiveIncomeValue(row, 'net_profit');
+  const parentProfit = positiveIncomeValue(row, 'parent_net_profit');
+  const minorityProfit = positiveIncomeValue(row, 'minority_profit');
+
+  const nodes = [];
+  const nodeMap = {};
+  const links = [];
+  const addNode = (name, value, field, color) => incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color);
+  const addLink = (source, target, value, color) => incomeAddLink(links, nodeMap, source, target, value, color);
+
+  const revenueNode = addNode('营业总收入', revenue, 'total_revenue', red);
+  const costNode = addNode('营业成本', cost, 'cost_of_revenue', green);
+  const grossNode = addNode('毛利', gross, null, red);
+  addLink(revenueNode, costNode, cost, green);
+  addLink(revenueNode, grossNode, gross, red);
+
+  const expenseDefs = [
+    ['税金及附加', 'tax_surcharge'],
+    ['销售费用', 'selling_expense'],
+    ['管理费用', 'admin_expense'],
+    ['财务费用', 'finance_expense'],
+    ['研发费用', 'rd_expense'],
+  ];
+  for (const def of expenseDefs) {
+    const value = positiveIncomeValue(row, def[1]);
+    const node = addNode(def[0], value, def[1], green);
+    addLink(grossNode, node, value, green);
+  }
+
+  const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red);
+  addLink(grossNode, opNode, operatingProfit, red);
+
+  const totalProfitNode = addNode('利润总额', totalProfit, 'total_profit', red);
+  const otherIncomeDefs = [
+    ['投资收益', 'invest_income'],
+    ['公允价值变动收益', 'fair_value_change'],
+  ];
+  for (const def of otherIncomeDefs) {
+    const value = positiveIncomeValue(row, def[1]);
+    const node = addNode(def[0], value, def[1], amber);
+    addLink(node, opNode, value, amber);
+  }
+
+  const nonopIncome = positiveIncomeValue(row, 'nonop_income');
+  const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber);
+  addLink(nonopIncomeNode, totalProfitNode, nonopIncome, amber);
+
+  const nonopExpense = positiveIncomeValue(row, 'nonop_expense');
+  const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green);
+  addLink(opNode, nonopExpenseNode, nonopExpense, green);
+  addLink(opNode, totalProfitNode, totalProfit, red);
+
+  const incomeTax = positiveIncomeValue(row, 'income_tax');
+  const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green);
+  const netNode = addNode('净利润', netProfit, 'net_profit', red);
+  addLink(totalProfitNode, taxNode, incomeTax, green);
+  addLink(totalProfitNode, netNode, netProfit, red);
+
+  const parentNode = addNode('归母净利润', parentProfit, 'parent_net_profit', blue);
+  const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', purple);
+  addLink(netNode, parentNode, parentProfit, blue);
+  addLink(netNode, minorityNode, minorityProfit, purple);
+
+  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + label + ' 利润流向图  财报单位：亿元';
+  document.getElementById('chartModalOverlay').classList.add('active');
+
+  const dom = prepareChartModalBox();
+  dom.classList.add('income-sankey-box');
+  const chart = echarts.init(dom);
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  chart.setOption({
+    tooltip: {
+      trigger: 'item',
+      appendToBody: true,
+      confine: false,
+      formatter: function(p) {
+        if (p.dataType === 'edge') {
+          return p.data.source + ' → ' + p.data.target + '<br/>' + bsFormatAmount(p.value);
+        }
+        return (p.data.labelText || p.name).replace(/\n/g, '<br/>');
+      }
+    },
+    series: [{
+      type: 'sankey',
+      data: nodes,
+      links: links,
+      draggable: false,
+      nodeAlign: 'justify',
+      nodeWidth: 18,
+      nodeGap: 18,
+      layoutIterations: 80,
+      emphasis: { focus: 'adjacency' },
+      label: {
+        formatter: function(p) { return p.data.labelText || p.name; },
+        fontSize: 12,
+        fontWeight: 600,
+        color: isDark ? '#d7dde8' : '#1f2937'
+      },
+      lineStyle: { curveness: 0.5 }
+    }]
+  });
+
+  window._chartModalInstance = chart;
 }
 
 function openFinanceChart(field, name, prefix) {
@@ -1962,6 +2142,7 @@ function closeIndicatorChart() {
   const dom = document.getElementById('chartModalBox');
   if (dom) {
     dom.classList.remove('bs-composition-box');
+    dom.classList.remove('income-sankey-box');
     dom.innerHTML = '';
   }
 }
