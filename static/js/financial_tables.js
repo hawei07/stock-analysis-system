@@ -1187,15 +1187,29 @@ function bsFormatPercent(value, total) {
   return (value / total * 100).toFixed(2) + '%';
 }
 
+const _bsCompositionPalette = [
+  '#1677ff', '#ff4d4f', '#52c41a', '#fa8c16', '#722ed1', '#13c2c2',
+  '#eb2f96', '#a0d911', '#faad14', '#2f54eb', '#fa541c', '#08979c',
+  '#531dab', '#ad6800', '#389e0d', '#c41d7f', '#0958d9', '#d4380d',
+];
+
+function bsColorItems(items) {
+  return items.map((item, index) => ({
+    ...item,
+    itemStyle: { color: _bsCompositionPalette[index % _bsCompositionPalette.length] },
+  }));
+}
+
 function bsCompositionTableRows(items, groupTotal, baseTotal) {
   if (!items.length) return '<tr><td colspan="4" class="bs-composition-empty">暂无明细数据</td></tr>';
   return items.map(item => (
-    `<tr><td>${esc(item.name)}</td><td>${bsFormatAmount(item.value)}</td><td>${bsFormatPercent(item.value, groupTotal)}</td><td>${bsFormatPercent(item.value, baseTotal)}</td></tr>`
+    `<tr style="color:${item.itemStyle.color}"><td>${esc(item.name)}</td><td>${bsFormatAmount(item.value)}</td><td>${bsFormatPercent(item.value, groupTotal)}</td><td>${bsFormatPercent(item.value, baseTotal)}</td></tr>`
   )).join('');
 }
 
 function renderBSCompositionSection(container, id, title, items, groupTotal, baseTotal, summaryLabel) {
   const chartId = 'bsCompositionPie' + id;
+  const coloredItems = bsColorItems(items);
   container.insertAdjacentHTML('beforeend', `
     <section class="bs-composition-section">
       <div class="bs-composition-pie" id="${chartId}"></div>
@@ -1203,7 +1217,7 @@ function renderBSCompositionSection(container, id, title, items, groupTotal, bas
         <h4>${esc(title)}</h4>
         <table class="bs-composition-table">
           <thead><tr><th>科目</th><th>金额</th><th>占本组</th><th>占总资产</th></tr></thead>
-          <tbody>${bsCompositionTableRows(items, groupTotal, baseTotal)}</tbody>
+          <tbody>${bsCompositionTableRows(coloredItems, groupTotal, baseTotal)}</tbody>
           <tfoot><tr><td>${esc(summaryLabel)}</td><td>${bsFormatAmount(groupTotal)}</td><td>100%</td><td>${bsFormatPercent(groupTotal, baseTotal)}</td></tr></tfoot>
         </table>
       </div>
@@ -1228,7 +1242,7 @@ function renderBSCompositionSection(container, id, title, items, groupTotal, bas
       minAngle: 4,
       label: { show: false },
       labelLine: { show: false },
-      data: items
+      data: coloredItems
     }]
   });
   return chart;
