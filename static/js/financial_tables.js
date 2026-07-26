@@ -1809,9 +1809,9 @@ function incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color, 
   return name;
 }
 
-function incomeAddLink(links, nodeMap, source, target, value, color) {
+function incomeAddLink(links, nodeMap, source, target, value, color, curveness) {
   if (!source || !target || !nodeMap[source] || !nodeMap[target] || !Number.isFinite(value) || value <= 0) return;
-  links.push({ source, target, value, lineStyle: { color, opacity: 0.28 } });
+  links.push({ source, target, value, lineStyle: { color, opacity: 0.28, curveness: curveness || 0.5 } });
 }
 
 async function incomeSankeySegmentRows(key, revenue) {
@@ -1871,7 +1871,7 @@ async function openIncomeSankey(key) {
   const nodeMap = {};
   const links = [];
   const addNode = (name, value, field, color, depth) => incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color, depth);
-  const addLink = (source, target, value, color) => incomeAddLink(links, nodeMap, source, target, value, color);
+  const addLink = (source, target, value, color, curveness) => incomeAddLink(links, nodeMap, source, target, value, color, curveness);
 
   const revenueNode = addNode('营业收入', revenue, 'total_revenue', red, 1);
   for (const segment of segmentRows) {
@@ -1943,9 +1943,9 @@ async function openIncomeSankey(key) {
   const netNode = addNode('净利润', netProfit, 'net_profit', red, 5);
   const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 5);
   const opToNet = Math.max(netProfit - nonopIncome, 0);
-  addLink(nonopIncomeNode, netNode, nonopIncome, amber);
+  addLink(nonopIncomeNode, netNode, nonopIncome, amber, 0.85);
   addLink(opNode, nonopExpenseNode, nonopExpense, green);
-  addLink(opNode, taxNode, incomeTax, green);
+  addLink(opNode, taxNode, incomeTax, green, 0.85);
   addLink(opNode, netNode, opToNet, red);
 
   const parentNode = addNode('归属于母公司普通股股东的净利润', parentProfit, 'parent_net_profit', blue, 6);
