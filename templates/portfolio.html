@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>我的持仓 - 股票分析系统</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="/static/js/theme.js"></script>
 <link rel="stylesheet" href="/static/css/cloud_backup.css">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -92,12 +93,6 @@ html[data-theme="dark"] .modal-overlay{background:var(--modal-mask)!important}
 @media (max-width:760px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:560px){.header{padding:12px 16px;align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.field input{width:100%}.field{width:100%}.form-row{align-items:stretch}.btn{width:100%}}
 </style>
-<script>
-(function() {
-  const saved = localStorage.getItem('stockTheme') || 'light';
-  document.documentElement.dataset.theme = saved === 'dark' ? 'dark' : 'light';
-})();
-</script>
 </head>
 <body>
 <div class="header">
@@ -283,156 +278,18 @@ let navChart = null;
 let allocationChart = null;
 let latestPortfolioData = {positions: [], summary: {}};
 
-function isDarkTheme() {
-  return document.documentElement.dataset.theme === 'dark';
-}
-
-function chartTextColor() {
-  return isDarkTheme() ? '#d7dde8' : '#333';
-}
-
-function chartAxisColor() {
-  return isDarkTheme() ? '#8f9aaa' : '#666';
-}
-
-function chartSplitColor() {
-  return isDarkTheme() ? '#2d3748' : '#e8e8e8';
-}
-
-function applyChartThemeOption(option) {
-  if (!option || typeof option !== 'object') return option;
-  option.backgroundColor = isDarkTheme() ? '#171d27' : '#fff';
-  option.textStyle = {color: chartTextColor(), ...(option.textStyle || {})};
-  if (option.tooltip) {
-    const tooltips = Array.isArray(option.tooltip) ? option.tooltip : [option.tooltip];
-    tooltips.forEach(t => {
-      t.backgroundColor = isDarkTheme() ? 'rgba(23,29,39,.96)' : 'rgba(255,255,255,.96)';
-      t.borderColor = isDarkTheme() ? '#2d3748' : '#e8e8e8';
-      t.textStyle = {color: chartTextColor(), ...(t.textStyle || {})};
-    });
-  }
-  const axes = [...(Array.isArray(option.xAxis) ? option.xAxis : option.xAxis ? [option.xAxis] : []), ...(Array.isArray(option.yAxis) ? option.yAxis : option.yAxis ? [option.yAxis] : [])];
-  axes.forEach(axis => {
-    axis.axisLabel = {color: chartAxisColor(), ...(axis.axisLabel || {})};
-    axis.axisLine = {lineStyle: {color: chartSplitColor(), ...((axis.axisLine || {}).lineStyle || {})}, ...(axis.axisLine || {})};
-    axis.splitLine = {lineStyle: {color: chartSplitColor(), ...((axis.splitLine || {}).lineStyle || {})}, ...(axis.splitLine || {})};
-  });
-  if (option.legend) {
-    const legends = Array.isArray(option.legend) ? option.legend : [option.legend];
-    legends.forEach(l => l.textStyle = {color: chartTextColor(), ...(l.textStyle || {})});
-  }
-  if (option.title) {
-    const titles = Array.isArray(option.title) ? option.title : [option.title];
-    titles.forEach(t => t.textStyle = {color: chartTextColor(), ...(t.textStyle || {})});
-  }
-  return option;
-}
-
-if (window.echarts && !window.echarts.__themePatched) {
-  const rawInit = window.echarts.init.bind(window.echarts);
-  window.echarts.init = function(dom, theme, opts) {
-    const instance = rawInit(dom, theme, opts);
-    if (!instance.__themePatched) {
-      const rawSetOption = instance.setOption.bind(instance);
-      instance.setOption = function(option, ...args) {
-        return rawSetOption(applyChartThemeOption(option), ...args);
-      };
-      instance.__themePatched = true;
-    }
-    return instance;
-  };
-  window.echarts.__themePatched = true;
-}
-
-function updateThemeButton() {
-  const btn = document.getElementById('themeToggle');
-  if (btn) btn.textContent = isDarkTheme() ? '浅色' : '深色';
-}
-
-function setTheme(theme) {
-  document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
-  localStorage.setItem('stockTheme', document.documentElement.dataset.theme);
-  updateThemeButton();
+window.onThemeChanged = function() {
   if (allocationChart) {
     allocationChart.dispose();
     allocationChart = null;
-    if (document.getElementById('allocationModalOverlay')?.classList.contains('active')) renderAllocationChart();
+    if (document.getElementById('allocationModalOverlay')?.classList.contains('active')) renderAllocationPie();
   }
   if (navChart) {
     navChart.dispose();
     navChart = null;
     loadNav();
   }
-}
-
-function toggleTheme() {
-  setTheme(isDarkTheme() ? 'light' : 'dark');
-}
-
-async function checkCloudUpdateOnStartup() {
-  try {
-    const res = await fetch('/api/cloud-backup/status?startup=1');
-    const status = await res.json();
-    if (!status.cloud_newer) return;
-    showCloudUpdatePrompt(status);
-  } catch (e) {
-    // 启动检查静默失败，不影响正常打开系统。
-  }
-}
-
-function showCloudUpdatePrompt(status) {
-  if (document.getElementById('cloudUpdatePrompt')) return;
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay active';
-  overlay.id = 'cloudUpdatePrompt';
-  overlay.innerHTML = `
-    <div class="modal" style="width:420px">
-      <div class="modal-header">
-        <div class="modal-title">发现云端数据更新</div>
-        <button class="modal-close" type="button">&times;</button>
-      </div>
-      <div class="modal-body" style="padding:24px;line-height:1.8;color:#555;font-size:14px">
-        ${status.possible_conflict ? '<div class="backup-warning">可能存在同步冲突：云端备份较新，同时本机还有未上传修改。建议先回首页打开备份管理查看历史版本。</div>' : '<div>云端备份比本地记录更新，建议先更新本地数据再继续使用。</div>'}
-        <div style="margin-top:12px;font-size:13px;color:#777">
-          云端时间：${status.latest_mtime || '未知'}<br>
-          云端目录：${status.backup_dir || ''}
-        </div>
-      </div>
-      <div style="padding:16px 24px;display:flex;justify-content:flex-end;gap:12px;border-top:1px solid var(--border)">
-        <button class="btn btn-outline" type="button" data-action="later">稍后</button>
-        <button class="btn btn-primary" type="button" data-action="update">立即更新</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.querySelector('.modal-close').onclick = close;
-  overlay.querySelector('[data-action="later"]').onclick = close;
-  overlay.querySelector('[data-action="update"]').onclick = () => restoreCloudFromStartup(overlay);
-}
-
-async function restoreCloudFromStartup(overlay) {
-  const btn = overlay.querySelector('[data-action="update"]');
-  btn.disabled = true;
-  btn.textContent = '更新中...';
-  showToast('正在从云端更新本地数据，请稍候...', 'success');
-  try {
-    const res = await fetch('/api/cloud-backup/restore', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '云端更新失败', 'error');
-      btn.disabled = false;
-      btn.textContent = '立即更新';
-      return;
-    }
-    showToast('云端更新完成，正在刷新页面...', 'success');
-    setTimeout(() => location.reload(), 1200);
-  } catch (e) {
-    showToast('云端更新失败', 'error');
-    btn.disabled = false;
-    btn.textContent = '立即更新';
-  }
-}
-
+};
 document.addEventListener('DOMContentLoaded', () => {
   updateThemeButton();
   checkCloudUpdateOnStartup();
