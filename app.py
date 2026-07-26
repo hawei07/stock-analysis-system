@@ -606,6 +606,8 @@ def portfolio_page():
 
 def _market_from_code(code, market=None):
     code = str(code or "")
+    if market == "HK" or re.fullmatch(r"\d{5}", code):
+        return "HK"
     if code.startswith(("6", "5", "9")):
         return "SH"
     if code.startswith(("4", "8")):
@@ -616,12 +618,45 @@ def _market_from_code(code, market=None):
 
 
 def _quote_symbol(code, market=None):
+    code = str(code or "")
     inferred_market = _market_from_code(code, market)
+    if inferred_market == "HK":
+        return f"hk{code.zfill(5)}"
     if inferred_market == "SH":
         return f"sh{code}"
     if inferred_market == "BJ":
         return f"bj{code}"
     return f"sz{code}"
+
+
+def _normalize_stock_code(code):
+    code = str(code or "").strip().upper()
+    if code.startswith("HK"):
+        code = code[2:]
+    return code.zfill(5) if re.fullmatch(r"\d{1,5}", code) else code
+
+
+def _lookup_hk_stock_info(code):
+    code = _normalize_stock_code(code)
+    if not re.fullmatch(r"\d{5}", code):
+        return None
+    try:
+        resp = requests.get(
+            f"https://qt.gtimg.cn/q=hk{code}",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=8,
+        )
+        resp.encoding = "gbk"
+        text = resp.text or ""
+        if not text.startswith("v_hk"):
+            return None
+        fields = text.split('"')[1].split("~") if '"' in text else []
+        name = fields[1].strip() if len(fields) > 1 else ""
+        if not name:
+            return None
+        return {"code": code, "name": name, "market": "HK"}
+    except Exception:
+        return None
 
 
 def _ensure_stock_order_column():
@@ -1085,15 +1120,21 @@ def _latest_dividend_per_share(codes):
 
 
 def _resolve_portfolio_stock(identifier):
-    ident = str(identifier or "").strip()
+    ident = _normalize_stock_code(identifier)
     if not ident:
         return None
-    if re.fullmatch(r"\d{6}", ident):
+    if re.fullmatch(r"\d{5,6}", ident):
         rows = execute_query(
             "SELECT code, name, market FROM stocks WHERE code=%s LIMIT 1",
             (ident,),
         )
-        return rows[0] if rows else None
+        if rows:
+            return rows[0]
+        if re.fullmatch(r"\d{5}", ident):
+            hk = _lookup_hk_stock_info(ident)
+            if hk:
+                Stock.add(code=hk["code"], name=hk["name"], market=hk["market"])
+                return hk
 
     rows = execute_query(
         "SELECT code, name, market FROM stocks WHERE name=%s LIMIT 1",
@@ -1926,7 +1967,7 @@ def api_stock_detail(code):
 @app.route("/api/stock-search")
 def api_stock_search():
     """根据代码或名称模糊搜索股票（本地DB）"""
-    keyword = request.args.get("keyword", "").strip()
+    keyword = _normalize_stock_code(request.args.get("keyword", "").strip())
     if not keyword:
         return jsonify([])
     rows = execute_query(
@@ -1937,6 +1978,10 @@ def api_stock_search():
     # 本地有结果直接返回
     if results:
         return jsonify(results)
+    if re.fullmatch(r"\d{1,5}", keyword):
+        hk = _lookup_hk_stock_info(keyword)
+        if hk:
+            return jsonify([hk])
     # 本地无结果，尝试东方财富搜索
     try:
         url = "https://searchadapter.eastmoney.com/api/suggest/get?type=14&input=" + keyword
@@ -1947,9 +1992,9 @@ def api_stock_search():
             code = r.get("Code", "")
             name = r.get("Name", "")
             mkt = r.get("MktNum", "")
-            market = {"0": "SZ", "1": "SH"}.get(str(mkt), "SH")
+            market = {"0": "SZ", "1": "SH", "116": "HK"}.get(str(mkt), "SH")
             if code and name:
-                results.append({"code": code, "name": name, "market": market})
+                results.append({"code": _normalize_stock_code(code) if market == "HK" else code, "name": name, "market": market})
     except Exception:
         pass
     return jsonify(results)
@@ -1957,6 +2002,12 @@ def api_stock_search():
 
 @app.route("/api/stock-info/<code>")
 def api_stock_info(code):
+    code = _normalize_stock_code(code)
+    if re.fullmatch(r"\d{5}", code):
+        hk = _lookup_hk_stock_info(code)
+        if hk:
+            return jsonify(hk)
+        return jsonify({"error": f"未找到港股代码 {code} 的信息"}), 404
     """根据股票代码从东方财富获取名称和市场信息"""
     # 尝试上海和深圳两个市场
     markets_to_try = []
@@ -1988,7 +2039,7 @@ def api_stock_info(code):
 @app.route("/api/stock", methods=["POST"])
 def api_add_stock():
     data = request.get_json()
-    code = data.get("code", "").strip()
+    code = _normalize_stock_code(data.get("code", "").strip())
     if not code:
         return jsonify({"error": "请输入股票代码"}), 400
 
@@ -2000,6 +2051,11 @@ def api_add_stock():
     name = data.get("name", "").strip()
     market = data.get("market", "").strip()
     if not name or not market:
+        if re.fullmatch(r"\d{5}", code):
+            hk = _lookup_hk_stock_info(code)
+            if hk:
+                name = name or hk["name"]
+                market = market or hk["market"]
         markets_to_try = [("1", "SH"), ("0", "SZ")] if code.startswith(("6", "5", "9")) else [("0", "SZ"), ("1", "SH")]
         for sec_market, our_market in markets_to_try:
             try:
@@ -2018,8 +2074,8 @@ def api_add_stock():
         if not name:
             return jsonify({"error": f"未找到股票代码 {code} 的信息"}), 404
 
-    if market and market not in ("SH", "SZ", "BJ"):
-        return jsonify({"error": "市场必须是 SH/SZ/BJ"}), 400
+    if market and market not in ("SH", "SZ", "BJ", "HK"):
+        return jsonify({"error": "市场必须是 SH/SZ/BJ/HK"}), 400
 
     try:
         Stock.add(
@@ -2064,7 +2120,7 @@ def api_delete_stock(code):
 def api_stats():
     all_stocks = Stock.get_all(page=1, page_size=1000)
     data = all_stocks["data"]
-    markets = {"SH": 0, "SZ": 0, "BJ": 0}
+    markets = {"SH": 0, "SZ": 0, "BJ": 0, "HK": 0}
     industries = {}
     for s in data:
         markets[s["market"]] = markets.get(s["market"], 0) + 1

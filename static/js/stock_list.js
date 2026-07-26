@@ -284,7 +284,7 @@ async function loadStats() {
   try {
     const res = await fetch('/api/stats');
     const data = await res.json();
-    document.getElementById('statsInfo').textContent = `共 ${data.total} 只股票 | SH:${data.markets.SH} SZ:${data.markets.SZ} BJ:${data.markets.BJ}`;
+    document.getElementById('statsInfo').textContent = `共 ${data.total} 只股票 | SH:${data.markets.SH || 0} SZ:${data.markets.SZ || 0} BJ:${data.markets.BJ || 0} HK:${data.markets.HK || 0}`;
   } catch (e) {}
 }
 

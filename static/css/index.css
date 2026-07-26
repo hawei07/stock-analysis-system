@@ -48,6 +48,7 @@ tr:hover td{background:#fafbff}
 .market-SH{background:#ffeaea;color:#cf1322}
 .market-SZ{background:#e6f7ff;color:#096dd9}
 .market-BJ{background:#f6ffed;color:#389e0d}
+.market-HK{background:#f9f0ff;color:#722ed1}
 .status-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
 .status-正常{background:#f6ffed;color:#52c41a}
 .status-ST{background:#fff7e6;color:#fa8c16}
@@ -352,6 +353,7 @@ html[data-theme="dark"] .fin-table tbody tr.fin-row-highlight .sticky-col{backgr
 html[data-theme="dark"] .market-SH{background:#3a1c22;color:#ff9aa2}
 html[data-theme="dark"] .market-SZ{background:#143044;color:#8ed4ff}
 html[data-theme="dark"] .market-BJ{background:#163322;color:#8ee6a4}
+html[data-theme="dark"] .market-HK{background:#2f1b45;color:#d3adf7}
 html[data-theme="dark"] .status-正常{background:#163322;color:#8ee6a4}
 html[data-theme="dark"] .status-ST{background:#3a2b13;color:#ffd080}
 html[data-theme="dark"] .status-\*ST{background:#3a1c22;color:#ff9aa2}
