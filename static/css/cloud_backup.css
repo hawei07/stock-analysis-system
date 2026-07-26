@@ -14,6 +14,7 @@
 
 html[data-theme="dark"] .cloud-status-pill,
 html[data-theme="dark"] .backup-manager-card{background:var(--surface-soft)!important;border-color:var(--border)!important;color:var(--text-subtle)!important}
+html[data-theme="dark"] .header .cloud-status-pill{background:rgba(255,255,255,.12)!important;border-color:rgba(255,255,255,.25)!important;color:#fff!important}
 html[data-theme="dark"] .backup-manager-card .value{color:var(--text-strong)!important}
 html[data-theme="dark"] .backup-warning{background:#3a1c22!important;border-color:#71313a!important;color:#ffccc7!important}
 

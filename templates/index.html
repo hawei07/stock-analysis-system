@@ -23,6 +23,7 @@
     <button class="btn btn-outline" onclick="backupCloud()">云备份</button>
     <button class="btn btn-outline" onclick="restoreCloud()">云恢复</button>
     <button class="btn btn-outline" onclick="openBackupManager()">备份管理</button>
+    <span class="cloud-status-pill" id="cloudBackupStatus" onclick="openBackupManager()">云备份状态：检查中</span>
   </div>
 </div>
 
@@ -33,7 +34,6 @@
     <button class="btn btn-primary" onclick="openAddModal()">+ 添加股票</button>
     <button class="btn btn-success" id="btnUpdate" onclick="updateAll()">⟳ 更新数据</button>
     <span class="stats toolbar-stats" id="statsInfo">加载中...</span>
-    <span class="cloud-status-pill" id="cloudBackupStatus" onclick="openBackupManager()">云备份状态：检查中</span>
     <button class="btn btn-outline" id="btnResetSort" onclick="resetListSort()">恢复默认顺序</button>
     <button class="btn btn-outline" id="btnReorderMode" onclick="startReorderMode()">调整默认顺序</button>
     <button class="btn btn-primary" id="btnSaveOrder" onclick="saveDefaultOrder()" style="display:none">保存顺序</button>
