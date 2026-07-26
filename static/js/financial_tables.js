@@ -1783,6 +1783,13 @@ function incomeOperatingAdjustmentResidual(row) {
   return incomeValue(row, 'operating_profit') - incomeCoreProfitValue(row) - incomeOperatingSignedAdjustmentSum(row);
 }
 
+function incomeParentProfitValue(row) {
+  if (!row) return 0;
+  const parent = Number(row.parent_net_profit);
+  if (Number.isFinite(parent)) return parent;
+  return incomeValue(row, 'net_profit') - incomeValue(row, 'minority_profit');
+}
+
 function incomePrevKey(key) {
   if (!key) return null;
   if (key.indexOf('|') === -1) return (parseInt(key) - 1) + '';
@@ -1883,8 +1890,9 @@ async function openIncomeSankey(key) {
   const coreProfit = incomeCoreProfitValue(row);
   const operatingProfit = positiveIncomeValue(row, 'operating_profit');
   const netProfit = positiveIncomeValue(row, 'net_profit');
-  const parentProfit = positiveIncomeValue(row, 'parent_net_profit');
-  const minorityProfit = positiveIncomeValue(row, 'minority_profit');
+  const parentProfit = Math.max(incomeParentProfitValue(row), 0);
+  const minorityProfitSigned = incomeValue(row, 'minority_profit');
+  const minorityProfit = Math.abs(minorityProfitSigned);
   const nonopIncome = positiveIncomeValue(row, 'nonop_income');
   const nonopExpense = positiveIncomeValue(row, 'nonop_expense');
   const incomeTax = positiveIncomeValue(row, 'income_tax');
@@ -1969,10 +1977,16 @@ async function openIncomeSankey(key) {
   addLink(opNode, taxNode, incomeTax, green, 0.85);
   addLink(opNode, netNode, opToNet, red);
 
-  const parentNode = addNode('归属于母公司普通股股东的净利润', parentProfit, 'parent_net_profit', blue, 6);
-  const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', purple, 6);
-  addLink(netNode, parentNode, parentProfit, blue);
-  addLink(netNode, minorityNode, minorityProfit, purple);
+  const minorityColor = minorityProfitSigned < 0 ? green : purple;
+  const parentNode = addNode('归属于母公司普通股股东的净利润', parentProfit, incomeParentProfitValue, blue, 6);
+  const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', minorityColor, 6);
+  if (minorityProfitSigned < 0) {
+    addLink(netNode, parentNode, netProfit, blue);
+    addLink(minorityNode, parentNode, minorityProfit, minorityColor);
+  } else {
+    addLink(netNode, parentNode, parentProfit, blue);
+    addLink(netNode, minorityNode, minorityProfit, minorityColor);
+  }
 
   document.getElementById('chartModalTitle').textContent = stockName + ' - ' + label + ' 利润流向图  财报单位：亿元';
   document.getElementById('chartModalOverlay').classList.add('active');
