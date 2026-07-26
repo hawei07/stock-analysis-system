@@ -1223,6 +1223,7 @@ function renderBSCompositionSection(container, id, title, items, groupTotal, bas
       <div class="bs-composition-table-wrap">
         <h4>${esc(title)}</h4>
         <table class="bs-composition-table">
+          <colgroup><col class="bs-col-subject"><col class="bs-col-amount"><col class="bs-col-group"><col class="bs-col-total"></colgroup>
           <thead><tr><th>科目</th><th>金额</th><th>占本组</th><th>占总资产</th></tr></thead>
           <tbody>${bsCompositionTableRows(coloredItems, groupTotal, baseTotal)}</tbody>
           <tfoot><tr><td>${esc(summaryLabel)}</td><td>${bsFormatAmount(groupTotal)}</td><td>100%</td><td>${bsFormatPercent(groupTotal, baseTotal)}</td></tr></tfoot>
