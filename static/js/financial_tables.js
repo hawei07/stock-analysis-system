@@ -1144,6 +1144,14 @@ function bsFillRemainder(items, total, name) {
   return items;
 }
 
+function bsGroupItems(row, defs, total, remainderName) {
+  const items = defs.map(def => {
+    const value = Number(row[def.field]);
+    return { name: def.name, value };
+  }).filter(item => Number.isFinite(item.value) && item.value > 0);
+  return bsFillRemainder(items, total, remainderName);
+}
+
 function prepareChartModalBox() {
   const dom = document.getElementById('chartModalBox');
   if (window._chartModalInstances) {
@@ -1239,6 +1247,8 @@ function openBSComposition(key) {
   const liabilityTotal = bsSafeTotal(row, 'total_liabilities', bsCompositionTotal(rawLiabilityItems));
   const assetItems = bsFillRemainder(rawAssetItems, assetTotal, '其他/未列示资产');
   const liabilityItems = bsFillRemainder(rawLiabilityItems, liabilityTotal, '其他/未列示负债');
+  const assetGroupItems = bsGroupItems(row, _bsCompositionDefs.assetFallback, assetTotal, '其他/未列示资产');
+  const liabilityGroupItems = bsGroupItems(row, _bsCompositionDefs.liabilityFallback, liabilityTotal, '其他/未列示负债');
   const equityValueRaw = Number(row.total_equity);
   const equityValue = Number.isFinite(equityValueRaw) && equityValueRaw > 0
     ? equityValueRaw
@@ -1258,7 +1268,9 @@ function openBSComposition(key) {
 
   const charts = [];
   charts.push(renderBSCompositionSection(report, 'Structure', '总资产结构', structureItems, assetTotal, assetTotal, '资产总计'));
+  charts.push(renderBSCompositionSection(report, 'AssetGroups', '资产大类：流动/非流动', assetGroupItems, assetTotal, assetTotal, '资产合计'));
   charts.push(renderBSCompositionSection(report, 'Assets', '资产构成', assetItems, assetTotal, assetTotal, '资产合计'));
+  charts.push(renderBSCompositionSection(report, 'LiabilityGroups', '负债大类：流动/非流动', liabilityGroupItems, liabilityTotal, assetTotal, '负债合计'));
   charts.push(renderBSCompositionSection(report, 'Liabilities', '负债构成', liabilityItems, liabilityTotal, assetTotal, '负债合计'));
 
   window._chartModalInstances = charts;
