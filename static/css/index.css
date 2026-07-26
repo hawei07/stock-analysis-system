@@ -211,6 +211,8 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .bs-composition-table th:first-child{text-align:left}
 .bs-composition-table td{padding:7px 8px;text-align:right;border-bottom:1px dashed #d8dee9;white-space:nowrap}
 .bs-composition-table td:first-child{text-align:left}
+.bs-composition-data-row{cursor:pointer;transition:background .15s}
+.bs-composition-data-row:hover,.bs-composition-data-row.active{background:#f5f8ff}
 .bs-composition-table tfoot td{font-weight:700;border-bottom:0;border-top:1px solid #d8dee9;padding-top:10px;color:#111827}
 .bs-composition-empty{text-align:center!important;color:#999!important}
 /* 资产负债表分组行 */
@@ -350,6 +352,8 @@ html[data-theme="dark"] .bs-composition-table-wrap h4{color:var(--primary)!impor
 html[data-theme="dark"] .bs-composition-table th,
 html[data-theme="dark"] .bs-composition-table td{border-color:var(--border)!important}
 html[data-theme="dark"] .bs-composition-table th{color:var(--text-subtle)!important}
+html[data-theme="dark"] .bs-composition-data-row:hover,
+html[data-theme="dark"] .bs-composition-data-row.active{background:var(--primary-soft)!important}
 html[data-theme="dark"] .bs-composition-table tfoot td{color:var(--text)!important}
 html[data-theme="dark"] .pagination button{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .pagination .current,
