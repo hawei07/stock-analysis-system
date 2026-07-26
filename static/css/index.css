@@ -205,16 +205,16 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .bs-composition-section:first-child{padding-top:4px}
 .bs-composition-section:last-child{border-bottom:0}
 .bs-composition-pie{width:min(600px,100%);height:420px;justify-self:center}
-.bs-composition-table-wrap{max-width:900px}
+.bs-composition-table-wrap{width:min(760px,100%);max-width:760px}
 .bs-composition-table-wrap h4{margin:0 0 6px;font-size:17px;color:#005cff;font-weight:700}
 .bs-composition-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}
-.bs-composition-table .bs-col-subject{width:30%}
-.bs-composition-table .bs-col-amount{width:24%}
-.bs-composition-table .bs-col-group{width:23%}
-.bs-composition-table .bs-col-total{width:23%}
-.bs-composition-table th{padding:0 6px 5px;color:#667085;font-weight:500;text-align:right;border-bottom:1px solid #d8dee9}
+.bs-composition-table .bs-col-subject{width:34%}
+.bs-composition-table .bs-col-amount{width:22%}
+.bs-composition-table .bs-col-group{width:22%}
+.bs-composition-table .bs-col-total{width:22%}
+.bs-composition-table th{padding:0 6px 5px;color:#667085;font-weight:500;text-align:left;border-bottom:1px solid #d8dee9}
 .bs-composition-table th:first-child{text-align:left}
-.bs-composition-table td{padding:5px 6px;text-align:right;border-bottom:1px dashed #d8dee9;white-space:nowrap}
+.bs-composition-table td{padding:5px 6px;text-align:left;border-bottom:1px dashed #d8dee9;white-space:nowrap}
 .bs-composition-table td:first-child{text-align:left}
 .bs-composition-data-row{cursor:pointer;transition:background .15s}
 .bs-composition-data-row:hover,.bs-composition-data-row.active{background:#f5f8ff}
