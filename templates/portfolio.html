@@ -17,7 +17,6 @@
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">深色</button>
-    <button class="theme-toggle" id="amountPrivacyToggle" onclick="toggleAmountPrivacy()">隐藏金额</button>
     <button class="btn btn-outline" onclick="location.href='/'">返回首页</button>
     <button class="btn btn-primary" onclick="saveSnapshot()">记录今日净值</button>
     <button class="btn btn-outline" onclick="openFlowModal()">资金流水</button>
@@ -29,7 +28,10 @@
 <div class="content">
   <div class="summary-grid">
     <div class="summary-card">
-      <div class="label">总资产</div>
+      <div class="label label-with-action">
+        <span>总资产</span>
+        <button class="amount-privacy-toggle" id="amountPrivacyToggle" type="button" onclick="toggleAmountPrivacy()" aria-label="隐藏金额" title="隐藏金额"></button>
+      </div>
       <div class="value" id="totalAssetValue">--</div>
       <div class="sub">股票市值 + 现金</div>
     </div>
@@ -322,7 +324,11 @@ function privateMoney(v) {
 function updateAmountPrivacyButton() {
   const btn = document.getElementById('amountPrivacyToggle');
   if (btn) {
-    btn.textContent = amountPrivacyMode ? '显示金额' : '隐藏金额';
+    btn.innerHTML = amountPrivacyMode
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"></path><path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c5 0 8.8 3.1 10 8a11.8 11.8 0 0 1-2.1 4.1"></path><path d="M6.1 6.1A11.8 11.8 0 0 0 2 12c1.2 4.9 5 8 10 8a10.8 10.8 0 0 0 4.3-.9"></path></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+    btn.setAttribute('aria-label', amountPrivacyMode ? '显示金额' : '隐藏金额');
+    btn.title = amountPrivacyMode ? '显示金额' : '隐藏金额';
     btn.classList.toggle('active', amountPrivacyMode);
   }
 }

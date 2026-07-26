@@ -13,6 +13,11 @@ body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;c
 .summary-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;margin-bottom:16px}
 .summary-card{background:#fff;border-radius:8px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-left:3px solid #4a6cf7}
 .summary-card .label{font-size:12px;color:#999;margin-bottom:8px}
+.label-with-action{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.amount-privacy-toggle{width:24px;height:24px;border:none;background:transparent;color:#8c98aa;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;cursor:pointer;transition:all .2s;flex:0 0 auto}
+.amount-privacy-toggle:hover{background:#f0f5ff;color:#4a6cf7}
+.amount-privacy-toggle.active{color:#4a6cf7;background:#f0f5ff}
+.amount-privacy-toggle svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .summary-card .value{font-size:24px;font-weight:700;color:#1a1a2e;line-height:1.25}
 .summary-card .sub{font-size:12px;color:#888;margin-top:6px}
 .panel{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:16px;overflow:hidden}
@@ -76,10 +81,11 @@ html[data-theme="dark"] .summary-card .sub,
 html[data-theme="dark"] .field label,
 html[data-theme="dark"] .dividend-meta,
 html[data-theme="dark"] .empty{color:var(--text-muted)!important}
+html[data-theme="dark"] .amount-privacy-toggle:hover,
+html[data-theme="dark"] .amount-privacy-toggle.active{background:var(--primary-soft)!important;color:var(--primary)!important}
 html[data-theme="dark"] .modal-overlay{background:var(--modal-mask)!important}
 .theme-toggle{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer;transition:all .2s}
 .theme-toggle:hover{background:rgba(255,255,255,.22)}
-.theme-toggle.active{background:#fff;color:#16213e;border-color:#fff}
 @media (max-width:1100px){.summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.content{padding:16px}}
 @media (max-width:760px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:560px){.header{padding:12px 16px;align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.field input{width:100%}.field{width:100%}.form-row{align-items:stretch}.btn{width:100%}}
