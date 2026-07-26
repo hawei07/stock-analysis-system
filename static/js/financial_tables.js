@@ -1210,6 +1210,13 @@ function bsCompositionTableRows(items, groupTotal, baseTotal) {
 function renderBSCompositionSection(container, id, title, items, groupTotal, baseTotal, summaryLabel) {
   const chartId = 'bsCompositionPie' + id;
   const coloredItems = bsColorItems(items);
+  const dimPieItems = (activeIndex) => coloredItems.map((item, index) => ({
+    ...item,
+    itemStyle: {
+      ...item.itemStyle,
+      opacity: activeIndex == null || index === activeIndex ? 1 : 0.18,
+    },
+  }));
   container.insertAdjacentHTML('beforeend', `
     <section class="bs-composition-section">
       <div class="bs-composition-pie" id="${chartId}"></div>
@@ -1242,6 +1249,11 @@ function renderBSCompositionSection(container, id, title, items, groupTotal, bas
       minAngle: 4,
       label: { show: false },
       labelLine: { show: false },
+      emphasis: {
+        scale: true,
+        scaleSize: 14,
+        itemStyle: { shadowBlur: 18, shadowColor: 'rgba(0,0,0,.28)' }
+      },
       data: coloredItems
     }]
   });
@@ -1249,6 +1261,7 @@ function renderBSCompositionSection(container, id, title, items, groupTotal, bas
     row.addEventListener('mouseenter', function() {
       const dataIndex = Number(this.dataset.pieIndex);
       if (!Number.isFinite(dataIndex)) return;
+      chart.setOption({ series: [{ data: dimPieItems(dataIndex) }] });
       chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex });
       chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex });
       this.classList.add('active');
@@ -1258,6 +1271,7 @@ function renderBSCompositionSection(container, id, title, items, groupTotal, bas
       if (!Number.isFinite(dataIndex)) return;
       chart.dispatchAction({ type: 'downplay', seriesIndex: 0, dataIndex });
       chart.dispatchAction({ type: 'hideTip' });
+      chart.setOption({ series: [{ data: coloredItems }] });
       this.classList.remove('active');
     });
   });
