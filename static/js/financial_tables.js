@@ -1794,18 +1794,41 @@ function incomeNodeLabel(name, value, row, prevRow, field) {
   const cur = typeof field === 'function' ? field(row) : incomeValue(row, field);
   const prev = typeof field === 'function' ? field(prevRow) : incomeValue(prevRow, field);
   const displayValue = cur < 0 && Math.abs(Math.abs(cur) - value) < 0.01 ? -value : value;
-  let yoy = '';
+  const amountText = bsFormatAmount(displayValue);
+  let labelText = `{node|${name}}\n{amount|${amountText}}`;
+  let tooltipText = name + '\n' + amountText;
   if (field && prev !== 0) {
     const rate = (cur - prev) / Math.abs(prev) * 100;
-    if (Number.isFinite(rate)) yoy = '\n' + (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
+    if (Number.isFinite(rate)) {
+      const yoyText = (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
+      labelText += `\n{${rate >= 0 ? 'pos' : 'neg'}|${yoyText}}`;
+      tooltipText += '\n' + yoyText;
+    }
   }
-  return name + '\n' + bsFormatAmount(displayValue) + yoy;
+  return { labelText, tooltipText };
 }
 
 function incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color, depth) {
   if (!Number.isFinite(value) || value <= 0 || nodeMap[name]) return name;
   nodeMap[name] = true;
-  nodes.push({ name, value, depth, labelText: incomeNodeLabel(name, value, row, prevRow, field), itemStyle: { color }, label: { color } });
+  const label = incomeNodeLabel(name, value, row, prevRow, field);
+  nodes.push({
+    name,
+    value,
+    depth,
+    labelText: label.labelText,
+    tooltipText: label.tooltipText,
+    itemStyle: { color },
+    label: {
+      color,
+      rich: {
+        node: { color },
+        amount: { color },
+        pos: { color: '#ef4444' },
+        neg: { color: '#22a866' },
+      }
+    }
+  });
   return name;
 }
 
@@ -1967,7 +1990,7 @@ async function openIncomeSankey(key) {
         if (p.dataType === 'edge') {
           return p.data.source + ' → ' + p.data.target + '<br/>' + bsFormatAmount(p.value);
         }
-        return (p.data.labelText || p.name).replace(/\n/g, '<br/>');
+        return (p.data.tooltipText || p.name).replace(/\n/g, '<br/>');
       }
     },
     series: [{
