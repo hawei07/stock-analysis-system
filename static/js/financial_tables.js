@@ -1775,10 +1775,10 @@ function incomeNodeLabel(name, value, row, prevRow, field) {
   return name + '\n' + bsFormatAmount(value) + yoy;
 }
 
-function incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color) {
+function incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color, depth) {
   if (!Number.isFinite(value) || value <= 0 || nodeMap[name]) return name;
   nodeMap[name] = true;
-  nodes.push({ name, labelText: incomeNodeLabel(name, value, row, prevRow, field), itemStyle: { color }, label: { color } });
+  nodes.push({ name, value, depth, labelText: incomeNodeLabel(name, value, row, prevRow, field), itemStyle: { color }, label: { color } });
   return name;
 }
 
@@ -1792,7 +1792,7 @@ async function incomeSankeySegmentRows(key, revenue) {
   const year = parseInt(key, 10);
   if (!code || !Number.isFinite(year)) return [];
   try {
-    const params = new URLSearchParams({ from_year: year, to_year: year, dimension: 'business' });
+    const params = new URLSearchParams({ from_year: year, to_year: year, dimension: 'product' });
     const res = await fetch(`/api/stock/${code}/segments?${params}`);
     const payload = await res.json();
     const rows = (payload.data || [])
@@ -1832,84 +1832,80 @@ async function openIncomeSankey(key) {
   const taxSurcharge = positiveIncomeValue(row, 'tax_surcharge');
   const coreProfit = incomeCoreProfitValue(row);
   const operatingProfit = positiveIncomeValue(row, 'operating_profit');
-  const totalProfit = positiveIncomeValue(row, 'total_profit');
   const netProfit = positiveIncomeValue(row, 'net_profit');
   const parentProfit = positiveIncomeValue(row, 'parent_net_profit');
   const minorityProfit = positiveIncomeValue(row, 'minority_profit');
+  const nonopIncome = positiveIncomeValue(row, 'nonop_income');
+  const nonopExpense = positiveIncomeValue(row, 'nonop_expense');
+  const incomeTax = positiveIncomeValue(row, 'income_tax');
   const segmentRows = await incomeSankeySegmentRows(key, revenue);
 
   const nodes = [];
   const nodeMap = {};
   const links = [];
-  const addNode = (name, value, field, color) => incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color);
+  const addNode = (name, value, field, color, depth) => incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color, depth);
   const addLink = (source, target, value, color) => incomeAddLink(links, nodeMap, source, target, value, color);
 
-  const revenueNode = addNode('营业总收入', revenue, 'total_revenue', red);
+  const revenueNode = addNode('营业收入', revenue, 'total_revenue', red, 1);
   for (const segment of segmentRows) {
-    const node = addNode(segment.name, segment.value, null, red);
+    const node = addNode(segment.name, segment.value, null, red, 0);
     addLink(node, revenueNode, segment.value, red);
   }
 
-  const costNode = addNode('营业成本', cost, 'cost_of_revenue', green);
-  const grossNode = addNode('毛利', gross, incomeGrossValue, red);
+  const costNode = addNode('营业成本', cost, 'cost_of_revenue', green, 2);
+  const grossNode = addNode('毛利', gross, incomeGrossValue, red, 2);
   addLink(revenueNode, costNode, cost, green);
   addLink(revenueNode, grossNode, gross, red);
 
-  const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green);
+  const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green, 3);
   addLink(grossNode, periodNode, periodExpense, green);
+  const taxSurchargeNode = addNode('税金及附加', taxSurcharge, 'tax_surcharge', green, 3);
+  addLink(grossNode, taxSurchargeNode, taxSurcharge, green);
+
+  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red, 3);
+  addLink(grossNode, coreNode, coreProfit, red);
+
   const expenseDefs = [
     ['销售费用', 'selling_expense'],
     ['管理费用', 'admin_expense'],
-    ['财务费用', 'finance_expense'],
     ['研发费用', 'rd_expense'],
+    ['财务费用', 'finance_expense'],
   ];
   for (const def of expenseDefs) {
     const value = positiveIncomeValue(row, def[1]);
-    const node = addNode(def[0], value, def[1], green);
+    const node = addNode(def[0], value, def[1], green, 4);
     addLink(periodNode, node, value, green);
   }
-  const taxSurchargeNode = addNode('税金及附加', taxSurcharge, 'tax_surcharge', green);
-  addLink(grossNode, taxSurchargeNode, taxSurcharge, green);
 
-  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red);
-  addLink(grossNode, coreNode, coreProfit, red);
+  const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red, 4);
+  addLink(coreNode, opNode, coreProfit, red);
 
-  const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red);
-  addLink(coreNode, opNode, Math.min(coreProfit, operatingProfit), red);
-  const totalProfitNode = addNode('利润总额', totalProfit, 'total_profit', red);
-
-  const otherIncomeDefs = [
-    ['投资收益', 'invest_income'],
-    ['公允价值变动收益', 'fair_value_change'],
+  const adjustmentDefs = [
+    ['利息收入', 'interest_income', amber, false],
+    ['投资收益', 'invest_income', amber, false],
+    ['公允价值变动收益', 'fair_value_change', amber, false],
+    ['信用减值损失', 'credit_impairment_loss', green, true],
   ];
-  for (const def of otherIncomeDefs) {
+  for (const def of adjustmentDefs) {
     const raw = incomeValue(row, def[1]);
-    if (raw > 0) {
-      const node = addNode(def[0], raw, def[1], amber);
-      addLink(node, opNode, raw, amber);
-    } else if (raw < 0) {
-      const node = addNode(def[0].replace('收益', '损失'), Math.abs(raw), def[1], green);
-      addLink(coreNode, node, Math.abs(raw), green);
-    }
+    const value = Math.abs(raw);
+    const node = addNode(def[0], value, def[1], def[2], 3);
+    addLink(node, opNode, value, def[2]);
   }
 
-  const nonopIncome = positiveIncomeValue(row, 'nonop_income');
-  const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber);
-  addLink(nonopIncomeNode, totalProfitNode, nonopIncome, amber);
+  const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 4);
+  const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green, 4);
 
-  const nonopExpense = positiveIncomeValue(row, 'nonop_expense');
-  const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green);
+  const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 5);
+  const netNode = addNode('净利润', netProfit, 'net_profit', red, 5);
+  const opToNet = Math.max(netProfit - nonopIncome, 0);
+  addLink(nonopIncomeNode, netNode, nonopIncome, amber);
   addLink(opNode, nonopExpenseNode, nonopExpense, green);
-  addLink(opNode, totalProfitNode, totalProfit, red);
+  addLink(opNode, taxNode, incomeTax, green);
+  addLink(opNode, netNode, opToNet, red);
 
-  const incomeTax = positiveIncomeValue(row, 'income_tax');
-  const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green);
-  const netNode = addNode('净利润', netProfit, 'net_profit', red);
-  addLink(totalProfitNode, taxNode, incomeTax, green);
-  addLink(totalProfitNode, netNode, netProfit, red);
-
-  const parentNode = addNode('归母净利润', parentProfit, 'parent_net_profit', blue);
-  const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', purple);
+  const parentNode = addNode('归属于母公司普通股股东的净利润', parentProfit, 'parent_net_profit', blue, 6);
+  const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', purple, 6);
   addLink(netNode, parentNode, parentProfit, blue);
   addLink(netNode, minorityNode, minorityProfit, purple);
 
