@@ -1203,7 +1203,7 @@ function bsColorItems(items) {
 function bsCompositionTableRows(items, groupTotal, baseTotal) {
   if (!items.length) return '<tr><td colspan="4" class="bs-composition-empty">暂无明细数据</td></tr>';
   return items.map((item, index) => (
-    `<tr class="bs-composition-data-row" data-pie-index="${index}" style="color:${item.itemStyle.color}"><td>${esc(item.name)}</td><td>${bsFormatAmount(item.value)}</td><td>${bsFormatPercent(item.value, groupTotal)}</td><td>${bsFormatPercent(item.value, baseTotal)}</td></tr>`
+    `<tr class="bs-composition-data-row" data-pie-index="${index}" style="--bs-row-color:${item.itemStyle.color}"><td>${esc(item.name)}</td><td>${bsFormatAmount(item.value)}</td><td>${bsFormatPercent(item.value, groupTotal)}</td><td>${bsFormatPercent(item.value, baseTotal)}</td></tr>`
   )).join('');
 }
 

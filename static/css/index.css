@@ -216,6 +216,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .bs-composition-table th:first-child{text-align:left}
 .bs-composition-table td{padding:5px 6px;text-align:left;border-bottom:1px dashed #d8dee9;white-space:nowrap}
 .bs-composition-table td:first-child{text-align:left}
+.bs-composition-data-row td{color:var(--bs-row-color)!important}
 .bs-composition-data-row{cursor:pointer;transition:background .15s}
 .bs-composition-data-row:hover,.bs-composition-data-row.active{background:#f5f8ff}
 .bs-composition-table tfoot td{font-weight:700;border-bottom:0;border-top:1px solid #d8dee9;padding-top:7px;color:#111827}
