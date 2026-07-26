@@ -1737,6 +1737,26 @@ function positiveIncomeValue(row, field) {
   return Math.max(incomeValue(row, field), 0);
 }
 
+function incomeRevenueValue(row) {
+  return incomeValue(row, 'total_revenue') || incomeValue(row, 'operating_revenue');
+}
+
+function incomePeriodExpenseValue(row) {
+  return ['selling_expense', 'admin_expense', 'finance_expense', 'rd_expense']
+    .reduce((sum, field) => sum + positiveIncomeValue(row, field), 0);
+}
+
+function incomeGrossValue(row) {
+  return Math.max(incomeRevenueValue(row) - positiveIncomeValue(row, 'cost_of_revenue'), 0);
+}
+
+function incomeCoreProfitValue(row) {
+  return Math.max(
+    incomeGrossValue(row) - incomePeriodExpenseValue(row) - positiveIncomeValue(row, 'tax_surcharge'),
+    0
+  );
+}
+
 function incomePrevKey(key) {
   if (!key) return null;
   if (key.indexOf('|') === -1) return (parseInt(key) - 1) + '';
@@ -1745,10 +1765,11 @@ function incomePrevKey(key) {
 }
 
 function incomeNodeLabel(name, value, row, prevRow, field) {
-  const prev = incomeValue(prevRow, field);
+  const cur = typeof field === 'function' ? field(row) : incomeValue(row, field);
+  const prev = typeof field === 'function' ? field(prevRow) : incomeValue(prevRow, field);
   let yoy = '';
   if (field && prev !== 0) {
-    const rate = (incomeValue(row, field) - prev) / Math.abs(prev) * 100;
+    const rate = (cur - prev) / Math.abs(prev) * 100;
     if (Number.isFinite(rate)) yoy = '\n' + (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
   }
   return name + '\n' + bsFormatAmount(value) + yoy;
@@ -1766,7 +1787,30 @@ function incomeAddLink(links, nodeMap, source, target, value, color) {
   links.push({ source, target, value, lineStyle: { color, opacity: 0.28 } });
 }
 
-function openIncomeSankey(key) {
+async function incomeSankeySegmentRows(key, revenue) {
+  const code = document.getElementById('detailCode').textContent.trim();
+  const year = parseInt(key, 10);
+  if (!code || !Number.isFinite(year)) return [];
+  try {
+    const params = new URLSearchParams({ from_year: year, to_year: year, dimension: 'business' });
+    const res = await fetch(`/api/stock/${code}/segments?${params}`);
+    const payload = await res.json();
+    const rows = (payload.data || [])
+      .filter(row => row.fiscal_year === year && Number(row.revenue) > 0)
+      .sort((a, b) => Number(b.revenue || 0) - Number(a.revenue || 0));
+    const topRows = rows.slice(0, 6).map(row => ({ name: row.segment_name, value: Number(row.revenue) }));
+    const rest = rows.slice(6).reduce((sum, row) => sum + Number(row.revenue || 0), 0);
+    if (rest > 0) topRows.push({ name: '其他业务', value: rest });
+    const listed = topRows.reduce((sum, row) => sum + row.value, 0);
+    const missing = revenue - listed;
+    if (missing > Math.max(revenue * 0.02, 0.01)) topRows.push({ name: '未列示收入', value: missing });
+    return topRows;
+  } catch (e) {
+    return [];
+  }
+}
+
+async function openIncomeSankey(key) {
   const dataMap = window._incDataMap;
   if (!dataMap || !key || !dataMap[key]) return;
 
@@ -1781,14 +1825,18 @@ function openIncomeSankey(key) {
   const amber = '#f59e0b';
   const purple = '#7c3aed';
 
-  const revenue = incomeValue(row, 'total_revenue') || incomeValue(row, 'operating_revenue');
+  const revenue = incomeRevenueValue(row);
   const cost = positiveIncomeValue(row, 'cost_of_revenue');
-  const gross = Math.max(revenue - cost, 0);
+  const gross = incomeGrossValue(row);
+  const periodExpense = incomePeriodExpenseValue(row);
+  const taxSurcharge = positiveIncomeValue(row, 'tax_surcharge');
+  const coreProfit = incomeCoreProfitValue(row);
   const operatingProfit = positiveIncomeValue(row, 'operating_profit');
   const totalProfit = positiveIncomeValue(row, 'total_profit');
   const netProfit = positiveIncomeValue(row, 'net_profit');
   const parentProfit = positiveIncomeValue(row, 'parent_net_profit');
   const minorityProfit = positiveIncomeValue(row, 'minority_profit');
+  const segmentRows = await incomeSankeySegmentRows(key, revenue);
 
   const nodes = [];
   const nodeMap = {};
@@ -1797,13 +1845,19 @@ function openIncomeSankey(key) {
   const addLink = (source, target, value, color) => incomeAddLink(links, nodeMap, source, target, value, color);
 
   const revenueNode = addNode('营业总收入', revenue, 'total_revenue', red);
+  for (const segment of segmentRows) {
+    const node = addNode(segment.name, segment.value, null, red);
+    addLink(node, revenueNode, segment.value, red);
+  }
+
   const costNode = addNode('营业成本', cost, 'cost_of_revenue', green);
-  const grossNode = addNode('毛利', gross, null, red);
+  const grossNode = addNode('毛利', gross, incomeGrossValue, red);
   addLink(revenueNode, costNode, cost, green);
   addLink(revenueNode, grossNode, gross, red);
 
+  const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green);
+  addLink(grossNode, periodNode, periodExpense, green);
   const expenseDefs = [
-    ['税金及附加', 'tax_surcharge'],
     ['销售费用', 'selling_expense'],
     ['管理费用', 'admin_expense'],
     ['财务费用', 'finance_expense'],
@@ -1812,21 +1866,31 @@ function openIncomeSankey(key) {
   for (const def of expenseDefs) {
     const value = positiveIncomeValue(row, def[1]);
     const node = addNode(def[0], value, def[1], green);
-    addLink(grossNode, node, value, green);
+    addLink(periodNode, node, value, green);
   }
+  const taxSurchargeNode = addNode('税金及附加', taxSurcharge, 'tax_surcharge', green);
+  addLink(grossNode, taxSurchargeNode, taxSurcharge, green);
+
+  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red);
+  addLink(grossNode, coreNode, coreProfit, red);
 
   const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red);
-  addLink(grossNode, opNode, operatingProfit, red);
-
+  addLink(coreNode, opNode, Math.min(coreProfit, operatingProfit), red);
   const totalProfitNode = addNode('利润总额', totalProfit, 'total_profit', red);
+
   const otherIncomeDefs = [
     ['投资收益', 'invest_income'],
     ['公允价值变动收益', 'fair_value_change'],
   ];
   for (const def of otherIncomeDefs) {
-    const value = positiveIncomeValue(row, def[1]);
-    const node = addNode(def[0], value, def[1], amber);
-    addLink(node, opNode, value, amber);
+    const raw = incomeValue(row, def[1]);
+    if (raw > 0) {
+      const node = addNode(def[0], raw, def[1], amber);
+      addLink(node, opNode, raw, amber);
+    } else if (raw < 0) {
+      const node = addNode(def[0].replace('收益', '损失'), Math.abs(raw), def[1], green);
+      addLink(coreNode, node, Math.abs(raw), green);
+    }
   }
 
   const nonopIncome = positiveIncomeValue(row, 'nonop_income');
