@@ -3530,6 +3530,45 @@ INCOME_ROW_MAP = [
     ("归属于母公司所有者的综合收益总额", "parent_comprehensive"),
 ]
 INCOME_COLUMNS = [c for _, c in INCOME_ROW_MAP]
+INCOME_SUPPLEMENT_COLUMNS = [
+    "interest_income",
+    "credit_impairment_loss",
+    "asset_impairment_loss",
+    "asset_disposal_income",
+    "other_income",
+]
+
+EASTMONEY_INCOME_FIELD_MAP = {
+    "TOTAL_OPERATE_INCOME": ("total_revenue", True),
+    "OPERATE_INCOME": ("operating_revenue", True),
+    "TOTAL_OPERATE_COST": ("operating_cost", True),
+    "OPERATE_COST": ("cost_of_revenue", True),
+    "OPERATE_TAX_ADD": ("tax_surcharge", True),
+    "SALE_EXPENSE": ("selling_expense", True),
+    "MANAGE_EXPENSE": ("admin_expense", True),
+    "FINANCE_EXPENSE": ("finance_expense", True),
+    "RESEARCH_EXPENSE": ("rd_expense", True),
+    "INTEREST_INCOME": ("interest_income", True),
+    "FAIRVALUE_CHANGE_INCOME": ("fair_value_change", True),
+    "CREDIT_IMPAIRMENT_LOSS": ("credit_impairment_loss", True),
+    "ASSET_IMPAIRMENT_LOSS": ("asset_impairment_loss", True),
+    "ASSET_DISPOSAL_INCOME": ("asset_disposal_income", True),
+    "OTHER_INCOME": ("other_income", True),
+    "INVEST_INCOME": ("invest_income", True),
+    "OPERATE_PROFIT": ("operating_profit", True),
+    "NONBUSINESS_INCOME": ("nonop_income", True),
+    "NONBUSINESS_EXPENSE": ("nonop_expense", True),
+    "TOTAL_PROFIT": ("total_profit", True),
+    "INCOME_TAX": ("income_tax", True),
+    "NETPROFIT": ("net_profit", True),
+    "PARENT_NETPROFIT": ("parent_net_profit", True),
+    "MINORITY_INTEREST": ("minority_profit", True),
+    "BASIC_EPS": ("basic_eps", False),
+    "DILUTED_EPS": ("diluted_eps", False),
+    "OTHER_COMPRE_INCOME": ("other_comprehensive", True),
+    "TOTAL_COMPRE_INCOME": ("total_comprehensive", True),
+    "PARENT_TCI": ("parent_comprehensive", True),
+}
 
 # 现金流量表行映射
 CASHFLOW_ROW_MAP = [
@@ -3647,6 +3686,64 @@ def _parse_sina_finance(html, row_map, target_year=None):
     if target_year is not None:
         return {k: v for k, v in all_year_data.items() if k[0] == target_year}
     return all_year_data
+
+
+def _parse_report_period(report_date):
+    if not report_date:
+        return None
+    m = re.match(r"(\d{4})-(\d{2})-\d{2}", str(report_date))
+    if not m:
+        return None
+    year = int(m.group(1))
+    month = int(m.group(2))
+    return year, {12: "FY", 9: "Q3", 6: "Q2", 3: "Q1"}.get(month, "FY")
+
+
+def _fetch_eastmoney_income(stock_code):
+    url = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
+    resp = requests.get(
+        url,
+        params={
+            "reportName": "RPT_F10_FINANCE_GINCOME",
+            "columns": "ALL",
+            "filter": f'(SECURITY_CODE="{stock_code}")',
+            "pageNumber": 1,
+            "pageSize": 500,
+            "sortColumns": "REPORT_DATE",
+            "sortTypes": -1,
+        },
+        headers={"User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/"},
+        timeout=15,
+    )
+    data = resp.json()
+    rows = (data.get("result") or {}).get("data") or []
+    result = {}
+    for row in rows:
+        key = _parse_report_period(row.get("REPORT_DATE"))
+        if not key:
+            continue
+        values = result.setdefault(key, {})
+        for source_field, (target_col, is_amount) in EASTMONEY_INCOME_FIELD_MAP.items():
+            raw = row.get(source_field)
+            if raw in (None, "", "--"):
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if is_amount:
+                value = value / 100000000
+            values[target_col] = round(value, 4)
+    return {k: v for k, v in result.items() if v}
+
+
+def _merge_income_sources(primary, supplement):
+    for key, values in supplement.items():
+        merged = primary.setdefault(key, {})
+        for col, value in values.items():
+            if value is not None:
+                merged[col] = value
+    return primary
 
 
 def _upsert_finance(stock_code, all_years, columns, table):
@@ -4067,14 +4164,17 @@ def api_update_income():
             resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
             resp.encoding = "gbk"
             all_years = _parse_sina_finance(resp.text, INCOME_ROW_MAP)
+            eastmoney_years = _fetch_eastmoney_income(code)
+            all_years = _merge_income_sources(all_years, eastmoney_years)
 
             existing = set()
             if mode == "incremental":
-                for r in execute_query("SELECT fiscal_year FROM income_statements WHERE stock_code=%s", (code,)):
-                    existing.add(r["fiscal_year"])
+                for r in execute_query("SELECT fiscal_year, report_period FROM income_statements WHERE stock_code=%s", (code,)):
+                    existing.add((r["fiscal_year"], r["report_period"]))
 
             for (year, rp), values in sorted(all_years.items()):
-                if mode == "incremental" and year in existing:
+                has_new_supplement = any(values.get(c) is not None for c in INCOME_SUPPLEMENT_COLUMNS)
+                if mode == "incremental" and (year, rp) in existing and not has_new_supplement:
                     continue
                 _upsert_finance(code, {(year, rp): values}, INCOME_COLUMNS, "income_statements")
                 updated += 1
