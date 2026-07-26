@@ -358,6 +358,7 @@ html[data-theme="dark"] .bs-composition-table-wrap h4{color:var(--primary)!impor
 html[data-theme="dark"] .bs-composition-table th,
 html[data-theme="dark"] .bs-composition-table td{border-color:var(--border)!important}
 html[data-theme="dark"] .bs-composition-table th{color:var(--text-subtle)!important}
+html[data-theme="dark"] .bs-composition-data-row td{color:var(--bs-row-color)!important}
 html[data-theme="dark"] .bs-composition-data-row:hover,
 html[data-theme="dark"] .bs-composition-data-row.active{background:var(--primary-soft)!important}
 html[data-theme="dark"] .bs-composition-table tfoot td{color:var(--text)!important}
