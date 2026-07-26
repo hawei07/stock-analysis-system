@@ -1206,6 +1206,8 @@ function renderBSCompositionSection(container, id, title, items, groupTotal, bas
   chart.setOption({
     tooltip: {
       trigger: 'item',
+      appendToBody: true,
+      confine: false,
       formatter: function(p) {
         return p.seriesName + '<br/>' + p.marker + ' ' + p.name + ': ' + bsFormatAmount(p.value) + ' (' + p.percent.toFixed(2) + '%)';
       }
