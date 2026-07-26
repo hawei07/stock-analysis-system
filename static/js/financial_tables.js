@@ -975,8 +975,10 @@ function renderBalanceSheetTable(data, cmpData, cmpCode, cmpName) {
   // Table header: rowspan="2" with colspan="2" per key
   html += '<table class="fin-table" id="bsMainTable"><thead><tr>';
   html += '<th class="sticky-col sticky-header" rowspan="2">科目</th>';
-  for (const lbl of keyLabels) {
-    html += `<th class="sticky-header year-header" colspan="2">${lbl}</th>`;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const lbl = keyLabels[i];
+    html += `<th class="sticky-header year-header" colspan="2"><span class="bs-period-header"><span>${lbl}</span><button type="button" class="bs-composition-icon" data-key="${esc(key)}" title="查看资产/负债构成" aria-label="查看${esc(lbl)}资产/负债构成"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v6.5h6.5A6.5 6.5 0 0 0 8 1.5Z"></path><path d="M7 2.5A6 6 0 1 0 13.5 9H7V2.5Z"></path></svg></button></span></th>`;
   }
   html += '</tr><tr>';
   for (const lbl of keyLabels) {
@@ -1051,6 +1053,154 @@ function renderBalanceSheetTable(data, cmpData, cmpCode, cmpName) {
       openBSChart(this.dataset.field, this.dataset.name);
     });
   });
+  wrap.querySelectorAll('.bs-composition-icon').forEach(icon => {
+    icon.addEventListener('click', function(e) {
+      e.stopPropagation();
+      openBSComposition(this.dataset.key);
+    });
+  });
+}
+
+const _bsCompositionDefs = {
+  assets: [
+    { name: '货币资金', field: 'monetary_funds' },
+    { name: '交易性金融资产', field: 'trading_fin_assets' },
+    { name: '应收票据', field: 'notes_receivable' },
+    { name: '应收账款', field: 'accounts_receivable' },
+    { name: '应收款项融资', field: 'receivables_financing' },
+    { name: '预付款项', field: 'prepayment' },
+    { name: '其他应收款', field: 'other_receivables' },
+    { name: '存货', field: 'inventory' },
+    { name: '一年内到期的非流动资产', field: 'noncurrent_assets_due1y' },
+    { name: '其他流动资产', field: 'other_current_assets' },
+    { name: '持有至到期投资', field: 'held_to_maturity_invest' },
+    { name: '长期股权投资', field: 'longterm_equity_invest' },
+    { name: '投资性房地产', field: 'investment_property' },
+    { name: '在建工程', field: 'cip' },
+    { name: '固定资产', field: 'fixed_assets' },
+    { name: '使用权资产', field: 'right_of_use_assets' },
+    { name: '无形资产', field: 'intangible_assets' },
+    { name: '开发支出', field: 'development_expenditure' },
+    { name: '商誉', field: 'goodwill' },
+    { name: '长期待摊费用', field: 'longterm_prepaid_expense' },
+    { name: '递延所得税资产', field: 'deferred_tax_assets' },
+    { name: '其他非流动资产', field: 'other_noncurrent_assets' },
+  ],
+  liabilities: [
+    { name: '短期借款', field: 'short_borrow' },
+    { name: '应付票据', field: 'notes_payable' },
+    { name: '应付账款', field: 'accounts_payable' },
+    { name: '预收款项', field: 'advance_receipts' },
+    { name: '应付职工薪酬', field: 'payroll_payable' },
+    { name: '应交税费', field: 'taxes_payable' },
+    { name: '其他应付款', field: 'other_payables' },
+    { name: '一年内到期的非流动负债', field: 'noncurrent_liab_due1y' },
+    { name: '其他流动负债', field: 'other_current_liabilities' },
+    { name: '长期借款', field: 'long_borrow' },
+    { name: '应付债券', field: 'bonds_payable' },
+    { name: '租赁负债', field: 'lease_liabilities' },
+    { name: '递延所得税负债', field: 'deferred_tax_liabilities' },
+  ],
+  assetFallback: [
+    { name: '流动资产', field: 'total_current_assets' },
+    { name: '非流动资产', field: 'total_noncurrent_assets' },
+  ],
+  liabilityFallback: [
+    { name: '流动负债', field: 'total_current_liabilities' },
+    { name: '非流动负债', field: 'total_noncurrent_liabilities' },
+  ],
+};
+
+function bsPeriodLabel(key) {
+  if (!key) return '';
+  if (key.indexOf('|') === -1) return key;
+  const parts = key.split('|');
+  return parts[0] + '-' + parts[1];
+}
+
+function bsCompositionItems(row, defs, fallbackDefs) {
+  const items = defs.map(def => {
+    const value = Number(row[def.field]);
+    return { name: def.name, value };
+  }).filter(item => Number.isFinite(item.value) && item.value > 0);
+  if (items.length) return items;
+  return fallbackDefs.map(def => {
+    const value = Number(row[def.field]);
+    return { name: def.name, value };
+  }).filter(item => Number.isFinite(item.value) && item.value > 0);
+}
+
+function bsCompositionTotal(items) {
+  return items.reduce((sum, item) => sum + item.value, 0);
+}
+
+function openBSComposition(key) {
+  const dataMap = window._bsDataMap;
+  if (!dataMap || !key || !dataMap[key]) return;
+
+  const row = dataMap[key];
+  const stockName = document.getElementById('detailName').textContent.trim();
+  const label = bsPeriodLabel(key);
+  const assetItems = bsCompositionItems(row, _bsCompositionDefs.assets, _bsCompositionDefs.assetFallback);
+  const liabilityItems = bsCompositionItems(row, _bsCompositionDefs.liabilities, _bsCompositionDefs.liabilityFallback);
+  const assetTotal = bsCompositionTotal(assetItems);
+  const liabilityTotal = bsCompositionTotal(liabilityItems);
+
+  document.getElementById('chartModalTitle').textContent = stockName + ' - ' + label + ' 资产/负债构成';
+  document.getElementById('chartModalOverlay').classList.add('active');
+
+  const dom = document.getElementById('chartModalBox');
+  const existing = echarts.getInstanceByDom(dom);
+  if (existing) existing.dispose();
+
+  const chart = echarts.init(dom);
+  const emptyGraphic = [];
+  if (!assetItems.length) {
+    emptyGraphic.push({ type: 'text', left: '25%', top: '52%', style: { text: '暂无资产明细', fill: '#999', fontSize: 14, textAlign: 'center' } });
+  }
+  if (!liabilityItems.length) {
+    emptyGraphic.push({ type: 'text', left: '75%', top: '52%', style: { text: '暂无负债明细', fill: '#999', fontSize: 14, textAlign: 'center' } });
+  }
+
+  chart.setOption({
+    tooltip: {
+      trigger: 'item',
+      formatter: function(p) {
+        if (p.value == null) return '';
+        return p.seriesName + '<br/>' + p.marker + ' ' + p.name + ': ' + p.value.toFixed(2) + ' 亿元 (' + p.percent.toFixed(2) + '%)';
+      }
+    },
+    legend: { type: 'scroll', bottom: 0, left: 20, right: 20 },
+    title: [
+      { text: '资产构成', subtext: assetTotal ? '合计 ' + assetTotal.toFixed(2) + ' 亿元' : '暂无数据', left: '25%', top: 6, textAlign: 'center', textStyle: { fontSize: 14 }, subtextStyle: { fontSize: 11 } },
+      { text: '负债构成', subtext: liabilityTotal ? '合计 ' + liabilityTotal.toFixed(2) + ' 亿元' : '暂无数据', left: '75%', top: 6, textAlign: 'center', textStyle: { fontSize: 14 }, subtextStyle: { fontSize: 11 } },
+    ],
+    graphic: emptyGraphic,
+    series: [
+      {
+        name: '资产构成',
+        type: 'pie',
+        radius: ['36%', '62%'],
+        center: ['25%', '55%'],
+        avoidLabelOverlap: true,
+        minAngle: 4,
+        label: { formatter: '{b}\n{d}%', fontSize: 11 },
+        data: assetItems
+      },
+      {
+        name: '负债构成',
+        type: 'pie',
+        radius: ['36%', '62%'],
+        center: ['75%', '55%'],
+        avoidLabelOverlap: true,
+        minAngle: 4,
+        label: { formatter: '{b}\n{d}%', fontSize: 11 },
+        data: liabilityItems
+      }
+    ]
+  });
+
+  window._chartModalInstance = chart;
 }
 
 function openBSChart(field, name) {
