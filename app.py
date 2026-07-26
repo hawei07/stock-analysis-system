@@ -14,6 +14,7 @@ import threading
 import base64
 import uuid
 import html as html_lib
+import mysql.connector
 from datetime import datetime
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if APP_DIR not in sys.path:
@@ -40,6 +41,9 @@ def _setting(name, env_name, default=None):
         return value
     value = LOCAL_SETTINGS.get(name)
     return default if value in (None, "") else value
+
+
+LOCAL_SETTINGS_PATH = os.path.join(APP_DIR, "local_settings.json")
 
 
 from models import Stock
@@ -1247,6 +1251,43 @@ def api_portfolio_save_position():
     return jsonify({"ok": True, **state})
 
 
+@app.route("/api/portfolio/positions/<code>", methods=["GET"])
+def api_portfolio_position_get(code):
+    _ensure_portfolio_tables()
+    rows = execute_query(
+        """SELECT p.stock_code, p.shares, p.custom_dividend_per_share,
+                  s.name, s.market, s.industry
+           FROM portfolio_positions p
+           JOIN stocks s ON s.code = p.stock_code
+           WHERE p.stock_code=%s
+           LIMIT 1""",
+        (code,),
+    )
+    if not rows:
+        return jsonify({"ok": True, "held": False, "code": code})
+
+    r = rows[0]
+    shares = float(r["shares"])
+    dividends = _latest_dividend_per_share([code]).get(code, {})
+    custom_dividend = float(r["custom_dividend_per_share"]) if r.get("custom_dividend_per_share") is not None else None
+    auto_dividend = dividends.get("dividend_per_share")
+    dividend_per_share = custom_dividend if custom_dividend is not None else auto_dividend
+    return jsonify({
+        "ok": True,
+        "held": True,
+        "code": r["stock_code"],
+        "name": r["name"],
+        "market": r["market"],
+        "industry": r.get("industry"),
+        "shares": shares,
+        "custom_dividend_per_share": round(custom_dividend, 4) if custom_dividend is not None else None,
+        "auto_dividend_per_share": round(auto_dividend, 4) if auto_dividend is not None else None,
+        "dividend_per_share": round(dividend_per_share, 4) if dividend_per_share is not None else None,
+        "dividend_year": dividends.get("fiscal_year"),
+        "dividend_source": "custom" if custom_dividend is not None else "auto",
+    })
+
+
 @app.route("/api/portfolio/positions/<code>", methods=["DELETE"])
 def api_portfolio_delete_position(code):
     _ensure_portfolio_tables()
@@ -1439,6 +1480,173 @@ def api_config_put():
         set_config(k, str(v))
         updated.append(k)
     return jsonify({"ok": True, "updated": updated})
+
+
+LOCAL_SETTING_KEYS = {
+    "app_port",
+    "app_url",
+    "auto_cloud_backup_delay_seconds",
+    "cloud_sync_dir",
+    "mysql_service_name",
+    "mysql_home",
+    "mysql_bin_dir",
+    "python_exe",
+    "db_host",
+    "db_port",
+    "db_user",
+    "db_password",
+    "db_name",
+}
+
+
+def _path_status(path):
+    raw = str(path or "").strip()
+    if not raw:
+        return {"path": "", "exists": False, "is_dir": False, "is_file": False}
+    expanded = os.path.abspath(os.path.expandvars(raw))
+    return {
+        "path": expanded,
+        "exists": os.path.exists(expanded),
+        "is_dir": os.path.isdir(expanded),
+        "is_file": os.path.isfile(expanded),
+    }
+
+
+def _local_settings_payload(settings=None):
+    settings = dict(LOCAL_SETTINGS if settings is None else settings)
+    values = {
+        "app_port": int(settings.get("app_port") or APP_PORT),
+        "app_url": settings.get("app_url") or f"http://127.0.0.1:{APP_PORT}",
+        "auto_cloud_backup_delay_seconds": int(settings.get("auto_cloud_backup_delay_seconds") or AUTO_CLOUD_BACKUP_DELAY_SECONDS),
+        "cloud_sync_dir": settings.get("cloud_sync_dir") or CLOUD_SYNC_DIR,
+        "mysql_service_name": settings.get("mysql_service_name") or "",
+        "mysql_home": settings.get("mysql_home") or "",
+        "mysql_bin_dir": settings.get("mysql_bin_dir") or MYSQL_BIN_DIR,
+        "python_exe": settings.get("python_exe") or sys.executable,
+        "db_host": settings.get("db_host") or DB_CONFIG.get("host", "127.0.0.1"),
+        "db_port": int(settings.get("db_port") or DB_CONFIG.get("port", 3306)),
+        "db_user": settings.get("db_user") or DB_CONFIG.get("user", "root"),
+        "db_name": settings.get("db_name") or DB_CONFIG.get("database", "stock_analysis"),
+    }
+    cloud = _path_status(values["cloud_sync_dir"])
+    mysql_bin = _path_status(values["mysql_bin_dir"])
+    python_exe = _path_status(values["python_exe"])
+    latest_path = os.path.join(cloud["path"], CLOUD_LATEST_SQL) if cloud["path"] else ""
+    latest_exists = os.path.exists(latest_path) if latest_path else False
+    return {
+        "ok": True,
+        "path": LOCAL_SETTINGS_PATH,
+        "values": values,
+        "db_password_configured": bool(settings.get("db_password") or DB_CONFIG.get("password")),
+        "runtime": {
+            "cloud_sync_dir": CLOUD_SYNC_DIR,
+            "mysql_bin_dir": MYSQL_BIN_DIR,
+            "app_port": APP_PORT,
+            "auto_cloud_backup_delay_seconds": AUTO_CLOUD_BACKUP_DELAY_SECONDS,
+            "db_host": DB_CONFIG.get("host"),
+            "db_port": DB_CONFIG.get("port"),
+            "db_user": DB_CONFIG.get("user"),
+            "db_name": DB_CONFIG.get("database"),
+        },
+        "checks": {
+            "cloud_sync_dir": cloud,
+            "cloud_latest_sql": {
+                "path": latest_path,
+                "exists": latest_exists,
+                "mtime": datetime.fromtimestamp(os.path.getmtime(latest_path)).isoformat(timespec="seconds") if latest_exists else None,
+                "size": os.path.getsize(latest_path) if latest_exists else 0,
+            },
+            "mysql_bin_dir": mysql_bin,
+            "mysql_exe": _path_status(os.path.join(mysql_bin["path"], "mysql.exe") if mysql_bin["path"] else ""),
+            "mysqldump_exe": _path_status(os.path.join(mysql_bin["path"], "mysqldump.exe") if mysql_bin["path"] else ""),
+            "python_exe": python_exe,
+        },
+        "restart_required_after_save": True,
+    }
+
+
+@app.route("/api/local-settings", methods=["GET"])
+def api_local_settings_get():
+    return jsonify(_local_settings_payload())
+
+
+@app.route("/api/local-settings", methods=["PUT"])
+def api_local_settings_put():
+    global LOCAL_SETTINGS
+    data = request.get_json(force=True) or {}
+    current = _read_local_settings()
+    updated = []
+    for key in LOCAL_SETTING_KEYS:
+        if key not in data:
+            continue
+        value = data.get(key)
+        if key == "db_password" and (value is None or str(value).strip() in ("", "********")):
+            continue
+        if key in ("app_port", "auto_cloud_backup_delay_seconds", "db_port"):
+            try:
+                value = int(value)
+            except Exception:
+                return jsonify({"error": f"{key} 必须是数字"}), 400
+        elif value is not None:
+            value = str(value).strip()
+        current[key] = value
+        updated.append(key)
+
+    with open(LOCAL_SETTINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(current, f, ensure_ascii=False, indent=2)
+    LOCAL_SETTINGS = current
+    return jsonify({"ok": True, "updated": updated, "restart_required": True, **_local_settings_payload(current)})
+
+
+@app.route("/api/local-settings/test", methods=["POST"])
+def api_local_settings_test():
+    data = request.get_json(force=True) or {}
+    current = _read_local_settings()
+    merged = {**current, **{k: v for k, v in data.items() if k in LOCAL_SETTING_KEYS and v not in (None, "")}}
+    if data.get("db_password") in (None, "", "********"):
+        merged["db_password"] = current.get("db_password", DB_CONFIG.get("password", ""))
+
+    cloud_dir = str(merged.get("cloud_sync_dir") or CLOUD_SYNC_DIR)
+    mysql_bin_dir = str(merged.get("mysql_bin_dir") or MYSQL_BIN_DIR)
+    result = {
+        "ok": True,
+        "checks": {
+            "cloud_sync_dir": {"ok": False, "message": ""},
+            "mysql_tools": {"ok": False, "message": ""},
+            "database": {"ok": False, "message": ""},
+        },
+    }
+
+    try:
+        os.makedirs(os.path.abspath(os.path.expandvars(cloud_dir)), exist_ok=True)
+        result["checks"]["cloud_sync_dir"] = {"ok": True, "message": "云同步目录可访问"}
+    except Exception as e:
+        result["checks"]["cloud_sync_dir"] = {"ok": False, "message": str(e)}
+
+    mysql_exe = os.path.join(os.path.abspath(os.path.expandvars(mysql_bin_dir)), "mysql.exe") if mysql_bin_dir else ""
+    mysqldump_exe = os.path.join(os.path.abspath(os.path.expandvars(mysql_bin_dir)), "mysqldump.exe") if mysql_bin_dir else ""
+    tools_ok = bool(mysql_exe and os.path.exists(mysql_exe) and os.path.exists(mysqldump_exe))
+    result["checks"]["mysql_tools"] = {
+        "ok": tools_ok,
+        "message": "mysql.exe 和 mysqldump.exe 已找到" if tools_ok else "未同时找到 mysql.exe 和 mysqldump.exe",
+    }
+
+    try:
+        conn = mysql.connector.connect(
+            host=merged.get("db_host") or DB_CONFIG.get("host"),
+            port=int(merged.get("db_port") or DB_CONFIG.get("port")),
+            user=merged.get("db_user") or DB_CONFIG.get("user"),
+            password=merged.get("db_password", DB_CONFIG.get("password", "")),
+            database=merged.get("db_name") or DB_CONFIG.get("database"),
+            connection_timeout=3,
+        )
+        conn.close()
+        result["checks"]["database"] = {"ok": True, "message": "数据库连接成功"}
+    except Exception as e:
+        result["checks"]["database"] = {"ok": False, "message": str(e)}
+
+    result["ok"] = all(item["ok"] for item in result["checks"].values())
+    return jsonify(result)
 
 
 @app.route("/api/db/migrations")

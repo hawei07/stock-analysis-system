@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>股票分析系统</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="/static/css/cloud_backup.css">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{color-scheme:light;--bg:#f0f2f5;--surface:#fff;--surface-soft:#f7f9fc;--surface-muted:#fafafa;--text:#333;--text-strong:#1a1a2e;--text-muted:#999;--text-subtle:#666;--border:#e8e8e8;--border-soft:#f0f0f0;--hover:#fafbff;--primary:#4a6cf7;--primary-hover:#3b5de7;--primary-soft:#f0f5ff;--shadow:0 1px 4px rgba(0,0,0,.06);--modal-mask:rgba(0,0,0,.35)}
@@ -84,6 +85,8 @@ tr:hover td{background:#fafbff}
 .realtime-card .value.pos{color:#cf1322}
 .realtime-card .value.neg{color:#389e0d}
 .realtime-card .unit{font-size:12px;color:#999;margin-left:2px;font-weight:400}
+.portfolio-link-card .value{font-size:18px}
+.portfolio-card-sub{font-size:12px;color:#666;margin:4px 0 8px;line-height:1.5;min-height:18px}
 
 .tabs{display:flex;gap:0;background:#fff;border-bottom:2px solid #e8e8e8;padding:0 32px}
 .tab-btn{padding:14px 24px;font-size:14px;font-weight:500;color:#666;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
@@ -131,17 +134,6 @@ tr:hover td{background:#fafbff}
 .backup-type-badge.pre{background:#fff7e6;color:#d46b08}
 .backup-type-badge.latest{background:#f6ffed;color:#389e0d}
 .backup-restore-hint{font-size:12px;color:#999;margin-top:12px;line-height:1.6}
-.cloud-status-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#f7f9fc;border:1px solid #e8e8e8;color:#666;font-size:12px;white-space:nowrap;cursor:pointer}
-.cloud-status-pill::before{content:'';width:7px;height:7px;border-radius:50%;background:#999}
-.cloud-status-pill.pending::before{background:#faad14}
-.cloud-status-pill.running::before{background:#1890ff}
-.cloud-status-pill.ok::before{background:#52c41a}
-.cloud-status-pill.failed::before,.cloud-status-pill.conflict::before{background:#ff4d4f}
-.backup-manager-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}
-.backup-manager-card{background:#f7f9fc;border:1px solid #e8e8e8;border-radius:8px;padding:10px 12px;min-width:0}
-.backup-manager-card .label{font-size:12px;color:#999;margin-bottom:5px}
-.backup-manager-card .value{font-size:13px;color:#1a1a2e;word-break:break-all}
-.backup-warning{background:#fff1f0;border:1px solid #ffccc7;color:#a8071a;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:12px}
 .empty{text-align:center;padding:60px 20px;color:#999;font-size:14px}
 
 .toast{position:fixed;top:24px;right:24px;padding:12px 24px;border-radius:8px;color:#fff;font-size:13px;z-index:200;transition:all .3s;opacity:0;transform:translateY(-10px)}
@@ -289,6 +281,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   .chat-input-bar{padding:8px 12px}
   .detail-content{padding:12px 8px}
   .modal-body .row{flex-direction:column;gap:0}
+  .settings-grid{grid-template-columns:1fr!important}
   .toast{left:12px;right:12px;top:auto;bottom:12px;transform:translateY(10px)}
   .toast.show{transform:translateY(0)}
   .pagination{gap:4px;padding:12px}
@@ -321,10 +314,6 @@ html[data-theme="dark"] .backup-restore-table tbody tr.selected td{background:va
 html[data-theme="dark"] .backup-restore-table-wrap{border-color:var(--border)!important}
 html[data-theme="dark"] .backup-restore-summary{color:var(--text-subtle)!important}
 html[data-theme="dark"] .backup-restore-hint{color:var(--text-muted)!important}
-html[data-theme="dark"] .cloud-status-pill,
-html[data-theme="dark"] .backup-manager-card{background:var(--surface-soft)!important;border-color:var(--border)!important;color:var(--text-subtle)!important}
-html[data-theme="dark"] .backup-manager-card .value{color:var(--text-strong)!important}
-html[data-theme="dark"] .backup-warning{background:#3a1c22!important;border-color:#71313a!important;color:#ffccc7!important}
 html[data-theme="dark"] input,
 html[data-theme="dark"] select,
 html[data-theme="dark"] textarea,
@@ -357,6 +346,7 @@ html[data-theme="dark"] .chat-bubble strong{color:var(--text-strong)!important}
 html[data-theme="dark"] .label,
 html[data-theme="dark"] .sub,
 html[data-theme="dark"] .stock-meta,
+html[data-theme="dark"] .portfolio-card-sub,
 html[data-theme="dark"] .sort-arrow,
 html[data-theme="dark"] .empty,
 html[data-theme="dark"] .chat-empty{color:var(--text-muted)!important}
@@ -474,6 +464,12 @@ html[data-theme="dark"] .status-\*ST{background:#3a1c22;color:#ff9aa2}
     <div class="realtime-card">
       <div class="label">最新市值</div>
       <div class="value" id="rtMarketCap">--</div>
+    </div>
+    <div class="realtime-card portfolio-link-card">
+      <div class="label">我的持仓</div>
+      <div class="value" id="portfolioShares">--</div>
+      <div class="portfolio-card-sub" id="portfolioValue">未持仓</div>
+      <button class="btn btn-sm btn-outline" type="button" onclick="location.href='/portfolio'">查看持仓</button>
     </div>
   </div>
 
@@ -1100,6 +1096,7 @@ async function loadDetail(code) {
     const mcEl = document.getElementById('rtMarketCap');
     mcEl.textContent = rt.market_cap != null ? rt.market_cap.toFixed(2) + ' 亿' : '--';
     mcEl.className = 'value';
+    loadPortfolioPositionCard(stock.code, rt.price);
 
     // 加载K线图
     loadKline();
@@ -1110,6 +1107,36 @@ async function loadDetail(code) {
     if (document.getElementById('panel-sticky')?.style.display === 'block') loadStickyNotes();
   } catch (e) {
     showToast('加载详情失败', 'error');
+  }
+}
+
+async function loadPortfolioPositionCard(code, price) {
+  const sharesEl = document.getElementById('portfolioShares');
+  const valueEl = document.getElementById('portfolioValue');
+  if (!sharesEl || !valueEl) return;
+  sharesEl.textContent = '--';
+  valueEl.textContent = '读取中...';
+  try {
+    const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code));
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '读取持仓失败');
+    if (!data.held) {
+      sharesEl.textContent = '未持仓';
+      valueEl.textContent = '可在“我的持仓”添加';
+      return;
+    }
+    const shares = Number(data.shares || 0);
+    const marketValue = price != null ? shares * Number(price) : null;
+    const dividendPerShare = data.dividend_per_share != null ? Number(data.dividend_per_share) : null;
+    const expectedDividend = dividendPerShare != null ? shares * dividendPerShare : null;
+    sharesEl.textContent = shares.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 股';
+    const parts = [];
+    if (marketValue != null) parts.push('市值 ' + marketValue.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
+    if (expectedDividend != null) parts.push('预计分红 ' + expectedDividend.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
+    valueEl.textContent = parts.length ? parts.join(' · ') : '已加入持仓';
+  } catch (e) {
+    sharesEl.textContent = '--';
+    valueEl.textContent = e.message || '读取失败';
   }
 }
 
@@ -3938,429 +3965,10 @@ async function doUpdateAll(mode) {
   btn.textContent = '\u27f3 更新数据';
 }
 
-let cloudBackupStatusTimer = null;
-
-function secondsText(seconds) {
-  const n = Math.max(0, Number(seconds) || 0);
-  if (n >= 60) return `${Math.floor(n / 60)}分${String(n % 60).padStart(2, '0')}秒`;
-  return `${n}秒`;
-}
-
-function setCloudStatusPill(status) {
-  const el = document.getElementById('cloudBackupStatus');
-  if (!el || !status) return;
-  const auto = status.auto_backup || {};
-  el.className = 'cloud-status-pill';
-  if (status.possible_conflict) {
-    el.classList.add('conflict');
-    el.textContent = '云备份状态：可能冲突';
-    el.title = '云端较新，同时本机还有未上传修改';
-    return;
-  }
-  if (auto.running) {
-    el.classList.add('running');
-    el.textContent = '云备份状态：正在备份';
-    el.title = '自动云备份正在执行';
-    return;
-  }
-  if (auto.pending) {
-    el.classList.add('pending');
-    el.textContent = `云备份状态：${secondsText(auto.seconds_remaining)}后自动备份`;
-    el.title = `原因：${(auto.reasons || []).join(', ') || '数据修改'}`;
-    return;
-  }
-  const last = auto.last_result || {};
-  if (last.status === 'failed') {
-    el.classList.add('failed');
-    el.textContent = '云备份状态：上次失败';
-    el.title = last.message || '自动云备份失败';
-    return;
-  }
-  el.classList.add(last.status === 'ok' ? 'ok' : '');
-  el.textContent = last.status === 'ok' ? `云备份状态：已完成 ${last.updated_at || ''}` : '云备份状态：空闲';
-  el.title = last.message || '';
-}
-
-async function refreshCloudBackupStatus() {
-  try {
-    const res = await fetch('/api/cloud-backup/status');
-    const status = await res.json();
-    if (res.ok && !status.error) setCloudStatusPill(status);
-    return status;
-  } catch (e) {
-    const el = document.getElementById('cloudBackupStatus');
-    if (el) {
-      el.className = 'cloud-status-pill failed';
-      el.textContent = '云备份状态：检查失败';
-    }
-    return null;
-  }
-}
-
-function startCloudBackupStatusPolling() {
-  refreshCloudBackupStatus();
-  if (cloudBackupStatusTimer) clearInterval(cloudBackupStatusTimer);
-  cloudBackupStatusTimer = setInterval(refreshCloudBackupStatus, 5000);
-}
-
-function backupManagerRows(files) {
-  return files.map((file, index) => {
-    const type = backupFileType(file.name);
-    return `
-      <tr data-index="${index}" class="${index === 0 ? 'selected' : ''}">
-        <td><span class="backup-type-badge ${type.cls}">${type.label}</span></td>
-        <td class="backup-file-name">${escapeHtml(file.name)}</td>
-        <td>${escapeHtml(file.mtime_iso)}</td>
-        <td>${formatBackupSize(file.size)}</td>
-      </tr>
-    `;
-  }).join('');
-}
-
-async function openBackupManager() {
-  try {
-    const [statusRes, filesRes] = await Promise.all([
-      fetch('/api/cloud-backup/status'),
-      fetch('/api/cloud-backup/files')
-    ]);
-    const status = await statusRes.json();
-    const filesData = await filesRes.json();
-    if (!statusRes.ok || status.error) throw new Error(status.error || '读取备份状态失败');
-    if (!filesRes.ok || filesData.error) throw new Error(filesData.error || '读取备份列表失败');
-    showBackupManagerModal(status, filesData.files || []);
-  } catch (e) {
-    showToast(e.message || '打开备份管理失败', 'error');
-  }
-}
-
-function closeBackupManagerModal() {
-  document.getElementById('backupManagerModal')?.remove();
-}
-
-function showBackupManagerModal(status, files) {
-  closeBackupManagerModal();
-  let selectedIndex = 0;
-  const auto = status.auto_backup || {};
-  const latestSize = status.latest_exists ? formatBackupSize(status.latest_size) : '不存在';
-  const local = status.local_state || {};
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay active';
-  overlay.id = 'backupManagerModal';
-  overlay.innerHTML = `
-    <div class="modal backup-restore-modal">
-      <div class="modal-header">
-        <h3>备份管理</h3>
-        <button class="modal-close" type="button" aria-label="关闭">&times;</button>
-      </div>
-      <div class="modal-body">
-        ${status.possible_conflict ? '<div class="backup-warning">检测到云端备份比本机记录更新，同时本机存在未上传修改。建议先不要直接覆盖，先确认两边最近操作，再从历史版本中选择。</div>' : ''}
-        <div class="backup-manager-grid">
-          <div class="backup-manager-card"><div class="label">云同步目录</div><div class="value">${escapeHtml(status.backup_dir || '')}</div></div>
-          <div class="backup-manager-card"><div class="label">latest 时间</div><div class="value">${escapeHtml(status.latest_mtime || '未检测到')}</div></div>
-          <div class="backup-manager-card"><div class="label">latest 大小</div><div class="value">${latestSize}</div></div>
-          <div class="backup-manager-card"><div class="label">本机最后应用</div><div class="value">${escapeHtml(local.latest_mtime_iso || local.updated_at || '暂无记录')}</div></div>
-          <div class="backup-manager-card"><div class="label">自动备份</div><div class="value">${auto.running ? '正在备份' : auto.pending ? secondsText(auto.seconds_remaining) + '后执行' : (auto.last_result?.message || '空闲')}</div></div>
-          <div class="backup-manager-card"><div class="label">触发原因</div><div class="value">${escapeHtml((auto.reasons || auto.last_result?.reasons || []).join(', ') || '无')}</div></div>
-        </div>
-        <div class="backup-restore-table-wrap">
-          <table class="backup-restore-table">
-            <thead><tr><th style="width:90px">类型</th><th>文件名</th><th style="width:170px">备份时间</th><th style="width:100px">大小</th></tr></thead>
-            <tbody>${backupManagerRows(files)}</tbody>
-          </table>
-        </div>
-        <div class="backup-restore-hint">普通备份和恢复前备份各保留最新 5 份。恢复前系统仍会自动生成 pre_restore 保护备份。</div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" type="button" data-action="refresh">刷新</button>
-        <button class="btn btn-outline" type="button" data-action="backup">立即云备份</button>
-        <button class="btn btn-outline" type="button" data-action="restore-latest">恢复 latest</button>
-        <button class="btn btn-primary" type="button" data-action="restore-selected">恢复选中版本</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => closeBackupManagerModal();
-  overlay.querySelector('.modal-close').onclick = close;
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-  overlay.querySelectorAll('tbody tr').forEach(row => {
-    row.onclick = () => {
-      selectedIndex = Number(row.dataset.index);
-      overlay.querySelectorAll('tbody tr').forEach(item => item.classList.remove('selected'));
-      row.classList.add('selected');
-    };
-  });
-  overlay.querySelector('[data-action="refresh"]').onclick = () => { close(); openBackupManager(); };
-  overlay.querySelector('[data-action="backup"]').onclick = async () => { await backupCloud(); close(); openBackupManager(); };
-  overlay.querySelector('[data-action="restore-latest"]').onclick = () => restoreCloud();
-  overlay.querySelector('[data-action="restore-selected"]').onclick = async () => {
-    const file = files[selectedIndex];
-    if (!file) return;
-    await restoreSelectedBackupFile(file.name, overlay.querySelector('[data-action="restore-selected"]'));
-  };
-}
-
-async function backupCloud() {
-  showToast('正在备份到云同步目录...', 'success');
-  try {
-    const res = await fetch('/api/cloud-backup/backup', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '云备份失败', 'error');
-      return;
-    }
-    showToast(`云备份完成: ${data.latest_backup}`, 'success');
-    refreshCloudBackupStatus();
-  } catch (e) {
-    showToast('云备份失败', 'error');
-  }
-}
-
-async function restoreCloud() {
-  let statusText = '';
-  try {
-    const statusRes = await fetch('/api/cloud-backup/status');
-    const status = await statusRes.json();
-    statusText = status.latest_mtime ? `\n云端备份时间：${status.latest_mtime}\n目录：${status.backup_dir}` : '\n未检测到云端备份';
-    if (status.possible_conflict) {
-      statusText += '\n\n注意：检测到云端较新，同时本机有未上传修改，可能存在同步冲突。';
-    }
-    if (!status.latest_exists) {
-      showToast('云端 latest 备份不存在', 'error');
-      return;
-    }
-  } catch (e) {}
-  if (!confirm('从云端备份恢复会覆盖本地数据库。系统会先自动备份当前本地数据。确认恢复？' + statusText)) return;
-  showToast('正在从云端恢复，请稍候...', 'success');
-  try {
-    const res = await fetch('/api/cloud-backup/restore', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '云恢复失败', 'error');
-      return;
-    }
-    showToast('云恢复完成，正在刷新页面...', 'success');
-    setTimeout(() => location.reload(), 1200);
-  } catch (e) {
-    showToast('云恢复失败', 'error');
-  }
-}
-
-async function restoreBackupFile() {
-  try {
-    const res = await fetch('/api/cloud-backup/files');
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '读取备份列表失败', 'error');
-      return;
-    }
-    const files = (data.files || []).filter(f => f.name.endsWith('.sql')).slice(0, 20);
-    if (!files.length) {
-      showToast('没有找到可恢复的备份文件', 'error');
-      return;
-    }
-    showBackupRestoreModal(files, data.backup_dir || '');
-  } catch (e) {
-    showToast('历史恢复失败', 'error');
-  }
-}
-
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, ch => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  }[ch]));
-}
-
-function backupFileType(name) {
-  if (name === 'stock_analysis_latest.sql') return { label: '最新', cls: 'latest' };
-  if (name.startsWith('pre_restore_')) return { label: '恢复前', cls: 'pre' };
-  return { label: '备份', cls: '' };
-}
-
-function formatBackupSize(bytes) {
-  return `${((Number(bytes) || 0) / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function closeBackupRestoreModal() {
-  document.getElementById('backupRestoreModal')?.remove();
-}
-
-function showBackupRestoreModal(files, backupDir) {
-  closeBackupRestoreModal();
-  let selectedIndex = 0;
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay active';
-  overlay.id = 'backupRestoreModal';
-  overlay.innerHTML = `
-    <div class="modal backup-restore-modal">
-      <div class="modal-header">
-        <h3>历史恢复</h3>
-        <button class="modal-close" type="button" aria-label="关闭">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="backup-restore-summary">
-          当前备份目录：<span class="code">${escapeHtml(backupDir)}</span>
-        </div>
-        <div class="backup-restore-table-wrap">
-          <table class="backup-restore-table">
-            <thead>
-              <tr>
-                <th style="width:90px">类型</th>
-                <th>文件名</th>
-                <th style="width:170px">备份时间</th>
-                <th style="width:100px">大小</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${files.map((file, index) => {
-                const type = backupFileType(file.name);
-                return `
-                  <tr data-index="${index}" class="${index === 0 ? 'selected' : ''}">
-                    <td><span class="backup-type-badge ${type.cls}">${type.label}</span></td>
-                    <td class="backup-file-name">${escapeHtml(file.name)}</td>
-                    <td>${escapeHtml(file.mtime_iso)}</td>
-                    <td>${formatBackupSize(file.size)}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div class="backup-restore-hint">
-          选中一个版本后点击恢复。恢复会覆盖当前本地数据库，系统会先自动生成新的 pre_restore 备份。
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" type="button" data-action="cancel">取消</button>
-        <button class="btn btn-primary" type="button" data-action="restore">恢复选中版本</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const close = () => closeBackupRestoreModal();
-  overlay.querySelector('.modal-close').onclick = close;
-  overlay.querySelector('[data-action="cancel"]').onclick = close;
-  overlay.onclick = e => { if (e.target === overlay) close(); };
-
-  overlay.querySelectorAll('tbody tr').forEach(row => {
-    row.onclick = () => {
-      selectedIndex = Number(row.dataset.index);
-      overlay.querySelectorAll('tbody tr').forEach(item => item.classList.remove('selected'));
-      row.classList.add('selected');
-    };
-  });
-
-  overlay.querySelector('[data-action="restore"]').onclick = async () => {
-    const btn = overlay.querySelector('[data-action="restore"]');
-    const file = files[selectedIndex];
-    if (!file || btn.disabled) return;
-    await restoreSelectedBackupFile(file.name, btn);
-  };
-}
-
-async function restoreSelectedBackupFile(filename, btn) {
-  if (!filename || (btn && btn.disabled)) return;
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = '恢复中...';
-  }
-  showToast('正在恢复历史备份，请稍候...', 'success');
-  try {
-    const restoreRes = await fetch('/api/cloud-backup/restore-file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename })
-    });
-    const restoreData = await restoreRes.json();
-    if (!restoreRes.ok || restoreData.error) {
-      showToast(restoreData.error || '历史恢复失败', 'error');
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = '恢复选中版本';
-      }
-      return;
-    }
-    showToast('历史恢复完成，正在刷新页面...', 'success');
-    setTimeout(() => location.reload(), 1200);
-  } catch (e) {
-    showToast('历史恢复失败', 'error');
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = '恢复选中版本';
-    }
-  }
-}
-
-async function checkCloudUpdateOnStartup() {
-  try {
-    const res = await fetch('/api/cloud-backup/status?startup=1');
-    const status = await res.json();
-    if (!status.cloud_newer) return;
-    showCloudUpdatePrompt(status);
-  } catch (e) {
-    // 启动检查静默失败，不影响正常打开系统。
-  }
-}
-
-function showCloudUpdatePrompt(status) {
-  if (document.getElementById('cloudUpdatePrompt')) return;
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay active';
-  overlay.id = 'cloudUpdatePrompt';
-  overlay.innerHTML = `
-    <div class="modal" style="width:420px">
-      <div class="modal-header">
-        <h3>发现云端数据更新</h3>
-        <button class="modal-close" type="button">&times;</button>
-      </div>
-      <div class="modal-body" style="padding:24px;line-height:1.8;color:#555;font-size:14px">
-        ${status.possible_conflict ? '<div class="backup-warning">可能存在同步冲突：云端备份较新，同时本机还有未上传修改。建议先点“稍后”，进入备份管理查看历史版本。</div>' : '<div>云端备份比本地记录更新，建议先更新本地数据再继续使用。</div>'}
-        <div style="margin-top:12px;font-size:13px;color:#777">
-          云端时间：${status.latest_mtime || '未知'}<br>
-          云端目录：${status.backup_dir || ''}
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" type="button" data-action="later">稍后</button>
-        <button class="btn btn-primary" type="button" data-action="update">立即更新</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.querySelector('.modal-close').onclick = close;
-  overlay.querySelector('[data-action="later"]').onclick = close;
-  overlay.querySelector('[data-action="update"]').onclick = () => restoreCloudFromStartup(overlay);
-}
-
-async function restoreCloudFromStartup(overlay) {
-  const btn = overlay.querySelector('[data-action="update"]');
-  btn.disabled = true;
-  btn.textContent = '更新中...';
-  showToast('正在从云端更新本地数据，请稍候...', 'success');
-  try {
-    const res = await fetch('/api/cloud-backup/restore', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '云端更新失败', 'error');
-      btn.disabled = false;
-      btn.textContent = '立即更新';
-      return;
-    }
-    showToast('云端更新完成，正在刷新页面...', 'success');
-    setTimeout(() => location.reload(), 1200);
-  } catch (e) {
-    showToast('云端更新失败', 'error');
-    btn.disabled = false;
-    btn.textContent = '立即更新';
-  }
-}
-
 async function openSettings() {
   document.getElementById('settingsModalOverlay').classList.add('active');
   document.getElementById('settingsMsg').style.display = 'none';
+  loadLocalSettings();
   try {
     const res = await fetch('/api/config');
     const cfg = await res.json();
@@ -4394,6 +4002,89 @@ async function saveSettings() {
     }
   } catch(e) {
     showSettingsMsg('网络错误', 'error');
+  }
+}
+
+function collectLocalSettings() {
+  return {
+    cloud_sync_dir: document.getElementById('localCloudDir').value.trim(),
+    mysql_service_name: document.getElementById('localMysqlService').value.trim(),
+    mysql_home: document.getElementById('localMysqlHome').value.trim(),
+    mysql_bin_dir: document.getElementById('localMysqlBin').value.trim(),
+    python_exe: document.getElementById('localPythonExe').value.trim(),
+    db_host: document.getElementById('localDbHost').value.trim(),
+    db_port: document.getElementById('localDbPort').value.trim(),
+    db_user: document.getElementById('localDbUser').value.trim(),
+    db_password: document.getElementById('localDbPassword').value,
+    db_name: document.getElementById('localDbName').value.trim(),
+    auto_cloud_backup_delay_seconds: document.getElementById('localAutoBackupDelay').value.trim()
+  };
+}
+
+function fillLocalSettings(data) {
+  const values = data.values || {};
+  document.getElementById('localCloudDir').value = values.cloud_sync_dir || '';
+  document.getElementById('localMysqlService').value = values.mysql_service_name || '';
+  document.getElementById('localMysqlHome').value = values.mysql_home || '';
+  document.getElementById('localMysqlBin').value = values.mysql_bin_dir || '';
+  document.getElementById('localPythonExe').value = values.python_exe || '';
+  document.getElementById('localDbHost').value = values.db_host || '';
+  document.getElementById('localDbPort').value = values.db_port || '';
+  document.getElementById('localDbUser').value = values.db_user || '';
+  document.getElementById('localDbPassword').value = '';
+  document.getElementById('localDbPassword').placeholder = data.db_password_configured ? '已配置，留空不修改' : '数据库密码';
+  document.getElementById('localDbName').value = values.db_name || '';
+  document.getElementById('localAutoBackupDelay').value = values.auto_cloud_backup_delay_seconds || 180;
+  const checks = data.checks || {};
+  const latest = checks.cloud_latest_sql || {};
+  document.getElementById('localSettingsStatus').innerHTML =
+    '配置文件：' + escapeHtml(data.path || '') + '<br>' +
+    '云目录：' + (checks.cloud_sync_dir?.exists ? '可访问' : '未检测到') + '；latest：' +
+    (latest.exists ? escapeHtml((latest.mtime || '') + ' / ' + formatBackupSize(latest.size || 0)) : '不存在') +
+    '<br>保存本机配置后，需要重启项目才会完整生效。';
+}
+
+async function loadLocalSettings() {
+  try {
+    const res = await fetch('/api/local-settings');
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '读取本机配置失败');
+    fillLocalSettings(data);
+  } catch (e) {
+    document.getElementById('localSettingsStatus').textContent = e.message || '读取本机配置失败';
+  }
+}
+
+async function testLocalSettings() {
+  showSettingsMsg('正在测试本机环境...', 'success');
+  try {
+    const res = await fetch('/api/local-settings/test', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(collectLocalSettings())
+    });
+    const data = await res.json();
+    const checks = data.checks || {};
+    const lines = Object.values(checks).map(item => (item.ok ? '✓ ' : '✗ ') + item.message);
+    showSettingsMsg(lines.join('；'), data.ok ? 'success' : 'error');
+  } catch (e) {
+    showSettingsMsg(e.message || '测试失败', 'error');
+  }
+}
+
+async function saveLocalSettings() {
+  try {
+    const res = await fetch('/api/local-settings', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(collectLocalSettings())
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    fillLocalSettings(data);
+    showSettingsMsg('本机配置已保存，重启项目后完整生效', 'success');
+  } catch (e) {
+    showSettingsMsg(e.message || '保存失败', 'error');
   }
 }
 
@@ -4679,24 +4370,47 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 <!-- 系统设置弹窗 -->
 <div class="modal-overlay" id="settingsModalOverlay" onclick="if(event.target===this)closeSettings()">
-  <div class="modal" style="width:440px">
+  <div class="modal" style="width:min(860px, 94vw)">
     <div class="modal-header">
       <h3>⚙ 系统设置</h3>
       <button class="modal-close" onclick="closeSettings()">&times;</button>
     </div>
-    <div class="modal-body" style="padding:24px">
-      <div style="margin-bottom:20px">
+    <div class="modal-body" style="padding:24px;max-height:75vh;overflow:auto">
+      <div style="margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid #eee">
         <label style="display:block;font-size:13px;font-weight:600;color:#333;margin-bottom:6px">DeepSeek API Key</label>
         <input type="password" id="settingApiKey" style="width:100%;padding:10px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;font-family:monospace" placeholder="sk-...">
         <div style="font-size:11px;color:#999;margin-top:4px">用于芒格分析等 AI 功能</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px">
+          <button class="btn btn-primary" onclick="saveSettings()">保存 API Key</button>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <div style="font-size:14px;font-weight:700;color:#333;margin-bottom:10px">本机环境配置</div>
+        <div class="settings-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <label style="font-size:12px;color:#666">云同步目录<input id="localCloudDir" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">自动云备份延迟（秒）<input id="localAutoBackupDelay" type="number" min="10" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">MySQL 服务名<input id="localMysqlService" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">MySQL 安装目录<input id="localMysqlHome" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">MySQL bin 目录<input id="localMysqlBin" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">Python 路径<input id="localPythonExe" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">数据库地址<input id="localDbHost" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">数据库端口<input id="localDbPort" type="number" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">数据库用户<input id="localDbUser" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">数据库密码<input id="localDbPassword" type="password" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+          <label style="font-size:12px;color:#666">数据库名<input id="localDbName" style="width:100%;margin-top:4px;padding:9px 10px;border:1px solid #d9d9d9;border-radius:6px"></label>
+        </div>
+        <div id="localSettingsStatus" style="font-size:12px;color:#777;line-height:1.6;margin-top:10px;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:10px">读取中...</div>
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn" onclick="closeSettings()" style="background:#f5f5f5;color:#333">取消</button>
-        <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+        <button class="btn btn-outline" onclick="testLocalSettings()">测试本机环境</button>
+        <button class="btn btn-primary" onclick="saveLocalSettings()">保存本机配置</button>
       </div>
       <div id="settingsMsg" style="margin-top:12px;font-size:12px;text-align:center;display:none"></div>
     </div>
   </div>
 </div>
+<script src="/static/js/cloud_backup.js"></script>
 </body>
 </html>
+

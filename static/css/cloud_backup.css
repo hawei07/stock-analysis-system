@@ -1,0 +1,19 @@
+﻿.cloud-status-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#f7f9fc;border:1px solid #e8e8e8;color:#666;font-size:12px;white-space:nowrap;cursor:pointer}
+.header .cloud-status-pill{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff}
+.cloud-status-pill::before{content:'';width:7px;height:7px;border-radius:50%;background:#999}
+.cloud-status-pill.pending::before{background:#faad14}
+.cloud-status-pill.running::before{background:#1890ff}
+.cloud-status-pill.ok::before{background:#52c41a}
+.cloud-status-pill.failed::before,.cloud-status-pill.conflict::before{background:#ff4d4f}
+.backup-manager-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.backup-manager-card{background:#f7f9fc;border:1px solid #e8e8e8;border-radius:8px;padding:10px 12px;min-width:0}
+.backup-manager-card .label{font-size:12px;color:#999;margin-bottom:5px}
+.backup-manager-card .value{font-size:13px;color:#1a1a2e;word-break:break-all}
+.backup-warning{background:#fff1f0;border:1px solid #ffccc7;color:#a8071a;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:12px}
+
+
+html[data-theme="dark"] .cloud-status-pill,
+html[data-theme="dark"] .backup-manager-card{background:var(--surface-soft)!important;border-color:var(--border)!important;color:var(--text-subtle)!important}
+html[data-theme="dark"] .backup-manager-card .value{color:var(--text-strong)!important}
+html[data-theme="dark"] .backup-warning{background:#3a1c22!important;border-color:#71313a!important;color:#ffccc7!important}
+
