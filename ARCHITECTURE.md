@@ -71,6 +71,17 @@ MySQL stock_analysis
 | `services/cloud_backup_service.py` | 云备份保留策略、自动备份延迟策略、SQL 备份文件校验 |
 | `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、历史恢复弹窗 |
 | `templates/portfolio.html` | 我的持仓页面，含持仓、现金、资金流水、净值曲线 |
+| `static/css/index.css` | 首页和股票详情页样式 |
+| `static/css/portfolio.css` | 我的持仓页样式 |
+| `static/css/cloud_backup.css` | 云备份、云恢复、备份管理公共样式 |
+| `static/js/theme.js` | 深色模式和 ECharts 主题适配 |
+| `static/js/ui_utils.js` | Toast、HTML 转义、图片查看器等公共 UI 工具 |
+| `static/js/stock_list.js` | 股票列表、搜索、排序、添加编辑删除、默认顺序、格雷厄姆参数 |
+| `static/js/stock_detail.js` | 股票详情、K 线、分红、PE/PB/股息率估值图、详情页持仓卡片 |
+| `static/js/financial_tables.js` | 财务表格、营收构成、指标趋势图 |
+| `static/js/notes_chat.js` | 便利贴、图片粘贴、对话芒格 |
+| `static/js/cloud_backup.js` | 云备份、云恢复、历史恢复、备份管理 |
+| `static/js/local_settings.js` | 本机环境配置读取、测试、保存 |
 | `models.py` | `Stock` 模型，封装股票基础 CRUD |
 | `db.py` | MySQL 连接池和统一查询入口 |
 | `config.py` | 默认数据库连接参数 |
@@ -789,6 +800,51 @@ temp/
 - 新增数据库表或字段时，优先新增 `migrations/*.sql`，已执行迁移不要修改；必要时再保留 `_ensure_xxx_table()` 作为老库兼容兜底。
 - 前端历史恢复等关键操作使用项目内 modal，不使用浏览器原生 `prompt()` 做复杂交互。
 - 跨电脑同步以数据库 SQL 备份为主，代码通过 Git 同步，本机配置各自维护。
+
+### 11.1 前端拆分原则
+
+后续新增前端功能时，默认遵守当前的模块拆分方式，不再把大段 JS/CSS 直接堆进 `templates/*.html`。
+
+模板文件只负责页面结构：
+
+| 文件 | 职责 |
+|---|---|
+| `templates/index.html` | 首页和股票详情页的 HTML 结构、弹窗结构、脚本/样式引用 |
+| `templates/portfolio.html` | 我的持仓页 HTML 结构、弹窗结构、脚本/样式引用 |
+
+样式文件按页面或公共能力拆分：
+
+| 文件 | 职责 |
+|---|---|
+| `static/css/index.css` | 首页、股票详情页样式 |
+| `static/css/portfolio.css` | 我的持仓页样式 |
+| `static/css/cloud_backup.css` | 云备份、云恢复、备份管理等跨页面公共样式 |
+
+JavaScript 按功能模块拆分：
+
+| 文件 | 职责 |
+|---|---|
+| `static/js/theme.js` | 深色模式、ECharts 主题适配 |
+| `static/js/ui_utils.js` | Toast、HTML 转义、图片查看器等公共 UI 工具 |
+| `static/js/stock_list.js` | 股票列表、搜索、排序、添加、编辑、删除、默认顺序、格雷厄姆参数 |
+| `static/js/stock_detail.js` | 股票详情、路由切换、K 线、分红、PE/PB/股息率估值图、详情页持仓卡片 |
+| `static/js/financial_tables.js` | 自定义财报、资产负债表、利润表、现金流量表、营收构成、指标趋势图 |
+| `static/js/notes_chat.js` | 便利贴、图片粘贴、对话芒格 |
+| `static/js/cloud_backup.js` | 云备份、云恢复、历史恢复、备份管理、云端更新提示 |
+| `static/js/local_settings.js` | 本机环境配置读取、测试、保存 |
+
+新增功能放置规则：
+
+- 新增股票列表相关能力，优先放入 `stock_list.js`，样式放入 `index.css`。
+- 新增股票详情、行情、估值、图表能力，优先放入 `stock_detail.js`。
+- 新增财务表格、指标、报表、营收构成能力，优先放入 `financial_tables.js`。
+- 新增便利贴或对话芒格能力，优先放入 `notes_chat.js`。
+- 新增云备份/恢复/同步提示能力，优先放入 `cloud_backup.js`。
+- 新增本机环境配置能力，优先放入 `local_settings.js`，后端配置项同步维护 `local_settings.example.json`。
+- 多个页面都会用的工具函数放入 `ui_utils.js` 或 `theme.js`，不要在页面内重复定义。
+- 页面专属样式放入对应页面 CSS；跨页面样式才抽到公共 CSS。
+
+当前前端仍采用原生 HTML/CSS/JavaScript 和普通 `<script>` 引用方式，未引入打包器。短期内保持这种低门槛结构，避免增加启动复杂度；如果后续前端复杂度继续上升，再考虑升级为 ES Modules 或 Vite。
 
 ---
 
