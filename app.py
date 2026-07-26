@@ -3511,6 +3511,9 @@ INCOME_ROW_MAP = [
     ("利息收入", "interest_income"),
     ("公允价值变动收益", "fair_value_change"),
     ("信用减值损失", "credit_impairment_loss"),
+    ("资产减值损失", "asset_impairment_loss"),
+    ("资产处置收益", "asset_disposal_income"),
+    ("其他收益", "other_income"),
     ("投资收益", "invest_income"),
     ("营业利润", "operating_profit"),
     ("营业外收入", "nonop_income"),          # 匹配"加:营业外收入"

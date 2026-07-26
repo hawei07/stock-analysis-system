@@ -1528,9 +1528,14 @@ function getIncomeSections() {
     { title: '成本与费用', items: [
       { name: '营业总成本', field: 'operating_cost', bold: true }, { name: '营业成本', field: 'cost_of_revenue' },
       { name: '营业税金及附加', field: 'tax_surcharge' }, { name: '销售费用', field: 'selling_expense' },
-      { name: '管理费用', field: 'admin_expense' }, { name: '财务费用', field: 'finance_expense' }, { name: '研发费用', field: 'rd_expense' }
+      { name: '管理费用', field: 'admin_expense' }, { name: '财务费用', field: 'finance_expense' }, { name: '研发费用', field: 'rd_expense' },
+      { name: '利息收入', field: 'interest_income' }
     ]},
-    { title: '其他收益', items: [{ name: '公允价值变动收益', field: 'fair_value_change' }, { name: '投资收益', field: 'invest_income' }] },
+    { title: '其他收益', items: [
+      { name: '其他收益', field: 'other_income' }, { name: '投资收益', field: 'invest_income' },
+      { name: '公允价值变动收益', field: 'fair_value_change' }, { name: '信用减值损失', field: 'credit_impairment_loss' },
+      { name: '资产减值损失', field: 'asset_impairment_loss' }, { name: '资产处置收益', field: 'asset_disposal_income' }
+    ] },
     { title: '利润', items: [
       { name: '营业利润', field: 'operating_profit', bold: true }, { name: '营业外收入', field: 'nonop_income' },
       { name: '营业外支出', field: 'nonop_expense' }, { name: '利润总额', field: 'total_profit', bold: true },
@@ -1860,10 +1865,13 @@ async function openIncomeSankey(key) {
   const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red, 4);
 
   const adjustmentDefs = [
+    ['其他收益', 'other_income', amber, false],
     ['投资收益', 'invest_income', amber, false],
     ['公允价值变动收益', 'fair_value_change', amber, false],
     ['利息收入', 'interest_income', amber, false],
     ['信用减值损失', 'credit_impairment_loss', green, true],
+    ['资产减值损失', 'asset_impairment_loss', green, true],
+    ['资产处置收益', 'asset_disposal_income', amber, false],
   ];
   for (const def of adjustmentDefs) {
     const raw = incomeValue(row, def[1]);
