@@ -51,6 +51,10 @@ tr:hover td{background:#fafbff}
 .toast{position:fixed;top:24px;right:24px;padding:12px 24px;border-radius:8px;color:#fff;font-size:13px;z-index:200;opacity:0;transform:translateY(-10px);transition:all .3s}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast-success{background:#52c41a}.toast-error{background:#ff4d4f}
+.cloud-status-pill{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);color:#fff;font-size:12px;white-space:nowrap}
+.cloud-status-pill::before{content:'';width:7px;height:7px;border-radius:50%;background:#999}
+.cloud-status-pill.pending::before{background:#faad14}.cloud-status-pill.running::before{background:#1890ff}.cloud-status-pill.ok::before{background:#52c41a}.cloud-status-pill.failed::before,.cloud-status-pill.conflict::before{background:#ff4d4f}
+.backup-warning{background:#fff1f0;border:1px solid #ffccc7;color:#a8071a;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:12px}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:120;align-items:center;justify-content:center;padding:20px}
 .modal-overlay.active{display:flex}
 .modal{background:#fff;border-radius:8px;width:min(920px,96vw);max-height:90vh;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.18);display:flex;flex-direction:column}
@@ -110,6 +114,7 @@ html[data-theme="dark"] .modal-overlay{background:var(--modal-mask)!important}
     <button class="btn btn-primary" onclick="saveSnapshot()">记录今日净值</button>
     <button class="btn btn-outline" onclick="openFlowModal()">资金流水</button>
     <button class="btn btn-outline" onclick="openAllocationModal()">持仓比例</button>
+    <span class="cloud-status-pill" id="cloudBackupStatus">云备份状态：检查中</span>
   </div>
 </div>
 
@@ -367,6 +372,61 @@ function toggleTheme() {
   setTheme(isDarkTheme() ? 'light' : 'dark');
 }
 
+let cloudBackupStatusTimer = null;
+
+function secondsText(seconds) {
+  const n = Math.max(0, Number(seconds) || 0);
+  if (n >= 60) return `${Math.floor(n / 60)}分${String(n % 60).padStart(2, '0')}秒`;
+  return `${n}秒`;
+}
+
+function setCloudStatusPill(status) {
+  const el = document.getElementById('cloudBackupStatus');
+  if (!el || !status) return;
+  const auto = status.auto_backup || {};
+  el.className = 'cloud-status-pill';
+  if (status.possible_conflict) {
+    el.classList.add('conflict');
+    el.textContent = '云备份状态：可能冲突';
+    el.title = '云端较新，同时本机还有未上传修改';
+  } else if (auto.running) {
+    el.classList.add('running');
+    el.textContent = '云备份状态：正在备份';
+  } else if (auto.pending) {
+    el.classList.add('pending');
+    el.textContent = `云备份状态：${secondsText(auto.seconds_remaining)}后自动备份`;
+  } else if (auto.last_result?.status === 'failed') {
+    el.classList.add('failed');
+    el.textContent = '云备份状态：上次失败';
+    el.title = auto.last_result.message || '';
+  } else {
+    el.classList.add(auto.last_result?.status === 'ok' ? 'ok' : '');
+    el.textContent = auto.last_result?.status === 'ok' ? `云备份状态：已完成 ${auto.last_result.updated_at || ''}` : '云备份状态：空闲';
+  }
+}
+
+async function refreshCloudBackupStatus() {
+  try {
+    const res = await fetch('/api/cloud-backup/status');
+    const status = await res.json();
+    if (res.ok && !status.error) setCloudStatusPill(status);
+    return status;
+  } catch (e) {
+    const el = document.getElementById('cloudBackupStatus');
+    if (el) {
+      el.className = 'cloud-status-pill failed';
+      el.textContent = '云备份状态：检查失败';
+    }
+    return null;
+  }
+}
+
+function startCloudBackupStatusPolling() {
+  refreshCloudBackupStatus();
+  if (cloudBackupStatusTimer) clearInterval(cloudBackupStatusTimer);
+  cloudBackupStatusTimer = setInterval(refreshCloudBackupStatus, 5000);
+}
+
 async function checkCloudUpdateOnStartup() {
   try {
     const res = await fetch('/api/cloud-backup/status?startup=1');
@@ -390,7 +450,7 @@ function showCloudUpdatePrompt(status) {
         <button class="modal-close" type="button">&times;</button>
       </div>
       <div class="modal-body" style="padding:24px;line-height:1.8;color:#555;font-size:14px">
-        <div>云端备份比本地记录更新，建议先更新本地数据再继续使用。</div>
+        ${status.possible_conflict ? '<div class="backup-warning">可能存在同步冲突：云端备份较新，同时本机还有未上传修改。建议先回首页打开备份管理查看历史版本。</div>' : '<div>云端备份比本地记录更新，建议先更新本地数据再继续使用。</div>'}
         <div style="margin-top:12px;font-size:13px;color:#777">
           云端时间：${status.latest_mtime || '未知'}<br>
           云端目录：${status.backup_dir || ''}
@@ -434,6 +494,7 @@ async function restoreCloudFromStartup(overlay) {
 document.addEventListener('DOMContentLoaded', () => {
   updateThemeButton();
   checkCloudUpdateOnStartup();
+  startCloudBackupStatusPolling();
   mountFlowPanel();
   loadPortfolio();
   loadFlows();

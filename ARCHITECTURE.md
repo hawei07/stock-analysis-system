@@ -1,1082 +1,775 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191440300708461136T1XGW3
-    ProduceID: 3f11eb7fa23d664c4b1c1527387f20fd_84d55351704511f1986d525400d9a7a1
-    ReservedCode1: 24yu3eSrwjYxfL/ys2MQrX9sCwzJFdWqnrOQ0GSoA4PyzqyLkJ9pvQ7MlKN9lFSyhnpa5dAYp6SOixVQQUDMW+mHWzlvXJpaHWWx1/BQcMdS+1pgK1jwrz3q2sdzmx26gXQBBcQ1wELR592ImE7+zkdhS3eACkJX+IqbGMtKzUip0ZtUPa0eIa5e4V4=
-    ContentPropagator: 001191440300708461136T1XGW3
-    PropagateID: 3f11eb7fa23d664c4b1c1527387f20fd_84d55351704511f1986d525400d9a7a1
-    ReservedCode2: 24yu3eSrwjYxfL/ys2MQrX9sCwzJFdWqnrOQ0GSoA4PyzqyLkJ9pvQ7MlKN9lFSyhnpa5dAYp6SOixVQQUDMW+mHWzlvXJpaHWWx1/BQcMdS+1pgK1jwrz3q2sdzmx26gXQBBcQ1wELR592ImE7+zkdhS3eACkJX+IqbGMtKzUip0ZtUPa0eIa5e4V4=
----
+# 股票分析系统 - 架构与业务说明
 
-# 股票分析系统 — 业务逻辑与技术架构总结
-
-> 版本 v2.9 | 2026-07-06 | Python Flask + MySQL 8.4 + DeepSeek V4 Pro
+> 当前版本：v3.1  
+> 更新日期：2026-07-26  
+> 技术栈：Python Flask + MySQL + 原生 HTML/CSS/JavaScript  
+> 默认访问地址：`http://127.0.0.1:5002`
 
 ---
 
-## 一、项目概述
+## 1. 项目定位
 
-股票分析系统是一个基于 B/S 架构的股票数据管理平台，当前阶段已实现股票基础信息的全生命周期管理，为后续行情接入、技术分析、策略回测等高级功能提供数据底座。
+本项目是一个本地运行的股票分析与投资记录系统。核心目标不是做公开网站，而是服务个人在多台电脑之间长期维护股票池、财务数据、估值参数、持仓数据、便利贴和芒格对话记录。
 
-- **技术栈**：Python 3.11 + Flask + MySQL 8.4
-- **访问地址**：`http://127.0.0.1:5002`
-- **代码仓库**：`E:\stock-analysis-system`（Git 管理，分支策略 `feature/xxx → main`，修改后立即本地 commit，仅在明确指令时 push）
+当前系统已经覆盖：
+
+- 股票池管理：新增、修改、删除、搜索、分页、筛选、拖拽排序。
+- 财务数据分析：分红、财报摘要、资产负债表、利润表、现金流量表、营收构成。
+- 估值分析：PE/PB、格雷厄姆估值参数、合理估值和合理价格。
+- 持仓管理：持仓数量、现金、资金流水、预计分红、净值快照。
+- 辅助分析：对话芒格、便利贴、图片附件、K 线图。
+- 跨电脑使用：本机配置文件 `local_settings.json` + Dropbox/OneDrive 等同步盘云备份。
+- 数据安全：手动云备份、延迟自动云备份、恢复前备份、历史版本恢复。
 
 ---
 
-## 二、技术架构
+## 2. 运行架构
 
+```text
+浏览器
+  |
+  | HTTP
+  v
+Flask Web 服务 app.py
+  |
+  | 调用业务函数、数据抓取、备份恢复
+  v
+Python 服务模块
+  |-- models.py              股票基础模型
+  |-- db.py                  MySQL 连接池
+  |-- config_manager.py      系统配置
+  |-- munger.py              对话芒格
+  |-- stock_list.py          命令行导入/维护
+  |
+  | mysql-connector-python
+  v
+MySQL stock_analysis
+
+本地文件
+  |-- local_settings.json        本机私有配置，不提交 Git
+  |-- data/sticky_notes.json     便利贴 JSON
+  |-- data/images/               便利贴图片
+  |-- data/cloud_sync_state.json 本机云同步状态
+  |-- auto_cloud_backup.log      自动云备份日志
+
+同步盘目录
+  |-- stock_analysis_latest.sql
+  |-- stock_analysis_YYYYMMDD_HHMMSS.sql
+  |-- pre_restore_YYYYMMDD_HHMMSS.sql
+  |-- sync_state.json
 ```
-┌──────────────────────────────────────────┐
-│              浏览器 (SPA)                  │
-│        Vanilla JS + CSS Variables         │
-│         @media 640px 移动端适配            │
-└──────────────────┬───────────────────────┘
-                   │ HTTP RESTful API
-┌──────────────────▼───────────────────────┐
-│           Flask Web 服务 (app.py)          │
-│  路由: / (页面)  /api/* (数据接口)         │
-│  服务: munger.py (对话芒格)                │
-└──────────────────┬───────────────────────┘
-                   │ Python 调用
-┌──────────────────▼───────────────────────┐
-│         数据模型层 (models.py)              │
-│        Stock 类 — 纯 SQL 封装              │
-├──────────────────────────────────────────┤
-│         data/sticky_notes.json             │
-│         便利贴 JSON 文件存储               │
-└──────────────────┬───────────────────────┘
-                   │ mysql-connector-python
-┌──────────────────▼───────────────────────┐
-│            连接池 (db.py)                   │
-│   MySQLConnectionPool (pool_size=5)       │
-└──────────────────┬───────────────────────┘
-                   │ TCP 3306
-┌──────────────────▼───────────────────────┐
-│          MySQL 8.4 (stock_analysis)       │
-│             表: stocks                    │
-└──────────────────────────────────────────┘
+
+---
+
+## 3. 主要文件
+
+| 文件 | 职责 |
+|---|---|
+| `app.py` | Flask 入口、页面路由、REST API、数据抓取、云备份/恢复、自动备份调度 |
+| `services/cloud_backup_service.py` | 云备份保留策略、自动备份延迟策略、SQL 备份文件校验 |
+| `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、历史恢复弹窗 |
+| `templates/portfolio.html` | 我的持仓页面，含持仓、现金、资金流水、净值曲线 |
+| `models.py` | `Stock` 模型，封装股票基础 CRUD |
+| `db.py` | MySQL 连接池和统一查询入口 |
+| `config.py` | 默认数据库连接参数 |
+| `config_manager.py` | 系统配置读写，主要用于 API Key 等 |
+| `munger.py` | 对话芒格逻辑，包含联网搜索、网页抓取、LLM 调用 |
+| `stock_list.py` | 命令行股票导入和维护工具 |
+| `main.py` | 命令行菜单入口，已改为相对项目目录运行 |
+| `start_stock_system.ps1` | Windows 启动脚本，读取本机配置，自动找 Python/MySQL 并启动服务 |
+| `stock.bat` | 快捷启动入口 |
+| `setup_local_settings.ps1` | 自动生成/更新 `local_settings.json` |
+| `setup_local_settings.bat` | 双击执行本机配置脚本 |
+| `local_settings.example.json` | 本机配置模板，提交 Git |
+| `.gitignore` | 忽略本机配置、同步状态、临时文件 |
+
+---
+
+## 4. 本机配置机制
+
+项目已经去掉关键路径硬编码，使用“默认配置 + 本机配置 + 环境变量”的方式适配不同电脑。
+
+读取优先级：
+
+```text
+环境变量 > local_settings.json > 代码默认值
 ```
 
-### 分层职责
+常用配置项：
 
-| 层级 | 文件 | 职责 |
-|------|------|------|
-| 前端 | `templates/index.html` | 单页应用，表格渲染、表单交互、分页 |
-| Web 层 | `app.py` | 路由分发、请求校验、JSON 序列化 |
-| 模型层 | `models.py` | Stock CRUD + sticky_notes/munger_chats 查询 |
-| 服务层 | `munger.py` | 芒格对话引擎 + Web搜索 + 三层抓取 + DeepSeek |
-| 配置层 | `config_manager.py` | API Key 等系统配置读写 |
-| 持久层 | `db.py` | 连接池管理、查询/更新统一入口 |
-| 数据层 | `data/sticky_notes.json` | 便利贴 JSON 文件存储 |
-| 配置 | `config.py` | 数据库连接参数集中管理 |
+| 配置项 | 环境变量 | 说明 |
+|---|---|---|
+| `app_port` | `STOCK_APP_PORT` | Flask 端口，默认 `5002` |
+| `app_url` | `STOCK_APP_URL` | 启动后打开的地址 |
+| `cloud_sync_dir` | `STOCK_CLOUD_SYNC_DIR` | 云同步备份目录，例如 `D:\Dropbox\stock-cloud-sync` |
+| `auto_cloud_backup_delay_seconds` | `STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS` | 自动云备份延迟，默认 `180` 秒 |
+| `mysql_service_name` | `MYSQL_SERVICE_NAME` | MySQL Windows 服务名 |
+| `mysql_home` | `MYSQL_HOME` | MySQL 安装根目录 |
+| `mysql_bin_dir` | `MYSQL_BIN_DIR` | MySQL bin 目录 |
+| `python_exe` | `STOCK_PYTHON` | Python 解释器路径 |
+| `db_host` | `STOCK_DB_HOST` | 数据库地址 |
+| `db_port` | `STOCK_DB_PORT` | 数据库端口 |
+| `db_user` | `STOCK_DB_USER` | 数据库用户名 |
+| `db_password` | `STOCK_DB_PASSWORD` | 数据库密码 |
+| `db_name` | `STOCK_DB_NAME` | 数据库名 |
 
----
+`local_settings.json` 是本机私有文件，已被 Git 忽略。公司电脑和家里电脑只需要各自维护自己的 `local_settings.json`，同一套代码即可运行在不同路径和不同环境中。
 
-## 三、数据库设计
+`setup_local_settings.ps1` 会自动探测：
 
-### 3.1 数据库信息
-
-| 项目 | 值 |
-|------|-----|
-| 数据库名 | `stock_analysis` |
-| 字符集 | `utf8mb4` |
-| 排序规则 | `utf8mb4_unicode_ci` |
-| 引擎 | InnoDB |
-| 端口 | 3306 |
-
-### 3.2 stocks 表结构
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INT | PK, AUTO_INCREMENT | 主键 |
-| `code` | VARCHAR(10) | UNIQUE, NOT NULL | 股票代码（如 600519） |
-| `name` | VARCHAR(50) | NOT NULL | 股票名称 |
-| `market` | ENUM('SH','SZ','BJ') | NOT NULL | 市场：上海/深圳/北京 |
-| `industry` | VARCHAR(50) | NULL | 所属行业 |
-| `pe_ttm` | DECIMAL(10,2) | NULL | 动态市盈率 |
-| `dividend_yield` | DECIMAL(10,4) | NULL | 股息率（%） |
-| `display_order` | INT | NULL | 首页默认展示顺序，支持拖拽调整 |
-| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-| `updated_at` | DATETIME | ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
-
-> code 字段设计为自然键（UNIQUE），API 中通过 code 而非 id 进行资源定位。
-> list_date、status 字段保留在数据库结构中，此处不再展开。
-
-### 3.3 dividends 表结构
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INT | PK, AUTO_INCREMENT | 主键 |
-| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
-| `fiscal_year` | INT | NOT NULL | 财年 |
-| `net_profit` | DECIMAL(18,4) | NULL | 净利润（亿元） |
-| `dividend_amount` | DECIMAL(18,4) | NULL | 分红总额（亿元） |
-| `dividend_per_share` | DECIMAL(10,4) | NULL | 每股分红（元） |
-| `ex_date` | DATE | NULL | 除权除息日 |
-| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-
-> 唯一约束：UNIQUE(stock_code, fiscal_year)，每只股票每个财年仅一条记录。
-
-### 3.4 business_segments 表结构
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | BIGINT | PK, AUTO_INCREMENT | 主键 |
-| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
-| `fiscal_year` | INT | NOT NULL | 财年 |
-| `report_period` | VARCHAR(8) | DEFAULT 'FY' | 报告期 |
-| `dimension_type` | VARCHAR(20) | NOT NULL | 构成维度：business/product/region |
-| `segment_name` | VARCHAR(120) | NOT NULL | 业务、产品或地区名称 |
-| `revenue` | DECIMAL(18,4) | NULL | 收入（亿元） |
-| `cost` | DECIMAL(18,4) | NULL | 成本（亿元） |
-| `gross_profit` | DECIMAL(18,4) | NULL | 毛利（亿元） |
-| `gross_margin` | DECIMAL(10,4) | NULL | 毛利率（%） |
-| `revenue_ratio` | DECIMAL(10,4) | NULL | 收入占比（%） |
-| `profit_ratio` | DECIMAL(10,4) | NULL | 毛利占比（%） |
-| `source` | VARCHAR(50) | NULL | 数据来源 |
-| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-| `updated_at` | DATETIME | ON UPDATE CURRENT_TIMESTAMP | 更新时间 |
-
-> 唯一约束：UNIQUE(stock_code, fiscal_year, report_period, dimension_type, segment_name)。数据来源为东方财富 F10 主营构成接口，后端按业务/产品/地区三类维度归档，前端用于营收构成图表和表格。
-
-### 3.5 custom_financials 表结构
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INT | PK, AUTO_INCREMENT | 主键 |
-| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
-| `fiscal_year` | INT | NOT NULL | 财年 |
-| `total_revenue` | DECIMAL(18,4) | NULL | 营业总收入（亿元） |
-| `operating_cost` | DECIMAL(18,4) | NULL | 营业总成本（亿元） |
-| `operating_profit` | DECIMAL(18,4) | NULL | 营业利润（亿元） |
-| `total_profit` | DECIMAL(18,4) | NULL | 利润总额（亿元） |
-| `net_profit` | DECIMAL(18,4) | NULL | 归母净利润（亿元） |
-| `total_assets` | DECIMAL(18,4) | NULL | 资产总计（亿元） |
-| `total_equity` | DECIMAL(18,4) | NULL | 归母股东权益（亿元） |
-| `net_cashflow_oper` | DECIMAL(18,4) | NULL | 经营活动现金流量净额（亿元） |
-| `basic_eps` | DECIMAL(10,4) | NULL | 基本每股收益（元） |
-| `roe` | DECIMAL(10,4) | NULL | 加权平均净资产收益率（%） |
-| `gross_margin` | DECIMAL(10,4) | NULL | 毛利率（%） |
-| `net_margin` | DECIMAL(10,4) | NULL | 净利率（%） |
-| `debt_ratio` | DECIMAL(10,4) | NULL | 资产负债率（%） |
-| `short_borrow` | DECIMAL(18,4) | NULL | 短期借款（亿元） |
-| `noncurrent_liab_due1y` | DECIMAL(18,4) | NULL | 一年内到期的非流动负债（亿元） |
-| `long_borrow` | DECIMAL(18,4) | NULL | 长期借款（亿元） |
-| `bonds_payable` | DECIMAL(18,4) | NULL | 应付债券（亿元） |
-| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-
-> 唯一约束：UNIQUE(stock_code, fiscal_year, report_period)。`report_period` 为 ENUM('FY','Q1','Q2','Q3')，FY=年报、Q1=一季报、Q2=中报、Q3=三季报。数据来源为东方财富 datacenter-web API，原始单位（元）入库前除以 1e8 转换为亿元。前端查询时动态计算核心利润率、净利润率、现金流利润比三个派生指标。支持累计和单季度两种视图。
-
-### 3.6 balance_sheets 表结构
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | INT | PK, AUTO_INCREMENT | 主键 |
-| `stock_code` | VARCHAR(10) | NOT NULL | 股票代码 |
-| `fiscal_year` | INT | NOT NULL | 财年 |
-| `monetary_funds` | DECIMAL(18,4) | NULL | 货币资金（亿元） |
-| `trading_fin_assets` | DECIMAL(18,4) | NULL | 交易性金融资产（亿元） |
-| `notes_receivable` | DECIMAL(18,4) | NULL | 应收票据（亿元） |
-| `accounts_receivable` | DECIMAL(18,4) | NULL | 应收账款（亿元） |
-| `receivables_financing` | DECIMAL(18,4) | NULL | 应收款项融资（亿元） |
-| `prepayment` | DECIMAL(18,4) | NULL | 预付款项（亿元） |
-| `other_receivables` | DECIMAL(18,4) | NULL | 其他应收款（亿元） |
-| `inventory` | DECIMAL(18,4) | NULL | 存货（亿元） |
-| `noncurrent_assets_due1y` | DECIMAL(18,4) | NULL | 一年内到期非流动资产（亿元） |
-| `other_current_assets` | DECIMAL(18,4) | NULL | 其他流动资产（亿元） |
-| `total_current_assets` | DECIMAL(18,4) | NULL | 流动资产合计（亿元） |
-| `held_to_maturity_invest` | DECIMAL(18,4) | NULL | 持有至到期投资（亿元） |
-| `longterm_equity_invest` | DECIMAL(18,4) | NULL | 长期股权投资（亿元） |
-| `investment_property` | DECIMAL(18,4) | NULL | 投资性房地产（亿元） |
-| `cip` | DECIMAL(18,4) | NULL | 在建工程（亿元） |
-| `fixed_assets` | DECIMAL(18,4) | NULL | 固定资产（亿元） |
-| `right_of_use_assets` | DECIMAL(18,4) | NULL | 使用权资产（亿元） |
-| `intangible_assets` | DECIMAL(18,4) | NULL | 无形资产（亿元） |
-| `development_expenditure` | DECIMAL(18,4) | NULL | 开发支出（亿元） |
-| `goodwill` | DECIMAL(18,4) | NULL | 商誉（亿元） |
-| `longterm_prepaid_expense` | DECIMAL(18,4) | NULL | 长期待摊费用（亿元） |
-| `deferred_tax_assets` | DECIMAL(18,4) | NULL | 递延所得税资产（亿元） |
-| `other_noncurrent_assets` | DECIMAL(18,4) | NULL | 其他非流动资产（亿元） |
-| `total_noncurrent_assets` | DECIMAL(18,4) | NULL | 非流动资产合计（亿元） |
-| `total_assets` | DECIMAL(18,4) | NULL | 资产总计（亿元） |
-| `short_borrow` | DECIMAL(18,4) | NULL | 短期借款（亿元） |
-| `notes_payable` | DECIMAL(18,4) | NULL | 应付票据（亿元） |
-| `accounts_payable` | DECIMAL(18,4) | NULL | 应付账款（亿元） |
-| `advance_receipts` | DECIMAL(18,4) | NULL | 预收款项（亿元） |
-| `payroll_payable` | DECIMAL(18,4) | NULL | 应付职工薪酬（亿元） |
-| `taxes_payable` | DECIMAL(18,4) | NULL | 应交税费（亿元） |
-| `other_payables` | DECIMAL(18,4) | NULL | 其他应付款（亿元） |
-| `noncurrent_liab_due1y` | DECIMAL(18,4) | NULL | 一年内到期非流动负债（亿元） |
-| `other_current_liabilities` | DECIMAL(18,4) | NULL | 其他流动负债（亿元） |
-| `total_current_liabilities` | DECIMAL(18,4) | NULL | 流动负债合计（亿元） |
-| `long_borrow` | DECIMAL(18,4) | NULL | 长期借款（亿元） |
-| `bonds_payable` | DECIMAL(18,4) | NULL | 应付债券（亿元） |
-| `lease_liabilities` | DECIMAL(18,4) | NULL | 租赁负债（亿元） |
-| `deferred_tax_liabilities` | DECIMAL(18,4) | NULL | 递延所得税负债（亿元） |
-| `total_noncurrent_liabilities` | DECIMAL(18,4) | NULL | 非流动负债合计（亿元） |
-| `total_liabilities` | DECIMAL(18,4) | NULL | 负债合计（亿元） |
-| `paid_in_capital` | DECIMAL(18,4) | NULL | 实收资本（亿元） |
-| `capital_reserve` | DECIMAL(18,4) | NULL | 资本公积（亿元） |
-| `treasury_stock` | DECIMAL(18,4) | NULL | 库存股（亿元） |
-| `surplus_reserve` | DECIMAL(18,4) | NULL | 盈余公积（亿元） |
-| `retained_earnings` | DECIMAL(18,4) | NULL | 未分配利润（亿元） |
-| `parent_equity` | DECIMAL(18,4) | NULL | 归母股东权益（亿元） |
-| `minority_interests` | DECIMAL(18,4) | NULL | 少数股东权益（亿元） |
-| `total_equity` | DECIMAL(18,4) | NULL | 股东权益合计（亿元） |
-| `created_at` | DATETIME | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
-
-> 唯一约束：UNIQUE(stock_code, fiscal_year, report_period)。`report_period` 为 ENUM('FY','Q1','Q2','Q3')。数据来源为新浪财经资产负债表页面 HTML 解析，原始单位（万元）入库前除以 10000 转换为亿元。共 49 个资产负债表科目。支持年报和季报（一季报/中报/三季报），前端可切换累计/单季度视图。
+- Dropbox：优先 `用户目录\Dropbox`、`D:\Dropbox`、`E:\Dropbox`、`F:\Dropbox`
+- OneDrive：`OneDrive`、`OneDriveConsumer`、`OneDriveCommercial`
+- MySQL 服务、`mysql.exe`、`mysqld.exe`
+- 项目虚拟环境 Python、系统 Python、Hermes Python
 
 ---
 
-## 四、API 接口文档
+## 5. 云备份与恢复
 
-### 4.1 接口总览
+### 5.1 文件类型
+
+云同步目录由 `cloud_sync_dir` 指定，当前推荐为：
+
+```text
+D:\Dropbox\stock-cloud-sync
+```
+
+目录中主要文件：
+
+| 文件 | 说明 |
+|---|---|
+| `stock_analysis_latest.sql` | 最新备份，`云恢复` 默认恢复这个文件 |
+| `stock_analysis_YYYYMMDD_HHMMSS.sql` | 普通历史备份 |
+| `pre_restore_YYYYMMDD_HHMMSS.sql` | 恢复前自动保护备份 |
+| `sync_state.json` | 云端备份状态 |
+
+### 5.2 手动云备份
+
+点击页面 `云备份` 会立即执行数据库导出：
+
+- 生成一份 `stock_analysis_YYYYMMDD_HHMMSS.sql`
+- 同步更新 `stock_analysis_latest.sql`
+- 写入 `sync_state.json`
+- 更新本机 `data/cloud_sync_state.json`
+- 清理旧备份
+
+后端接口：
+
+```text
+POST /api/cloud-backup/backup
+```
+
+### 5.3 自动云备份
+
+系统已经加入延迟合并自动备份机制。会修改核心数据的接口成功返回后，会安排一次自动云备份。
+
+默认规则：
+
+```text
+数据变化后等待 180 秒再备份。
+180 秒内继续修改数据，则取消旧计时并重新开始计时。
+连续多次修改最终合并成一次云备份。
+```
+
+自动备份仍然生成：
+
+```text
+stock_analysis_YYYYMMDD_HHMMSS.sql
+stock_analysis_latest.sql
+```
+
+自动备份日志：
+
+```text
+auto_cloud_backup.log
+```
+
+首页和持仓页顶部会显示自动备份状态，包括空闲、等待中、正在备份、上次成功、上次失败和可能冲突。首页的 `备份管理` 会集中展示 latest 状态、自动备份状态、历史备份列表，并提供立即云备份、恢复 latest、恢复选中版本等操作。
+
+当前会触发自动云备份的操作：
+
+| 操作 | 后端 endpoint |
+|---|---|
+| 添加股票 | `api_add_stock` |
+| 修改股票 | `api_update_stock` |
+| 删除股票 | `api_delete_stock` |
+| 保存首页默认顺序 | `api_stocks_reorder` |
+| 修改格雷厄姆估值参数 | `api_graham_valuation_put` |
+| 更新分红数据 | `api_update_dividends` |
+| 更新财务摘要 | `api_update_financials` |
+| 更新资产负债表 | `api_update_balance_sheet` |
+| 更新营收构成 | `api_update_segments` |
+| 更新利润表 | `api_update_income` |
+| 更新现金流量表 | `api_update_cashflow` |
+| 修改系统配置 | `api_config_put` |
+| 新增/修改持仓 | `api_portfolio_save_position` |
+| 删除持仓 | `api_portfolio_delete_position` |
+| 修改持仓每股分红 | `api_portfolio_update_dividend` |
+| 重置持仓每股分红 | `api_portfolio_reset_dividend` |
+| 修改现金 | `api_portfolio_update_cash` |
+| 新增资金流水 | `api_portfolio_add_flow` |
+| 删除资金流水 | `api_portfolio_delete_flow` |
+| 记录持仓快照 | `api_portfolio_snapshot` |
+
+### 5.4 云恢复
+
+点击 `云恢复` 会恢复：
+
+```text
+stock_analysis_latest.sql
+```
+
+恢复前系统会先生成：
+
+```text
+pre_restore_YYYYMMDD_HHMMSS.sql
+```
+
+这样即使恢复错了，也可以从 `历史恢复` 中选择恢复前版本回滚。
+
+后端接口：
+
+```text
+POST /api/cloud-backup/restore
+```
+
+### 5.5 历史恢复
+
+点击 `历史恢复` 会打开项目内弹窗表格，不再使用浏览器原生 `prompt()`。用户可以直接选中某个版本，然后点击 `恢复选中版本`。
+
+备份列表接口：
+
+```text
+GET /api/cloud-backup/files
+```
+
+恢复指定文件接口：
+
+```text
+POST /api/cloud-backup/restore-file
+```
+
+请求体：
+
+```json
+{
+  "filename": "stock_analysis_20260726_003236.sql"
+}
+```
+
+### 5.6 保留策略
+
+为了避免 Dropbox 中备份无限增长：
+
+- `stock_analysis_YYYYMMDD_HHMMSS.sql` 只保留最新 5 份
+- `pre_restore_YYYYMMDD_HHMMSS.sql` 只保留最新 5 份
+- `stock_analysis_latest.sql` 永远保留，不计入 5 份
+
+清理时机：
+
+- 新建普通云备份后
+- 新建恢复前备份后
+- 打开历史恢复列表时
+
+### 5.7 恢复兼容处理
+
+MySQL 恢复时可能因为不同机器的字符集/排序规则造成外键字段不兼容。当前 `_restore_database()` 会在导入前临时生成预处理 SQL，移除 dump 中的外键约束片段，避免 `ERROR 3780` 一类恢复失败。
+
+---
+
+## 6. 页面结构
+
+### 6.1 首页与详情页
+
+文件：
+
+```text
+templates/index.html
+```
+
+功能：
+
+- 股票列表、搜索、分页、市场/状态筛选
+- 指标排序和拖拽保存默认顺序
+- 股票新增、编辑、删除
+- 股票详情页 Tab
+- 分红图表
+- 自定义财报表格
+- 营收构成
+- 资产负债表
+- 利润表
+- 现金流量表
+- 估值分析
+- K 线图
+- 对话芒格
+- 便利贴
+- 云备份、云恢复、历史恢复
+- 深色模式
+- 移动端适配
+
+### 6.2 我的持仓
+
+文件：
+
+```text
+templates/portfolio.html
+```
+
+功能：
+
+- 持仓列表
+- 股票市值
+- 现金
+- 总资产
+- 预计分红
+- 股息率
+- 自定义每股分红
+- 资金流水
+- 每日净值快照
+- 净值曲线
+- 启动时检测云端更新
+
+---
+
+## 7. 数据库设计
+
+数据库：
+
+```text
+stock_analysis
+```
+
+连接方式：
+
+- `db.py` 使用 `mysql.connector.pooling.MySQLConnectionPool`
+- 默认连接池大小：`5`
+- 默认字符集：`utf8mb4`
+
+### 7.1 stocks
+
+股票基础表。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 自增主键 |
+| `code` | 股票代码，唯一 |
+| `name` | 股票名称 |
+| `market` | `SH` / `SZ` / `BJ` |
+| `industry` | 行业 |
+| `list_date` | 上市日期 |
+| `status` | 状态 |
+| `pe_ttm` | 动态市盈率 |
+| `dividend_yield` | 股息率 |
+| `display_order` | 首页默认顺序 |
+| `created_at` / `updated_at` | 时间戳 |
+
+### 7.2 dividends
+
+分红数据表。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `stock_code` | 股票代码 |
+| `fiscal_year` | 财年 |
+| `net_profit` | 净利润，亿元 |
+| `dividend_amount` | 分红总额，亿元 |
+| `dividend_per_share` | 每股分红，元 |
+| `ex_date` | 除权除息日 |
+
+唯一约束：
+
+```text
+stock_code + fiscal_year
+```
+
+### 7.3 custom_financials
+
+财务摘要表，数据主要来自东方财富。
+
+核心字段：
+
+| 字段 | 说明 |
+|---|---|
+| `stock_code` | 股票代码 |
+| `fiscal_year` | 财年 |
+| `report_period` | `FY` / `Q1` / `Q2` / `Q3` |
+| `total_revenue` | 营业收入，亿元 |
+| `operate_profit` | 营业利润，亿元 |
+| `parent_profit` | 归母净利润，亿元 |
+| `deducted_profit` | 扣非净利润，亿元 |
+| `operate_cashflow` | 经营现金流，亿元 |
+| `roe` | ROE |
+| `deducted_roe` | 扣非 ROE |
+| `roic` | ROIC |
+| `total_assets` | 总资产，亿元 |
+| `total_equity` | 股东权益，亿元 |
+| `total_shares` | 总股本，亿股 |
+| `basic_eps` | 每股收益 |
+| `debt_ratio` | 资产负债率 |
+| `short_borrow` / `long_borrow` / `bonds_payable` | 有息负债相关字段 |
+
+前端会动态计算：
+
+- 核心利润率
+- 净利润率
+- 经营现金流/净利润
+- 同比数据
+- 单季度视图
+
+### 7.4 balance_sheets
+
+资产负债表，数据主要来自新浪财经 HTML。
+
+特点：
+
+- 支持 `FY` / `Q1` / `Q2` / `Q3`
+- 原始单位万元，入库前转换为亿元
+- 覆盖货币资金、应收、存货、固定资产、商誉、负债、股东权益等科目
+- 前端支持累计/单季度、同比、同行对比、趋势图
+
+### 7.5 income_statements
+
+利润表，数据来自新浪财经 HTML。
+
+特点：
+
+- 后端通用 `_upsert_finance()` 写入
+- 支持年报和季报
+- 前端与现金流量表共用通用表格渲染逻辑
+
+### 7.6 cash_flows
+
+现金流量表，数据来自新浪财经 HTML。
+
+特点：
+
+- 支持年报和季报
+- 支持累计/单季度视图
+- 与利润表共用采集和渲染框架
+
+### 7.7 business_segments
+
+主营构成表，数据来自东方财富 F10 主营构成接口。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `stock_code` | 股票代码 |
+| `fiscal_year` | 财年 |
+| `report_period` | 报告期，当前主要使用 `FY` |
+| `dimension_type` | `business` / `product` / `region` |
+| `segment_name` | 业务、产品或地区名称 |
+| `revenue` | 收入，亿元 |
+| `cost` | 成本，亿元 |
+| `gross_profit` | 毛利，亿元 |
+| `gross_margin` | 毛利率 |
+| `revenue_ratio` | 收入占比 |
+| `profit_ratio` | 毛利占比 |
+| `source` | 来源 |
+
+唯一约束：
+
+```text
+stock_code + fiscal_year + report_period + dimension_type + segment_name
+```
+
+### 7.8 graham_valuations
+
+格雷厄姆估值参数表。
+
+字段：
+
+| 字段 | 说明 |
+|---|---|
+| `stock_code` | 股票代码，唯一 |
+| `growth_rate` | 增长率 |
+| `payout_ratio` | 分红比例 |
+| `risk_free_rate` | 无风险利率 |
+| `expected_profit` | 当年预期利润 |
+| `updated_at` | 更新时间 |
+
+首页列表会基于这些参数计算合理估值、合理价格和高估/低估比例。
+
+### 7.9 portfolio_positions
+
+我的持仓明细表。
+
+字段：
+
+| 字段 | 说明 |
+|---|---|
+| `stock_code` | 股票代码，唯一 |
+| `shares` | 持股数量 |
+| `custom_dividend_per_share` | 自定义每股分红 |
+| `created_at` / `updated_at` | 时间戳 |
+
+### 7.10 portfolio_cash
+
+持仓现金表。
+
+字段：
+
+| 字段 | 说明 |
+|---|---|
+| `id` | 固定为 `1` |
+| `amount` | 现金金额 |
+| `updated_at` | 更新时间 |
+
+### 7.11 portfolio_cash_flows
+
+资金流水表。
+
+字段：
+
+| 字段 | 说明 |
+|---|---|
+| `flow_date` | 流水日期 |
+| `amount` | 金额，流入为正、流出为负 |
+| `note` | 备注 |
+| `created_at` | 创建时间 |
+
+### 7.12 portfolio_nav_snapshots
+
+持仓净值快照表。
+
+字段：
+
+| 字段 | 说明 |
+|---|---|
+| `snapshot_date` | 快照日期，唯一 |
+| `total_market_value` | 股票市值 |
+| `expected_dividend` | 预计分红 |
+| `cash_amount` | 现金 |
+| `total_asset_value` | 总资产 |
+| `positions_json` | 当日持仓 JSON |
+| `created_at` / `updated_at` | 时间戳 |
+
+### 7.13 munger_chats
+
+对话芒格历史记录表，由 `munger.py` 读写。
+
+用途：
+
+- 保存用户提问
+- 保存芒格回复
+- 支持单条删除和清空
+
+### 7.14 便利贴 JSON
+
+便利贴不再使用 MySQL 表，而是文件存储：
+
+```text
+data/sticky_notes.json
+data/images/
+```
+
+保存时会把 base64 图片提取为文件，正文中保留本地图片路径。
+
+---
+
+## 8. REST API 总览
+
+### 8.1 页面
 
 | 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/` | 前端页面 |
-| GET | `/api/stocks` | 分页查询股票列表，支持指标排序 |
-| POST | `/api/stocks/reorder` | 保存首页默认展示顺序 |
-| GET | `/api/stock/<code>` | 查询单只股票详情 |
-| POST | `/api/stock` | 新增股票（支持代码或名称） |
-| PUT | `/api/stock/<code>` | 更新股票 |
-| DELETE | `/api/stock/<code>` | 删除股票 |
-| GET | `/api/stats` | 统计概览 |
-| GET | `/api/stock-search` | 代码或名称搜索（本地DB+东方财富） |
-| GET | `/api/stock-info/<code>` | 从东方财富获取股票名称和市场 |
-| GET | `/api/stock/<code>/dividends` | 查询分红数据 |
-| POST | `/api/update-dividends` | 全量/增量更新分红与PE数据 |
-| GET | `/api/stock/<code>/financials` | 查询自定义财报（支持年报/季报/累计/单季度） |
-| POST | `/api/update-financials` | 从东方财富拉取并更新财报数据（含季报） |
-| GET | `/api/stock/<code>/balance-sheet` | 查询资产负债表（支持年报/季报/累计/单季度） |
-| POST | `/api/update-balance-sheet` | 从新浪财经拉取并更新资产负债表数据 |
-| GET | `/api/stock/<code>/income` | 查询单只股票利润表数据 |
-| POST | `/api/update-income` | 从新浪财经拉取并更新利润表数据 |
-| GET | `/api/stock/<code>/cashflow` | 查询单只股票现金流量表数据 |
-| POST | `/api/update-cashflow` | 从新浪财经拉取并更新现金流量表数据 |
-| GET | `/api/stock/<code>/kline` | 获取日K线数据（蜡烛图） |
-| GET | `/api/stock/<code>/valuation` | 获取 PE/PB/股息率估值数据（历史+股价+分位点） |
-| GET | `/api/stock/<code>/segments` | 查询营收构成数据 |
-| POST | `/api/update-segments` | 从东方财富拉取并更新营收构成数据 |
-| GET | `/api/stock/<code>/realtime-quote` | 查询实时行情 |
-| GET | `/api/config` | 获取系统配置（掩码） |
-| PUT | `/api/config` | 更新系统配置 |
-| GET | `/api/stock/<code>/munger-chat` | 获取对话历史 |
-| POST | `/api/stock/<code>/munger-chat` | 发送对话消息 |
-| DELETE | `/api/stock/<code>/munger-chat?msg_id=N` | 删除单条消息 |
-| DELETE | `/api/stock/<code>/munger-chat` | 清空全部对话 |
-| GET | `/api/sticky-notes?stock_code=X` | 获取便利贴 |
-| POST | `/api/sticky-notes` | 新建便利贴 |
-| PUT | `/api/sticky-notes/<id>` | 编辑便利贴 |
-| DELETE | `/api/sticky-notes/<id>` | 删除便利贴 |
+|---|---|---|
+| `GET` | `/` | 首页 |
+| `GET` | `/stock/<code>` | 详情页入口，前端按 code 自动打开详情 |
+| `GET` | `/portfolio` | 我的持仓 |
 
-### 4.2 接口详情
+### 8.2 股票与列表
 
-#### GET /api/stocks
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/stocks` | 股票列表，支持分页、筛选、关键字、指标排序 |
+| `POST` | `/api/stocks/reorder` | 保存默认顺序 |
+| `GET` | `/api/stock/<code>` | 股票详情 |
+| `POST` | `/api/stock` | 添加股票，支持自动获取名称/市场 |
+| `PUT` | `/api/stock/<code>` | 修改股票 |
+| `DELETE` | `/api/stock/<code>` | 删除股票 |
+| `GET` | `/api/stats` | 统计概览 |
+| `GET` | `/api/stock-search` | 本地 + 东方财富搜索 |
+| `GET` | `/api/stock-info/<code>` | 东方财富获取股票名称和市场 |
 
-分页查询，支持筛选、首页指标补充和指标排序。默认顺序使用 `stocks.display_order`，用户拖拽保存后会按该字段展示。
+### 8.3 财务数据
 
-**Query 参数**：
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/stock/<code>/dividends` | 查询分红 |
+| `POST` | `/api/update-dividends` | 更新分红和 PE |
+| `GET` | `/api/stock/<code>/financials` | 查询财务摘要 |
+| `POST` | `/api/update-financials` | 更新财务摘要 |
+| `GET` | `/api/stock/<code>/balance-sheet` | 查询资产负债表 |
+| `POST` | `/api/update-balance-sheet` | 更新资产负债表 |
+| `GET` | `/api/stock/<code>/income` | 查询利润表 |
+| `POST` | `/api/update-income` | 更新利润表 |
+| `GET` | `/api/stock/<code>/cashflow` | 查询现金流量表 |
+| `POST` | `/api/update-cashflow` | 更新现金流量表 |
+| `GET` | `/api/stock/<code>/segments` | 查询营收构成 |
+| `POST` | `/api/update-segments` | 更新营收构成 |
+| `GET` | `/api/stock/<code>/valuation` | 查询估值数据 |
+| `GET` | `/api/stock/<code>/kline` | 查询 K 线 |
+| `GET` | `/api/stock/<code>/graham-valuation` | 查询格雷厄姆估值参数 |
+| `PUT` | `/api/stock/<code>/graham-valuation` | 保存格雷厄姆估值参数 |
 
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `page` | int | 1 | 页码 |
-| `page_size` | int | 15 | 每页条数 |
-| `keyword` | string | — | 代码或名称模糊搜索（支持名称拼音/汉字搜索） |
-| `search_type` | string | `code` | 搜索模式：`code`=代码搜索、`name`=名称搜索 |
-| `sort_by` | string | — | 排序字段：code/name/price/pe_ttm/pb_ex_goodwill/dividend_yield/ytd_return |
-| `sort_dir` | string | asc | 排序方向：asc/desc |
+### 8.4 我的持仓
 
-**响应**：
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/portfolio` | 当前持仓汇总 |
+| `POST` | `/api/portfolio/positions` | 新增/修改持仓 |
+| `DELETE` | `/api/portfolio/positions/<code>` | 删除持仓 |
+| `PUT` | `/api/portfolio/positions/<code>/dividend` | 保存自定义每股分红 |
+| `POST` | `/api/portfolio/positions/<code>/dividend/reset` | 重置每股分红 |
+| `PUT` | `/api/portfolio/cash` | 修改现金 |
+| `GET` | `/api/portfolio/flows` | 资金流水 |
+| `POST` | `/api/portfolio/flows` | 新增资金流水 |
+| `DELETE` | `/api/portfolio/flows/<id>` | 删除资金流水 |
+| `POST` | `/api/portfolio/snapshot` | 记录今日快照 |
+| `GET` | `/api/portfolio/nav` | 净值曲线 |
 
-```json
-{
-  "total": 20,
-  "page": 1,
-  "page_size": 15,
-  "total_pages": 2,
-  "data": [
-    {
-      "id": 1,
-      "code": "600519",
-      "name": "贵州茅台",
-      "market": "SH",
-      "industry": "白酒",
-      "list_date": "2001-08-27",
-      "status": "正常",
-      "pe_ttm": 25.30,
-      "price": 1510.00,
-      "pb_ex_goodwill": 8.75,
-      "dividend_yield": 0.0235,
-      "ytd_return": 12.34,
-      "created_at": "...",
-      "updated_at": "..."
-    }
-  ]
-}
-```
+### 8.5 云同步
 
-#### POST /api/stocks/reorder
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/cloud-backup/status` | 查询云端 latest 状态 |
+| `GET` | `/api/cloud-backup/auto-status` | 查询自动云备份调度状态 |
+| `GET` | `/api/cloud-backup/files` | 查询历史备份列表 |
+| `POST` | `/api/cloud-backup/backup` | 手动云备份 |
+| `POST` | `/api/cloud-backup/restore` | 恢复 latest |
+| `POST` | `/api/cloud-backup/restore-file` | 恢复指定历史版本 |
 
-保存首页默认展示顺序。前端进入“调整默认顺序”后拖拽行，提交股票代码数组，后端按数组顺序写入 `stocks.display_order`。
+### 8.6 配置、芒格、便利贴
 
-**请求体**：
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/config` | 读取系统配置 |
+| `PUT` | `/api/config` | 修改系统配置 |
+| `GET` | `/api/stock/<code>/munger-chat` | 读取对话历史 |
+| `POST` | `/api/stock/<code>/munger-chat` | 发送对话 |
+| `DELETE` | `/api/stock/<code>/munger-chat` | 删除单条或清空对话 |
+| `GET` | `/api/sticky-notes` | 查询便利贴 |
+| `POST` | `/api/sticky-notes` | 新建便利贴 |
+| `PUT` | `/api/sticky-notes/<id>` | 修改便利贴 |
+| `DELETE` | `/api/sticky-notes/<id>` | 删除便利贴 |
+| `GET` | `/data/images/<path>` | 便利贴图片服务 |
 
-```json
-{
-  "codes": ["600519", "000858", "000333"]
-}
-```
+---
 
-**成功响应**：`200` + `{"ok": true, "updated": 3}`
-
-#### POST /api/stock
-
-新增股票。只需提供 `code`，名称和市场通过东方财富 API 自动获取。
-
-**请求体**：
-
-```json
-{
-  "code": "600000"
-}
-```
-
-> 支持输入 6 位代码或股票名称，后端自动匹配并填充 name/market。
-
-**成功响应**：`201` + `{"success": true, "message": "添加成功: 浦发银行(600000)"}`
-
-#### PUT /api/stock/<code>
-
-部分更新，只传需修改的字段。code 不可修改。
-
-#### DELETE /api/stock/<code>
-
-物理删除，返回 `{"success": true}` 或 404。
-
-#### GET /api/stats
-
-**响应**：
-
-```json
-{
-  "total": 20,
-  "markets": {"SH": 10, "SZ": 10, "BJ": 0},
-  "industries": {"白酒": 2, "银行": 3, "家电": 2, ...}
-}
-```
-
-#### POST /api/update-dividends
-
-全量或增量更新分红数据与PE数据。
-
-**Query 参数**：
-
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `mode` | string | `full` | 更新模式：`full`=全量更新所有股票，`incremental`=仅更新缺失/过期的股票 |
-
-**数据来源**：
+## 9. 数据来源
 
 | 数据 | 来源 |
-|------|------|
-| 净利润 | 东方财富 datacenter-web API（pageSize=200，覆盖上市以来全部年报） |
-| 分红方案 | 新浪财经 vISSUE_ShareBonus 页面 |
-| PE（动态市盈率） | 腾讯行情接口 qt.gtimg.cn |
-
-**处理逻辑**：
-
-- 遍历 stocks 表中所有（或增量）股票
-- 从东方财富获取历年净利润
-- 从新浪财经解析分红方案（送股/转增/派息），仅计入"实施"状态的分红记录
-- 从腾讯行情获取最新动态市盈率
-- 财年映射：分红日期月份 ≤7 归上一财年（年终分红），≥8 归当年（中期分红）
-- 股息率计算：取最近两个财年 dividend_per_share 的最大值，除以当前股价
-- dividend_per_share 由新浪每10股数据除以 10 得到
-- 写入 dividends 表（upsert 逻辑，UNIQUE(stock_code, fiscal_year)）
-- 更新 stocks 表的 pe_ttm 和 dividend_yield
-
-**成功响应**：`200` + `{"success": true, "message": "已更新 295 条分红记录", "stocks_processed": 16}`
-
-#### GET /api/stock/&lt;code&gt;/financials
-
-查询单只股票的自定义财报数据，支持年报/季报切换和累计/单季度视图。
-
-**Query 参数**：
-
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `from_year` | int | 2016 | 起始年份 |
-| `to_year` | int | 2025 | 结束年份 |
-| `period` | string | `FY` | 报告期：FY/Q1/Q2/Q3/all |
-| `view` | string | `cumulative` | 视图：cumulative(累计)/single(单季度) |
-
-> `period=all&view=single` 时后端自动计算单季度数据（流量指标=本期累计-上期累计）。
-
-**响应**：
-
-```json
-{
-  "data": [
-    {
-      "stock_code": "600519",
-      "fiscal_year": 2025,
-      "total_revenue": 1741.44,
-      "total_revenue_yoy": 15.66,
-      "net_profit": 893.27,
-      "net_profit_yoy": 15.45,
-      "roe": 29.83,
-      "roe_yoy": -2.36,
-      "core_profit_rate": 74.60,
-      "net_profit_rate": 51.30,
-      "cashflow_to_profit": 95.60,
-      "dividend_amount": 746.50,
-      "dividend_per_share": 59.49,
-      "dividend_payout_ratio": 83.57,
-      "basic_eps": 71.12,
-      "dividend_yield_fin": 3.89,
-      "debt_ratio": 19.29,
-      "interest_bearing_debt_ratio": 0.52
-    }
-  ]
-}
-```
-
-> 派生指标由后端动态计算。除上述三个外，还包括 `dividend_payout_ratio`（分红率）、`interest_bearing_debt_ratio`（有息负债率）、`dividend_yield_fin`（股息率）。`dividend_amount`、`dividend_per_share` 通过 LEFT JOIN dividends 表按 fiscal_year 关联获取。
-
-#### POST /api/update-financials
-
-从东方财富 API 拉取全部报告类型的数据，按财年取 NOTICE_DATE 最晚的报告（已完成财年自然取年报，当年取最新累计季报），进行单位转换后 upsert 写入 custom_financials 表。
-
-**请求体**：
-
-```json
-{
-  "code": "600519"
-}
-```
-
-**数据来源**：东方财富 datacenter-web API，pageSize=200 覆盖全部年报。
-
-**字段映射与转换**：
-
-| 东方财富字段 | 目标字段 | 转换 |
-|------|------|------|
-| TOTALOPERATEREVE | total_revenue | 元 → 亿元（÷1e8） |
-| TOTALOPERATEEXP | operating_cost | 元 → 亿元 |
-| OPERATEPROFIT | operating_profit | 元 → 亿元 |
-| TOTPROFIT | total_profit | 元 → 亿元 |
-| PARENTNETPROFIT | net_profit | 元 → 亿元 |
-| TOTALASSETS | total_assets | 元 → 亿元 |
-| TOTALSHOLDEREQUITY | total_equity | 元 → 亿元 |
-| KCFJCXJJE | net_cashflow_oper | 元 → 亿元 |
-| BASICEPS | basic_eps | 元，保持原值 |
-| ROEJQ | roe | %，保持原值 |
-| XSMLL | gross_margin | %，保持原值 |
-| XSJLL | net_margin | %，保持原值 |
-| ZCFZL | debt_ratio | %，保持原值 |
-| STBORROW | short_borrow | 元 → 亿元 |
-| NCLDUE1Y | noncurrent_liab_due1y | 元 → 亿元 |
-| LTBORROW | long_borrow | 元 → 亿元 |
-| BONDSPAYABLE | bonds_payable | 元 → 亿元 |
-
-**派生指标（后端计算）**：
-
-| 派生指标 | 公式 | 说明 |
-|------|------|------|
-| core_profit_rate | (total_revenue - operating_cost) / total_revenue × 100 | 核心利润率 |
-| net_profit_rate | net_profit / total_revenue × 100 | 净利润率 |
-| cashflow_to_profit | net_cashflow_oper / net_profit × 100 | 现金流利润比 |
-| dividend_payout_ratio | dividend_amount / net_profit × 100 | 分红率 |
-| interest_bearing_debt_ratio | (short_borrow + noncurrent_liab_due1y + long_borrow + bonds_payable) / total_assets × 100 | 有息负债率 |
-| dividend_yield_fin | dividend_per_share / cur_price × 100 | 股息率（基于腾讯行情实时股价） |
-
-**成功响应**：`200` + `{"success": true, "message": "已更新 19 条年报数据", "stock_code": "600519", "count": 19}`
-
-#### GET /api/stock/&lt;code&gt;/segments
-
-查询指定股票的营收构成数据，支持业务、产品、地区三类维度。
-
-**Query 参数**：
-
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `from_year` | int | 2016 | 起始年份 |
-| `to_year` | int | 当前年份 | 结束年份 |
-| `dimension` | string | `business` | 构成维度：business/product/region |
-
-**响应**：
-
-```json
-{
-  "data": [
-    {
-      "fiscal_year": 2024,
-      "dimension_type": "business",
-      "segment_name": "酒类",
-      "revenue": 1700.00,
-      "gross_profit": 1500.00,
-      "gross_margin": 88.20,
-      "revenue_ratio": 95.50,
-      "profit_ratio": 97.10
-    }
-  ],
-  "summary": {
-    "latest_year": 2024,
-    "top_revenue_segment": "酒类",
-    "top_revenue_ratio": 95.50,
-    "top_profit_segment": "酒类",
-    "top_profit_ratio": 97.10,
-    "top3_revenue_ratio": 99.20,
-    "gross_margin": 88.20
-  }
-}
-```
-
-#### POST /api/update-segments
-
-从东方财富 F10 主营构成接口拉取数据，按 `business/product/region` 三种维度 upsert 写入 `business_segments` 表。全量更新按钮会包含该接口；股票详情页营收构成标签也提供单股更新。
-
-**请求体**：
-
-```json
-{
-  "code": "600519"
-}
-```
-
-**成功响应**：`200` + `{"success": true, "records_updated": 411, "stocks_processed": 1}`
-
-#### GET /api/stock/&lt;code&gt;/balance-sheet
-
-查询指定股票的资产负债表数据，支持年报/季报切换和累计/单季度（delta）视图。
-
-**Query 参数**：
-
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `from_year` | int | 2000 | 起始年份 |
-| `to_year` | int | 2030 | 结束年份 |
-| `period` | string | `FY` | 报告期：FY/Q1/Q2/Q3/all |
-| `view` | string | `cumulative` | 视图：cumulative(快照)/single(delta) |
-
-> `view=single` 时计算各科目环比差值（本期-上期），可用于观察资产负债表变动。
-
-**响应**：
-
-```json
-[
-  {
-    "fiscal_year": 2025,
-    "monetary_funds": 516.9061,
-    "inventory": 614.2742,
-    "total_assets": 3038.3484,
-    "total_liabilities": 498.7559,
-    "total_equity": 2539.5925,
-    ...
-  }
-]
-```
-
-> 完整包含 49 个资产负债表科目字段（流动资产/非流动资产/流动负债/非流动负债/股东权益），详见 §3.6 表结构。
-
-#### POST /api/update-balance-sheet
-
-从新浪财经资产负债表页面解析并更新数据。
-
-**Query 参数**：
-
-| 参数 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `mode` | string | `full` | `full`=全量拉取所有年份，`incremental`=仅补全缺失年份 |
-
-**数据来源**：`https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_BalanceSheet/stockid/{code}/ctrl/part/displaytype/0.phtml`
-
-**处理逻辑**：
-- 解析 HTML 中所有"报表日期"表格，提取所有日期列数据
-- 同一财年有多列时优先保留最晚日期（已完财年取 12-31 年报，当年取最新季度）
-- 中文科目名前缀匹配 49 个 DB 字段（如"货币资金"→monetary_funds、"在建工程(合计)"→cip）
-- 新浪原始单位万元，入库前 ÷ 10000 转为亿元
-- upsert 写入 balance_sheets 表（UNIQUE(stock_code, fiscal_year)）
-
-**成功响应**：`200` + `{"success": true, "records_updated": 115, "stocks_processed": 7}`
-
-#### GET /api/stock-search
-
-根据代码或名称搜索股票，优先本地 DB，未命中则调用东方财富 suggest API。
-
-**Query 参数**：`keyword` — 搜索关键词（代码或名称）
-
-**响应**：`[{"code": "600519", "name": "贵州茅台", "market": "SH"}, ...]`
-
-#### GET /api/stock/&lt;code&gt;/realtime-quote
-
-返回实时行情数据（股价、PE、市值、股息率）。
-
-**响应**：`{"price": 1680.50, "pe_ttm": 22.3, "market_cap": 21100.0, "dividend_yield": 3.5}`
+|---|---|
+| 股票名称/市场 | 东方财富 quote/search 接口 |
+| 股票搜索 | 本地数据库优先，未命中再查东方财富 suggest |
+| 实时股价、PE、PB、市值 | 腾讯行情接口 |
+| K 线 | 腾讯 K 线接口 |
+| 分红 | 东方财富 datacenter-web |
+| 净利润辅助 | 东方财富 datacenter-web |
+| 财务摘要 | 东方财富 datacenter-web |
+| 资产负债表 | 新浪财经 HTML |
+| 利润表 | 新浪财经 HTML |
+| 现金流量表 | 新浪财经 HTML |
+| 营收构成 | 东方财富 F10 主营构成接口 |
+| 对话芒格搜索 | 搜索引擎 + 网页抓取 + LLM |
 
 ---
 
-## 五、业务逻辑
+## 10. 启动与部署
 
-### 5.1 股票管理核心流程
+### 10.1 推荐启动方式
 
-```
-添加 → 前端表单(仅需输入代码) → POST /api/stock → 后端自动获取名称/市场
-                                         → Stock.add() → INSERT
-                                         → 返回 201
+Windows 下推荐双击：
 
-查询 → 列表页加载 → GET /api/stocks?page=&keyword=
-                     → 动态拼接 WHERE + LIMIT/OFFSET
-                     → 返回分页数据（关键字支持代码/名称模糊搜索）
-
-编辑 → 点击编辑 → GET /api/stock/<code> 获取详情 → 修改字段
-                  → PUT /api/stock/<code> → 白名单字段校验
-                                           → 动态 UPDATE SET
-
-删除 → 确认弹窗 → DELETE /api/stock/<code> → 物理删除
+```text
+stock.bat
 ```
 
-### 5.2 数据过滤规则
-
-- **关键字搜索**：同时对 `code` 和 `name` 做模糊匹配（LIKE %xxx%），支持股票名称拼音搜索
-- **分页**：默认每页 15 条，超范围页码自动由 `total_pages` 限制
-- **指标排序**：首页表头支持按代码、名称、股价、PE、PB(扣商誉)、股息率、今年以来收益率升降序排序
-- **默认顺序**：未排序时按 `display_order` 展示；进入调整模式后拖拽股票行并保存，写回 `/api/stocks/reorder`
-
-### 5.3 添加股票
-
-- 弹窗只需输入股票代码（支持 6 位代码或名称搜索），名称和市-场通过东方财富 API 自动获取
-- 编辑时 code 字段锁定（不可修改主键）
-- 操作结果 Toast 提示（2.5 秒自动消失）
-
-### 5.4 前端交互逻辑
-
-- 搜索框 400ms 防抖，减少无效请求
-- 详情页切换股票时保留当前标签页（分红/自定义财报/资产负债表）
-- 图表弹窗复用共享模态窗，对比股票时显示双方 CAGR
-- 删除前 `confirm()` 二次确认
-- 添加股票支持输入代码或名称，自动匹配
-- 详情页顶部下拉框可切换自选股
-- 首页“恢复默认顺序”会清空当前指标排序，回到 `display_order` 默认视图
-- 股票详情页切换股票时会重置营收构成面板并重新加载，避免旧股票图表残留
-
-### 5.5 季报与同比
-
-- 自定义财报和资产负债表支持年报/季报切换
-- 季报可选择全部/Q1/Q2/Q3，视图可选累计/单季度
-- 单季度数据由后端计算：流量指标（营收/利润/现金流）= 本期累计 - 上期累计
-- 同比（YoY）：同报告期跨年比较，如 Q2 2025 vs Q2 2024
-- 表格中原值和同比%双列展示，同比正值红色、负值绿色
-
-### 5.6 股票对比
-
-- 在自定义财报和资产负债表标签页输入对比股票代码或名称
-- 表格上方显示"主股票 vs 对比股票"
-- 每个指标名占两行（rowspan=2），上行主股票、下行对比股票（橙色背景）
-- 对比股票也展示同比数据（同季度跨年）
-- 图表弹窗同时展示两支股票的柱状图 + 同比折线
-
-### 5.7 图表可视化
-
-- 点击指标旁的小图表图标弹出 ECharts 弹窗
-- 柱状图展示指标数值（蓝色主股票、橙色对比股票）
-- 折线图展示同比增速（绿色，右轴百分比）
-- 标题显示 CAGR（年化复合增长率）
-- 横轴 oldest→newest 时序排列
-- 遮罩/ESC 关闭弹窗
-
-### 5.8 K线走势图
-
-| 特性 | 实现方式 |
-|------|------|
-| 图表类型 | ECharts K线图（candlestick）+ 成交量柱状图 |
-| 数据源 | 腾讯 K线 API（前复权日线） |
-| 周期选择 | 近一年 / 两年 / 五年 / 全部 |
-| 颜色 | 红涨绿跌蜡烛，成交量同色联动 |
-| 双网格 | 上方 K线（65%）+ 下方成交量（15%） |
-| 提示框 | 横轴十字线，显示 OHLCV 五要素 |
-
-### 5.9 估值分析（PE-TTM 四轮演进）
-
-PE-TTM 历史走势 + 分位点 + 股价联动，支持时间范围切换。
-
-**计算演进**：
-
-| 轮次 | 方法 | 问题 |
-|------|------|------|
-| R1 | 股价 / 年报 EPS | 2026年仍用2024EPS，PE虚高12.81 |
-| R2 | TTM = 年报 - 去年同期 + 今年累计 | 9月30日提前用了Q3数据 |
-| R3 | R2 + 披露延迟（年报5月/Q3 11月生效） | 基本准确 |
-| R4 | R3 + 归母净利润/总股本（替代EPSJB） | **当前方法，最新PE=8.96与腾讯完全一致** |
-
-**当前算法**：
-```
-TTM_EPS = PARENTNETPROFIT / TOTAL_SHARE  （每期独立获取总股本）
-PE = 前复权股价 / TTM_EPS
-```
-数据源：东方财富「全部报告类型」+ 腾讯前复权K线。分位点在前端基于筛后数据实时计算。
-
-| 特性 | 实现方式 |
-|------|------|
-| PE-TTM 计算 | 股价（前复权）/ TTM EPS（归母净利润÷总股本），披露延迟后生效 |
-| 当前 PE | 图表和侧边栏统一为 归母净利润计算值，同时传 realtime_pe 供参考 |
-| 分位点 | 80%/50%/20% 基于所选时间范围在**前端实时计算** |
-| 股价数据 | 腾讯 K线 API 分批拉取（最多 8 批 ≈ 20 年），去重后排序 |
-| 时间范围 | 上市以来 / 20年 / 10年 / 5年 / 3年 / 1年 |
-| 图表 | PE-TTM、PB(扣商誉)、股息率三组估值图，均含分位线和股价联动 |
-| 标记点 | 蓝色大头针标最高 PE，绿色标最低 PE |
-
-**股息率估值**：使用本地 `dividends.dividend_per_share` 作为分红数据源，并使用腾讯未复权历史价格计算历史股息率，避免“未复权分红 / 前复权老股价”造成早期股息率失真。
-
-### 5.10 营收构成
-
-股票详情页新增“营收构成”标签，用于观察公司业务收入和利润来源的长期变化。
-
-| 特性 | 实现方式 |
-|------|------|
-| 数据源 | 东方财富 F10 主营构成接口 |
-| 存储 | `business_segments` 表，本地持久化 |
-| 维度 | 按业务、按产品、按地区三类切换 |
-| 指标 | 收入、成本、毛利、毛利率、收入占比、毛利占比 |
-| 图表 | 历年收入堆叠、历年毛利堆叠、最新年度收入占比/毛利率气泡图 |
-| 摘要 | 最新年度、第一大收入来源、第一大毛利来源、Top3 收入集中度 |
-| 切股刷新 | `resetSegmentsPanel()` + 请求序号 `segmentLoadSeq` 防止异步串号 |
-
-### 5.11 对话芒格（💬）
-
-每只股票独立的实时对话，芒格人格（Full Munger Skill），支持 Web 搜索和链接分析。
-
-| 特性 | 实现方式 |
-|------|------|
-| System Prompt | 完整芒格人格：5大心智模型 + 8条启发式 + Agentic 工作流 |
-| 模型 | DeepSeek V4 Pro，temperature=0.3，max_tokens=1000 |
-| Web 搜索 | DuckDuckGo Lite → 标题捕获，触发词（?/怎么/为什么/查/搜索） |
-| 链接分析 | 三层抓取（Jina Reader → Google 缓存 → 直接请求） |
-| 上下文 | 财务摘要(PE/ROE/ROIC/负债率) + 最近10条历史 + 搜索结果前3条全文 |
-| 消息管理 | 单条删除 + 清空全部，GET/POST/DELETE API |
-| 存储 | `munger_chats` 表，按 stock_code 隔离 |
-
-### 5.12 便利贴（📌）
-
-股票详情页标签，每只股票独立笔记。标题 + 内容两个字段，内容支持文字/链接/图片混排自动识别。
-
-> ⚠️ v2.8 起便利贴从 MySQL `sticky_notes` 表迁移到 JSON 文件存储（`data/sticky_notes.json`），base64 图片自动提取为独立文件（`data/images/`），实现 Git + Syncthing 跨设备同步。
-
-| 特性 | 实现方式 |
-|------|------|
-| 输入 | 标题 + 内容 textarea（无类型选择器），关联股票下拉选择 |
-| 粘贴图片 | Ctrl+V 自动转 base64 data URI 插入，保存时后端提取为文件 |
-| 查看原图 | 点击图片全屏深色浮层查看（`background:rgba(0,0,0,.85)`） |
-| 存储 | `data/sticky_notes.json`（文字）+ `data/images/*.png`（图片，.gitignore） |
-| API | GET(按stock_code过滤)/POST/PUT/DELETE，图片服务 `/data/images/<path>` |
-| 切换股票 | 自动检测 `panel-sticky` 显示状态 → 调用 `loadStickyNotes()` |
-| 串号防护 | 下拉未填充时兜底取 `detailCode.textContent`，防止存为错误 stock_code |
-| 图片渲染 | 新增 `/data/images/` 路径正则匹配，本地图片路径自动转 `<img>` |
-
-### 5.13 Web 页面抓取三层回退
-
-```
-Jina Reader (r.jina.ai) → Google Cache → 直接HTTP + 正则剥HTML
-```
-
-雪球等 JS SPA 页面通过 Google 缓存绕过 JS 渲染瓶颈。
-| 侧边栏 | 当前值 / 分位点 / 80%-50%-20% / 最大-平均-最小，联动时间范围 |
-
-### 5.14 移动端响应式适配（v2.8）
-
-纯 CSS 渐进增强，两个断点（768px + 640px），不改 JS。640px 块覆盖 15 个模块：
-
-| 模块 | 适配策略 |
-|------|------|
-| Header | 竖排堆叠，标题缩小 |
-| Toolbar | 搜索框 `flex:1` 占满，按钮缩小 |
-| Tab 栏 | `overflow-x:auto` 左右滑动，隐藏滚动条 |
-| 实时卡片 | 一行两列 (`flex:1 1 calc(50%-6px)`) |
-| 财务表格 | sticky 列缩至 120px，整体 `thead` 吸顶 |
-| 估值侧边栏 | 侧边栏变横向 flex 条，图表高度 300px |
-| 图表 | K线/估值/分红 高度 500→300px |
-| 对话芒格 | 聊天气泡间距缩小，输入栏紧凑 |
-| 弹窗 | `.row` 改为 `flex-direction:column` |
-| Toast | 顶部→底部居中 |
-
-> `thead { position:sticky;top:0 }` + `border-collapse:separate;border-spacing:0` 替代逐 `<th>` 方案，解决年份表头滚动时不冻结问题。
-
-### 5.15 跨设备同步（v2.8）
-
-家庭/公司电脑间的便利贴同步方案：
-
-| 数据类型 | 存储 | 同步方式 |
-|----------|------|----------|
-| 文字内容 | `data/sticky_notes.json` | Git push/pull |
-| 图片文件 | `data/images/*.png` | Syncthing / 坚果云 / OneDrive |
-
-手机局域网访问：改 `app.run(host="0.0.0.0")` + 防火墙放行 TCP 5002。
-
-### 5.16 利润表 & 现金流量表
-
-与资产负债表共享通用渲染逻辑（`renderFinanceTable`），支持：
-
-| 特性 | 利润表 | 现金流量表 |
-|------|--------|------------|
-| 科目分组 | 收入/成本费用/其他收益/利润/每股指标/综合收益 | 经营/投资/筹资活动现金流 |
-| 年报/季报 | ✓ 支持 FY/all 切换 | ✓ |
-| 同比列 | ✓ 涨红跌绿 | ✓ |
-| 对比股票 | ✓ 橙色子行 | ✓ |
-| 图表弹窗 | ✓ 柱状图+YoY折线+CAGR | ✓ |
-
-### 5.17 统一数据更新
-
-首页「⟳ 更新数据」按钮弹出模式选择弹窗：
-
-| 模式 | 说明 |
-|------|------|
-| 增量更新 | 补全缺失年份数据（快速） |
-| 全量更新 | 重新拉取全部历史数据（较慢） |
-
-点击后一次性调用 5 个 API（分红/财报/资产负债表/利润表/现金流量表），Toast 汇总结果。
-
-### 5.18 数据源与采集逻辑
-
-#### 股票详情页实时行情卡片（v1.2 新增）
-
-进入任意股票详情页时，页面顶部展示一行 4 张横向排列的实时行情指标卡片，数据通过腾讯行情接口 `qt.gtimg.cn` 实时拉取：
-
-| 卡片 | 指标 | 数据来源 | 说明 |
-|------|------|------|------|
-| 最新股价 | `cur_price` | `qt.gtimg.cn` `parts[3]` | 实时成交价（元），保留 2 位小数 |
-| PE(TTM) | `pe_ttm` | `qt.gtimg.cn` `parts[39]` | 动态市盈率，与 stocks 表 pe_ttm 字段联动更新 |
-| 股息率 | `dividend_yield` | 后端计算 | MAX(最近两财年每股分红) / cur_price，前端格式化显示百分比 |
-| 最新市值 | `market_cap` | `qt.gtimg.cn` `parts[45]` | 总市值（亿元），原始单位（元）÷ 1e8 |
-
-**技术实现**：
-
-- **后端接口**：`GET /api/stock/<code>/realtime-quote`，解析 `qt.gtimg.cn` 返回的 `~` 分隔字符串，提取 `parts[3]`（股价）、`parts[39]`（PE）、`parts[45]`（市值），结合 dividends 表计算股息率后返回 JSON。
-- **前端渲染**：CSS Grid 横向排列 4 张卡片，每张卡片包含标签、数值和单位，响应式布局自动适配窗口宽度。
-- **数据刷新**：页面加载时异步请求实时行情，不影响详情页主体数据渲染；后续可扩展定时轮询。
-
-#### 自定义财报标签页
-
-前端横向滚动表格展示多年财务指标对比，支持指标行拖拽排序：
-
-| 特性 | 实现方式 |
-|------|------|
-| 排序入口 | 工具栏"调整排序"按钮，点击进入排序模式，再次点击退出 |
-| 拖拽方式 | 排序模式下指标行首列显示 ⋮⋮ 手柄，mousedown 拖拽手柄上下移动 |
-| 视觉反馈 | 浮动 ghost 行跟随鼠标 + 蓝色插入线指示目标位置 |
-| 顺序持久化 | localStorage key `financials-indicator-order` |
-| 年份排列 | 倒序（最近年份在前），SQL ORDER BY fiscal_year DESC |
-| 同比着色 | 正值红色 `.fin-yoy-up`，负值绿色 `.fin-yoy-down` |
-| 表格滚动 | 横向滚动，首列（指标名）sticky 固定 |
-| 图表弹窗 | 指标名后带小图表图标，点击弹出 ECharts 折线图模态窗（数据点标签、百分比Y轴带%号、遮罩/ESC关闭） |
-
-#### 资产负债表标签页
-
-前端横向滚动表格展示多年资产负债表对比，按 流动资产/非流动资产/流动负债/非流动负债/股东权益 分组：
-
-| 特性 | 实现方式 |
-|------|------|
-| 分组标题 | 每组第一行为蓝色背景的类别标题行（如"流动资产"） |
-| 年份排列 | 倒序（最近年份在前），SQL ORDER BY fiscal_year DESC |
-| 合计行 | 流动资产合计/非流动资产合计/资产总计等加粗显示 |
-| 表格滚动 | 横向滚动，首列（科目名）sticky 固定 |
-| 图表弹窗 | 每科目名后带小图表图标，点击弹出 ECharts 折线图弹窗（Y轴单位亿元、遮罩/ESC关闭） |
-| 数据源 | 新浪财经资产负债表页面 `displaytype/0`，覆盖上市以来全部年份 |
-| 当前年份 | 已完成财年取 12-31 年报列，当前未完成财年取最新季度列（如 Q1） |
-
-#### PE 数据源
-
-- **接口**：`https://qt.gtimg.cn/q={prefix}{code}`
-- **prefix 规则**：SH → `sh`，SZ → `sz`
-- **解析**：返回字符串按 `~` 分割，`parts[39]` 为动态市盈率
-
-#### 分红数据源
-
-- **接口**：`https://vip.stock.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/{code}.phtml`
-- **解析**：解析 HTML 中的 `<tr>` 块，提取送股/转增/派息（每10股数据）
-- **过滤**：仅计入"实施"状态的分红记录
-- **换算**：每10股派息数据除以 10 得到 dividend_per_share（每股分红/元）
-
-#### 净利润数据源
-
-- **接口**：东方财富 datacenter-web API
-- **参数**：`pageSize=200`，确保覆盖上市以来全部年报数据（A股最老约30年）
-- **用途**：获取历年净利润（亿元），写入 dividends.net_profit
-
-#### 分红图表可视化
-
-分红详情页使用 ECharts 柱状图+折线图混合图表，双 Y 轴布局：
-
-| 系列 | 图表类型 | Y 轴 | 颜色 | 说明 |
-|------|------|------|------|------|
-| 净利润 | 柱状图 | 左轴（亿元） | 蓝色 `#4a6cf7` | 各财年归母净利润 |
-| 分红金额 | 柱状图 | 左轴（亿元） | 绿色 `#52c41a` | 各财年分红总额 |
-| 分红比例 | 折线图 | 右轴（%） | 橙色 `#fa8c16` | 分红金额 ÷ 净利润 × 100% |
-
-前端直接计算 `payout_ratio = dividend_amount / net_profit * 100`，无需额外后端接口。
-
-此外，分红页面顶部提供**起始年/结束年下拉框**，用户选择年份范围后自动筛选该区间内的分红数据，图表和表格同步更新。默认覆盖全部可用年份，无需手动清空范围即可查看全量数据。
-
-#### 财年映射规则
-
-| 除权除息日月份 | 归属财年 | 说明 |
-|------|------|------|
-| 1月 ~ 7月 | 上一年 | 年终分红 |
-| 8月 ~ 12月 | 当前年 | 中期分红 |
-
-#### 股息率计算
-
-取最近两个财年 dividend_per_share 的最大值，除以当前股价，公式：
-
-```
-dividend_yield = MAX(dps_last_year, dps_year_before) / current_price
-```
-
----
-
-## 六、项目结构
-
-```
-D:\\stock-analysis-system\\
-├── .gitignore            # Git 忽略规则（含 data/images/）
-├── app.py                # Flask 入口 + RESTful API
-├── config.py             # 数据库配置
-├── config_manager.py     # 系统配置管理（API Key）
-├── db.py                 # 连接池 + 查询封装
-├── munger.py             # 对话芒格引擎
-├── models.py             # Stock 数据模型
-├── requirements.txt      # Python 依赖
-├── data\
-│   ├── sticky_notes.json # 便利贴数据（JSON，Git 追踪）
-│   └── images\           # 便利贴图片（.gitignore，Syncthing 同步）
-└── templates\
-    └── index.html        # 前端 SPA（单页应用，~3130行）
-```
-
----
-
-## 七、部署与运行
-
-### 环境要求
-
-| 组件 | 版本 | 路径 |
-|------|------|------|
-| Python | 3.11.8 | 系统 PATH |
-| MySQL | 8.4.9 | `E:\MySQL` |
-| Git | 2.54.0 | 系统 PATH |
-
-### Git 远程与 SSH 配置
-
-> 当前网络环境 HTTPS 443 端口被阻断，已将远程地址切换为 SSH 方式。
-
-| 配置项 | 值 | 说明 |
-|------|------|------|
-| 远程地址 | `git@github.com:hawei07/stock-analysis-system.git` | SSH 协议，替代原 HTTPS 地址 |
-| SSH 密钥 | `%USERPROFILE%\.ssh\id_ed25519` | ED25519 密钥对，对应 GitHub 公钥 |
-| 本地 SSH 命令 | `core.sshCommand` 固化 | 已通过 `git config` 固化，后续直接 `git push` 即可 |
-
-### 启动步骤
+或运行：
 
 ```powershell
-# 1. 确保 MySQL 运行
-# MySQL 8.4 位于 E:\MySQL\bin\，mysqld.exe 已在后台运行
-
-# 2. 安装依赖（首次）
-pip install -r requirements.txt
-
-# 3. 启动 Web 服务
-python E:\stock-analysis-system\app.py
-# 访问 http://127.0.0.1:5002
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start_stock_system.ps1
 ```
 
-### 数据库初始化
+启动脚本会：
 
-```sql
-CREATE DATABASE IF NOT EXISTS stock_analysis
-  DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+- 读取 `local_settings.json`
+- 设置当前进程环境变量
+- 自动查找可用 Python
+- 自动尝试启动 MySQL 服务或 `mysqld.exe`
+- 检测 Flask 端口
+- 启动 `app.py`
+- 打开浏览器访问系统
 
--- stocks 表由 models.py 首次运行时通过 stock_list.py import 自动创建
--- 导入示例数据：python stock_list.py import
+### 10.2 首次配置
+
+首次拉取代码后执行：
+
+```text
+setup_local_settings.bat
 ```
+
+它会生成：
+
+```text
+local_settings.json
+```
+
+需要人工确认或修改的通常只有：
+
+- MySQL 路径或服务名
+- MySQL 密码
+- 云同步目录
+- Python 路径
+
+### 10.3 Git 注意事项
+
+已忽略：
+
+```text
+local_settings.json
+data/cloud_sync_state.json
+data/images/
+temp/
+```
+
+不应提交：
+
+- 本机数据库密码
+- 本机绝对路径配置
+- 临时日志
+- 云端 SQL 备份文件
 
 ---
 
-## 八、开发流程规范
+## 11. 开发约定
 
-> 遵循 **Agency Agents 七专家流程**，强制产品经理前置分析 + 用户确认门禁。
-
-### 流程
-
-```
-用户需求
-  ↓
-0️⃣ Product Manager (product-manager)     → 需求分析 + 产品设计
-  ↓  ⛔ 用户必须确认后才能继续
-1️⃣ UI Designer (ui-designer)             → 页面设计
-2️⃣ Backend Architect (backend-architect) → 后端/API/数据库
-3️⃣ Frontend Developer (frontend-developer)→ 前端实现
-4️⃣ API Tester (api-tester)               → 接口测试
-5️⃣ Code Reviewer (code-reviewer)         → 代码审查
-6️⃣ Git Workflow Master (git-workflow-master) → 提交规范
-```
-
-### 规则
-
-| 规则 | 说明 |
-|------|------|
-| 派发方式 | `delegate_task` 派发子 Agent，禁止 `agency_agents_load` 化身 |
-| 第 0 步强制 | 任何需求必须先经产品经理分析，输出需求文档 |
-| 用户确认门禁 | 第 0 步后必须等待用户明确确认（"可以"/"开始"），才进入开发 |
-| 禁止跳过 | 绝不允许跳过产品经理步骤直接写代码 |
+- 后端修改数据库的接口，应接入 `AUTO_CLOUD_BACKUP_ENDPOINTS`，除非该操作不应影响云端 latest。
+- 恢复类接口不接入自动云备份，恢复前使用 `pre_restore` 保护备份。
+- 新增本机路径配置时，优先放入 `local_settings.example.json`，并通过 `_setting()` 支持环境变量覆盖。
+- 新增数据库表时，优先使用幂等 `_ensure_xxx_table()` 或迁移函数，保证老电脑启动时可自动补齐结构。
+- 前端历史恢复等关键操作使用项目内 modal，不使用浏览器原生 `prompt()` 做复杂交互。
+- 跨电脑同步以数据库 SQL 备份为主，代码通过 Git 同步，本机配置各自维护。
 
 ---
 
-## 九、后续扩展规划
+## 12. 当前重点能力总结
 
-### 9.1 当前数据规模
+当前系统的核心工作流是：
 
-| 指标 | 数值 |
-|------|------|
-| 股票总数 | 7 只 |
-| 分红记录 | 298 条 |
-| 财报记录 | 191 条（含季报 670 条） |
-| 资产负债表记录 | 157 条 |
-| 利润表记录 | 670 条（含 FY/Q1/Q2/Q3） |
-| 现金流量表记录 | 652 条（含 FY/Q1/Q2/Q3） |
-| 营收构成数据 | 按需拉取并本地存储 |
-| K线数据 | 按需实时拉取（腾讯 API） |
-| PE 估值数据 | 按需计算，股价分批拉取最多 20 年 |
-| 覆盖财年 | 完整覆盖各股票上市以来全部数据 |
+```text
+家里电脑改数据
+  -> 系统延迟自动云备份到 Dropbox
+  -> 公司电脑启动后发现云端更新
+  -> 用户点击立即更新或手动云恢复
+  -> 公司电脑恢复 latest
+```
 
-| 阶段 | 模块 | 说明 |
-|------|------|------|
-| 一期（已完成） | 股票列表 | CRUD + 搜索筛选 |
-| 二期 | 行情数据 | 接入实时/历史行情，K线数据存储 |
-| 三期 | 技术分析 | MACD/KDJ/均线等指标计算与可视化 |
-| 四期 | 策略回测 | 自定义策略引擎 + 收益曲线 |
-| 五期 | 选股筛选 | 多条件组合筛选 + 排序 |
+恢复前系统会自动生成 `pre_restore` 备份，因此误恢复后可以通过 `历史恢复` 回到恢复前版本。
 
-### 9.2 近期完成 (v2.9)
-
-| 功能 | 说明 |
-|------|------|
-| 营收构成 | 股票详情页新增业务/产品/地区构成，展示历年收入、毛利、占比和集中度 |
-| 估值股息率 | 估值页新增股息率图表，使用本地分红和未复权价格计算 |
-| 首页指标扩展 | 新增股价、PB(扣商誉)、今年以来收益率 |
-| 首页排序 | 支持按主要指标排序，并可恢复默认视图 |
-| 默认顺序拖拽 | 首页进入调整模式后拖拽股票顺序，保存到 `stocks.display_order` |
-| 营收构成切股刷新 | 切换股票时自动清空旧数据并加载当前股票数据 |
-
-### 9.3 近期完成 (v2.8)
-
-| 功能 | 说明 |
-|------|------|
-| 移动端适配 | `@media (max-width:640px)` 纯 CSS，15 模块手机可用 |
-| 便利贴 JSON 化 | MySQL → 文件存储，base64 图片分离，支持跨设备同步 |
-| 表格表头冻结 | `thead position:sticky` + `border-collapse:separate` |
-| 便利贴串号修复 | 下拉异步填充竞态兜底 |
-| 分红图表 resize | `switchTab` 遗漏分支补齐 |
-*（内容由AI生成，仅供参考）*
+这套机制使同一份代码可以在家里和公司两台电脑上运行，各自使用不同的 MySQL、Python 和 Dropbox 路径，同时共享同一份业务数据备份。

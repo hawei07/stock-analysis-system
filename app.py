@@ -47,6 +47,12 @@ from db import execute_query, execute_update
 from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
+from services.cloud_backup_service import (
+    CLOUD_BACKUP_RETAIN_COUNT,
+    auto_backup_delay_for_reasons,
+    backup_file_groups,
+    validate_sql_backup_file,
+)
 
 app = Flask(__name__)
 
@@ -56,14 +62,18 @@ APP_PORT = int(_setting("app_port", "STOCK_APP_PORT", 5002))
 CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
-CLOUD_BACKUP_RETAIN_COUNT = 5
 AUTO_CLOUD_BACKUP_DELAY_SECONDS = int(_setting("auto_cloud_backup_delay_seconds", "STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS", 180))
-TIMED_BACKUP_RE = re.compile(r"^stock_analysis_\d{8}_\d{6}\.sql$", re.IGNORECASE)
-PRE_RESTORE_BACKUP_RE = re.compile(r"^pre_restore_\d{8}_\d{6}\.sql$", re.IGNORECASE)
 _auto_backup_lock = threading.Lock()
 _auto_backup_timer = None
 _auto_backup_reasons = set()
 _auto_backup_running = False
+_auto_backup_scheduled_at = None
+_auto_backup_due_at = None
+_auto_backup_last_result = {
+    "status": "idle",
+    "message": "尚未执行自动云备份",
+    "updated_at": None,
+}
 
 _db_overrides = {
     "host": _setting("db_host", "STOCK_DB_HOST"),
@@ -140,10 +150,7 @@ def _cloud_backup_files():
 
 def _cleanup_cloud_backup_files(backup_dir=None, retain_count=CLOUD_BACKUP_RETAIN_COUNT):
     backup_dir = backup_dir or _cloud_backup_dir()
-    groups = {
-        "stock_analysis": TIMED_BACKUP_RE,
-        "pre_restore": PRE_RESTORE_BACKUP_RE,
-    }
+    groups = backup_file_groups()
     deleted = []
 
     for group_name, pattern in groups.items():
@@ -212,11 +219,27 @@ def _mark_cloud_applied(action, extra=None):
         "latest_mtime": latest_mtime,
         "latest_mtime_iso": datetime.fromtimestamp(latest_mtime).isoformat(timespec="seconds") if latest_mtime else None,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "local_dirty": False,
+        "dirty_since": None,
+        "dirty_reasons": [],
     }
     if extra:
         state.update(extra)
     _write_local_cloud_state(state)
     return state
+
+
+def _mark_local_dirty(reason):
+    state = _read_local_cloud_state()
+    reasons = set(state.get("dirty_reasons") or [])
+    reasons.add(reason)
+    state.update({
+        "local_dirty": True,
+        "dirty_since": state.get("dirty_since") or datetime.now().isoformat(timespec="seconds"),
+        "dirty_reasons": sorted(reasons),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    _write_local_cloud_state(state)
 
 
 def _read_cloud_state():
@@ -243,16 +266,62 @@ def _write_auto_backup_log(message):
         pass
 
 
+def _auto_backup_delay_for_reasons(reasons):
+    return auto_backup_delay_for_reasons(reasons, AUTO_CLOUD_BACKUP_DELAY_SECONDS)
+
+
+def _auto_backup_status_payload():
+    now_ts = time.time()
+    with _auto_backup_lock:
+        pending = bool(_auto_backup_timer and _auto_backup_timer.is_alive())
+        reasons = sorted(_auto_backup_reasons)
+        due_at = _auto_backup_due_at
+        scheduled_at = _auto_backup_scheduled_at
+        running = _auto_backup_running
+        last_result = dict(_auto_backup_last_result)
+    return {
+        "pending": pending,
+        "running": running,
+        "reasons": reasons,
+        "scheduled_at": datetime.fromtimestamp(scheduled_at).isoformat(timespec="seconds") if scheduled_at else None,
+        "due_at": datetime.fromtimestamp(due_at).isoformat(timespec="seconds") if due_at else None,
+        "seconds_remaining": max(0, int(due_at - now_ts)) if pending and due_at else 0,
+        "last_result": last_result,
+    }
+
+
 def _run_auto_cloud_backup():
-    global _auto_backup_running
+    global _auto_backup_running, _auto_backup_timer, _auto_backup_scheduled_at, _auto_backup_due_at, _auto_backup_last_result
     with _auto_backup_lock:
         reasons = sorted(_auto_backup_reasons)
         _auto_backup_reasons.clear()
+        _auto_backup_timer = None
+        _auto_backup_scheduled_at = None
+        _auto_backup_due_at = None
         _auto_backup_running = True
+        _auto_backup_last_result = {
+            "status": "running",
+            "message": "自动云备份正在执行",
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "reasons": reasons,
+        }
     try:
         state = _dump_database()
+        _auto_backup_last_result = {
+            "status": "ok",
+            "message": f"自动云备份完成: {state.get('latest_backup')}",
+            "latest_backup": state.get("latest_backup"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "reasons": reasons,
+        }
         _write_auto_backup_log(f"ok latest_backup={state.get('latest_backup')} reasons={','.join(reasons)}")
     except Exception as e:
+        _auto_backup_last_result = {
+            "status": "failed",
+            "message": str(e),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "reasons": reasons,
+        }
         _write_auto_backup_log(f"failed error={e} reasons={','.join(reasons)}")
     finally:
         with _auto_backup_lock:
@@ -260,26 +329,39 @@ def _run_auto_cloud_backup():
 
 
 def _schedule_auto_cloud_backup(reason):
-    global _auto_backup_timer
+    global _auto_backup_timer, _auto_backup_scheduled_at, _auto_backup_due_at, _auto_backup_last_result
     if AUTO_CLOUD_BACKUP_DELAY_SECONDS <= 0:
         return {"scheduled": False, "delay_seconds": 0}
 
+    _mark_local_dirty(reason)
     with _auto_backup_lock:
         _auto_backup_reasons.add(reason)
+        delay_seconds = _auto_backup_delay_for_reasons(_auto_backup_reasons)
         if _auto_backup_timer and _auto_backup_timer.is_alive():
             _auto_backup_timer.cancel()
-        _auto_backup_timer = threading.Timer(AUTO_CLOUD_BACKUP_DELAY_SECONDS, _run_auto_cloud_backup)
+        now_ts = time.time()
+        _auto_backup_scheduled_at = now_ts
+        _auto_backup_due_at = now_ts + delay_seconds
+        _auto_backup_last_result = {
+            "status": "pending",
+            "message": f"自动云备份已安排，约 {delay_seconds} 秒后执行",
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "reasons": sorted(_auto_backup_reasons),
+        }
+        _auto_backup_timer = threading.Timer(delay_seconds, _run_auto_cloud_backup)
         _auto_backup_timer.daemon = True
         _auto_backup_timer.start()
-    return {"scheduled": True, "delay_seconds": AUTO_CLOUD_BACKUP_DELAY_SECONDS}
+    return {"scheduled": True, "delay_seconds": delay_seconds}
 
 
 def _cancel_pending_auto_cloud_backup():
-    global _auto_backup_timer
+    global _auto_backup_timer, _auto_backup_scheduled_at, _auto_backup_due_at
     with _auto_backup_lock:
         if _auto_backup_timer and _auto_backup_timer.is_alive():
             _auto_backup_timer.cancel()
         _auto_backup_timer = None
+        _auto_backup_scheduled_at = None
+        _auto_backup_due_at = None
         _auto_backup_reasons.clear()
 
 
@@ -367,6 +449,7 @@ def _dump_database(prefix="stock_analysis", update_latest=True):
 def _restore_database(sql_path):
     if not os.path.exists(sql_path):
         raise FileNotFoundError(sql_path)
+    _validate_sql_backup(sql_path)
 
     cmd = [
         _mysql_tool_path("mysql"),
@@ -395,6 +478,9 @@ def _restore_database(sql_path):
             result = subprocess.run(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=os.path.dirname(os.path.abspath(__file__)), timeout=180)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysql restore failed")
+        validation = _validate_database_after_restore()
+        if not validation["ok"]:
+            raise RuntimeError("restore validation failed: " + "; ".join(validation["errors"]))
         return True
     finally:
         if prepared_path:
@@ -402,6 +488,27 @@ def _restore_database(sql_path):
                 os.remove(prepared_path)
             except OSError:
                 pass
+
+
+def _validate_sql_backup(sql_path):
+    return validate_sql_backup_file(sql_path)
+
+
+def _validate_database_after_restore():
+    checks = [
+        ("stocks", "SELECT COUNT(*) AS n FROM stocks"),
+        ("custom_financials", "SELECT COUNT(*) AS n FROM custom_financials"),
+        ("portfolio_positions", "SELECT COUNT(*) AS n FROM portfolio_positions"),
+    ]
+    errors = []
+    counts = {}
+    for name, sql in checks:
+        try:
+            rows = execute_query(sql)
+            counts[name] = int(rows[0]["n"]) if rows else 0
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+    return {"ok": not errors, "errors": errors, "counts": counts}
 
 
 # ==================== 便利贴 JSON 文件存储 ====================
@@ -1341,6 +1448,7 @@ def api_cloud_backup_status():
     latest_mtime = _cloud_latest_mtime()
     local_mtime = _to_float(local_state.get("latest_mtime"))
     cloud_newer = bool(latest_mtime and (local_mtime is None or latest_mtime > local_mtime + 1))
+    local_dirty = bool(local_state.get("local_dirty"))
     return jsonify({
         "backup_dir": _cloud_backup_dir(),
         "latest_path": latest_path,
@@ -1348,9 +1456,17 @@ def api_cloud_backup_status():
         "latest_size": os.path.getsize(latest_path) if os.path.exists(latest_path) else 0,
         "latest_mtime": datetime.fromtimestamp(os.path.getmtime(latest_path)).isoformat(timespec="seconds") if os.path.exists(latest_path) else None,
         "cloud_newer": cloud_newer,
+        "local_dirty": local_dirty,
+        "possible_conflict": bool(cloud_newer and local_dirty),
+        "auto_backup": _auto_backup_status_payload(),
         "state": state,
         "local_state": local_state,
     })
+
+
+@app.route("/api/cloud-backup/auto-status")
+def api_cloud_backup_auto_status():
+    return jsonify(_auto_backup_status_payload())
 
 
 @app.route("/api/cloud-backup/files")
