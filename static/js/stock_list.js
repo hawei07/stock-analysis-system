@@ -20,6 +20,7 @@ async function loadStocks() {
     renderPagination(data);
     updateListControls();
     document.getElementById('emptyHint').style.display = data.total === 0 ? 'block' : 'none';
+    scheduleStockPriceAutoRefresh();
   } catch (e) {
     showToast('加载失败', 'error');
   }
@@ -38,12 +39,12 @@ function renderTable(stocks) {
     <tr data-code="${esc(s.code)}" draggable="${reorderMode ? 'true' : 'false'}">
       <td><span class="code">${esc(s.code)}</span></td>
       <td><span class="drag-handle">::</span><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
-      <td>${s.price != null ? Number(s.price).toFixed(2) : '-'}</td>
+      <td data-col="price">${s.price != null ? Number(s.price).toFixed(2) : '-'}</td>
       <td>${fmtNum(s.reasonable_price)}</td>
-      <td>${fmtPct(s.reasonable_discount)}</td>
+      <td data-col="reasonable_discount">${fmtPct(s.reasonable_discount)}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
       <td><button class="btn btn-outline btn-sm" onclick="openGrahamModal('${esc(s.code)}')" title="编辑格雷厄姆估值参数">${fmtNum(s.reasonable_valuation)}</button></td>
-      <td>${s.pb_ex_goodwill != null ? Number(s.pb_ex_goodwill).toFixed(2) : '-'}</td>
+      <td data-col="pb_ex_goodwill">${s.pb_ex_goodwill != null ? Number(s.pb_ex_goodwill).toFixed(2) : '-'}</td>
       <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
       <td>${fmtPct(s.ytd_return)}</td>
       <td>
@@ -61,6 +62,67 @@ function renderTable(stocks) {
   `).join('');
   bindReorderRows();
 }
+
+let stockPriceAutoRefreshTimer = null;
+let stockPriceAutoRefreshBusy = false;
+
+function isStockListTradingTime(now = new Date()) {
+  const day = now.getDay();
+  if (day === 0 || day === 6) return false;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const aShareMorning = minutes >= 9 * 60 + 30 && minutes <= 11 * 60 + 30;
+  const aShareAfternoon = minutes >= 13 * 60 && minutes <= 15 * 60;
+  const hkMorning = minutes >= 9 * 60 + 30 && minutes <= 12 * 60;
+  const hkAfternoon = minutes >= 13 * 60 && minutes <= 16 * 60;
+  return aShareMorning || aShareAfternoon || hkMorning || hkAfternoon;
+}
+
+function formatRealtimePct(value) {
+  if (value == null || Number.isNaN(Number(value))) return '-';
+  const n = Number(value);
+  const color = n > 0 ? '#cf1322' : (n < 0 ? '#389e0d' : '#666');
+  return `<span style="color:${color};font-weight:600">${n.toFixed(2)}%</span>`;
+}
+
+function updateStockRealtimeCells(items) {
+  for (const item of items || []) {
+    const row = document.querySelector(`#stockTableBody tr[data-code="${item.code}"]`);
+    if (!row) continue;
+    const priceCell = row.querySelector('[data-col="price"]');
+    const discountCell = row.querySelector('[data-col="reasonable_discount"]');
+    const pbCell = row.querySelector('[data-col="pb_ex_goodwill"]');
+    if (priceCell) priceCell.textContent = item.price != null ? Number(item.price).toFixed(2) : '-';
+    if (discountCell) discountCell.innerHTML = formatRealtimePct(item.reasonable_discount);
+    if (pbCell) pbCell.textContent = item.pb_ex_goodwill != null ? Number(item.pb_ex_goodwill).toFixed(2) : '-';
+  }
+}
+
+async function refreshVisibleStockPrices() {
+  if (stockPriceAutoRefreshBusy || !isStockListTradingTime()) return;
+  if (!document.getElementById('view-list')?.classList.contains('active')) return;
+  const rows = Array.from(document.querySelectorAll('#stockTableBody tr[data-code]'));
+  const codes = rows.map(row => row.dataset.code).filter(Boolean);
+  if (!codes.length) return;
+  stockPriceAutoRefreshBusy = true;
+  try {
+    const res = await fetch('/api/stocks/realtime?codes=' + encodeURIComponent(codes.join(',')));
+    const payload = await res.json();
+    updateStockRealtimeCells(payload.data || []);
+  } catch (e) {
+  } finally {
+    stockPriceAutoRefreshBusy = false;
+  }
+}
+
+function scheduleStockPriceAutoRefresh() {
+  if (stockPriceAutoRefreshTimer) return;
+  stockPriceAutoRefreshTimer = setInterval(refreshVisibleStockPrices, 10000);
+  if (isStockListTradingTime()) setTimeout(refreshVisibleStockPrices, 500);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshVisibleStockPrices();
+});
 
 let grahamDefaults = null;
 

@@ -1048,6 +1048,90 @@ def _enrich_stock_list_metrics(stocks):
     return stocks
 
 
+def _stock_realtime_list_metrics(codes):
+    if not codes:
+        return []
+    placeholders = ",".join(["%s"] * len(codes))
+    stocks = execute_query(
+        f"SELECT code, market FROM stocks WHERE code IN ({placeholders})",
+        tuple(codes),
+    )
+    if not stocks:
+        return []
+
+    prices = _fetch_realtime_prices(stocks)
+    latest_shares = _latest_total_shares(codes)
+    graham_defaults = _graham_defaults(codes)
+    graham_custom = _graham_custom_params(codes)
+
+    latest_equity = {}
+    try:
+        rows = execute_query(
+            f"""SELECT stock_code, parent_equity, goodwill
+                FROM (
+                  SELECT stock_code, parent_equity, goodwill,
+                         ROW_NUMBER() OVER (
+                           PARTITION BY stock_code
+                           ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC
+                         ) AS rn
+                  FROM balance_sheets
+                  WHERE stock_code IN ({placeholders}) AND parent_equity IS NOT NULL
+                ) t
+                WHERE rn=1""",
+            tuple(codes),
+        )
+        latest_equity = {
+            r["stock_code"]: (
+                float(r["parent_equity"]),
+                float(r["goodwill"]) if r["goodwill"] is not None else 0.0,
+            )
+            for r in rows
+        }
+    except Exception:
+        latest_equity = {}
+
+    result = []
+    for s in stocks:
+        code = s["code"]
+        price = prices.get(code)
+        total_shares = latest_shares.get(code)
+        defaults = graham_defaults.get(code, {})
+        custom = graham_custom.get(code, {})
+        params = {
+            "growth_rate": custom.get("growth_rate") if custom.get("growth_rate") is not None else defaults.get("growth_rate"),
+            "payout_ratio": custom.get("payout_ratio") if custom.get("payout_ratio") is not None else defaults.get("payout_ratio"),
+            "risk_free_rate": custom.get("risk_free_rate") if custom.get("risk_free_rate") is not None else defaults.get("risk_free_rate"),
+            "expected_profit": custom.get("expected_profit") if custom.get("expected_profit") is not None else defaults.get("expected_profit"),
+        }
+        fair_valuation = None
+        fair_price = None
+        if params["payout_ratio"] is not None and params["risk_free_rate"] is not None and params["risk_free_rate"] > 0:
+            fair_valuation = round(params["payout_ratio"] / params["risk_free_rate"] + (params["growth_rate"] or 0), 2)
+        if fair_valuation is not None and params["expected_profit"] is not None and total_shares:
+            fair_price = round(fair_valuation * params["expected_profit"] / total_shares, 2)
+
+        reasonable_discount = (
+            round((price / fair_price - 1) * 100, 2)
+            if price is not None and fair_price and fair_price > 0
+            else None
+        )
+        pb_ex_goodwill = None
+        equity = latest_equity.get(code)
+        if price and total_shares and equity:
+            parent_equity, goodwill = equity
+            net_equity = parent_equity - goodwill
+            if net_equity > 0:
+                pb_ex_goodwill = round(price * total_shares / net_equity, 2)
+
+        result.append({
+            "code": code,
+            "price": round(price, 2) if price is not None else None,
+            "reasonable_discount": reasonable_discount,
+            "pb_ex_goodwill": pb_ex_goodwill,
+        })
+    return result
+
+
 def _ensure_portfolio_tables():
     execute_query(
         """CREATE TABLE IF NOT EXISTS portfolio_positions (
@@ -1934,6 +2018,19 @@ def api_stocks():
     result["sort_by"] = ""
     result["sort_dir"] = ""
     return jsonify(result)
+
+
+@app.route("/api/stocks/realtime")
+def api_stocks_realtime():
+    raw_codes = request.args.get("codes", "")
+    codes = []
+    for code in raw_codes.split(","):
+        code = code.strip()
+        if re.match(r"^\d{5,6}$", code) and code not in codes:
+            codes.append(code)
+    if not codes:
+        return jsonify({"data": []})
+    return jsonify({"data": _stock_realtime_list_metrics(codes[:200])})
 
 
 @app.route("/api/stock/<code>/graham-valuation", methods=["GET"])
