@@ -1948,28 +1948,30 @@ async function openIncomeSankey(key) {
   const addNode = (name, value, field, color, depth) => incomeAddNode(nodes, nodeMap, name, value, row, prevRow, field, color, depth);
   const addLink = (source, target, value, color, curveness) => incomeAddLink(links, nodeMap, source, target, value, color, curveness);
 
-  const operatingRevenueNode = addNode('营业收入', operatingRevenue, 'operating_revenue', red, 1);
+  const revenueNode = addNode('营业总收入', revenue, 'total_revenue', red, 1);
   for (const segment of segmentRows) {
     const node = addNode(segment.name, segment.value, null, red, 0);
-    addLink(node, operatingRevenueNode, segment.value, red);
+    addLink(node, revenueNode, segment.value, red);
   }
-  const revenueNode = addNode('营业总收入', revenue, 'total_revenue', red, 2);
-  addLink(operatingRevenueNode, revenueNode, operatingRevenue, red);
-  const revenueInterestNode = addNode('利息收入', revenueInterestIncome, 'interest_income', amber, 1);
+  if (!segmentRows.length) {
+    const operatingRevenueNode = addNode('营业收入', operatingRevenue, 'operating_revenue', red, 0);
+    addLink(operatingRevenueNode, revenueNode, operatingRevenue, red);
+  }
+  const revenueInterestNode = addNode('利息收入', revenueInterestIncome, 'interest_income', amber, 0);
   addLink(revenueInterestNode, revenueNode, revenueInterestIncome, amber);
 
-  const grossNode = addNode('毛利', gross, incomeGrossValue, red, 3);
-  const costNode = addNode('营业成本', cost, 'cost_of_revenue', green, 3);
-  const interestExpenseNode = addNode('利息支出', interestExpense, 'interest_expense', green, 3);
-  const feeCommissionExpenseNode = addNode('手续费及佣金支出', feeCommissionExpense, 'fee_commission_expense', green, 3);
+  const grossNode = addNode('毛利', gross, incomeGrossValue, red, 2);
+  const costNode = addNode('营业成本', cost, 'cost_of_revenue', green, 2);
+  const interestExpenseNode = addNode('利息支出', interestExpense, 'interest_expense', green, 2);
+  const feeCommissionExpenseNode = addNode('手续费及佣金支出', feeCommissionExpense, 'fee_commission_expense', green, 2);
   addLink(revenueNode, grossNode, gross, red);
   addLink(revenueNode, costNode, cost, green);
   addLink(revenueNode, interestExpenseNode, interestExpense, green);
   addLink(revenueNode, feeCommissionExpenseNode, feeCommissionExpense, green);
 
-  const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 5);
-  const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green, 5);
-  const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red, 5);
+  const nonopIncomeNode = addNode('营业外收入', nonopIncome, 'nonop_income', amber, 4);
+  const nonopExpenseNode = addNode('营业外支出', nonopExpense, 'nonop_expense', green, 4);
+  const opNode = addNode('营业利润', operatingProfit, 'operating_profit', red, 4);
 
   const adjustmentDefs = [
     ['其他收益', 'other_income', amber, false],
@@ -1984,12 +1986,12 @@ async function openIncomeSankey(key) {
     const raw = incomeValue(row, def[1]);
     const signedValue = def[3] ? -Math.abs(raw) : raw;
     const value = Math.abs(signedValue);
-    const node = addNode(def[0], value, def[1], def[2], 4);
+    const node = addNode(def[0], value, def[1], def[2], 3);
     if (signedValue >= 0) addLink(node, opNode, value, def[2]);
     else addLink(opNode, node, value, def[2]);
   }
 
-  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red, 4);
+  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red, 3);
   addLink(grossNode, coreNode, coreProfit, red);
 
   const residual = incomeOperatingAdjustmentResidual(row);
@@ -1999,15 +2001,15 @@ async function openIncomeSankey(key) {
   addLink(coreNode, opNode, coreToOperatingProfit, red);
   if (hasResidual) {
     const residualColor = residual >= 0 ? amber : green;
-    const residualDepth = residual >= 0 ? 4 : 5;
+    const residualDepth = residual >= 0 ? 3 : 4;
     const residualNode = addNode('其他营业利润调整项', residualValue, incomeOperatingAdjustmentResidual, residualColor, residualDepth);
     if (residual >= 0) addLink(residualNode, opNode, residualValue, residualColor);
     else addLink(coreNode, residualNode, residualValue, residualColor);
   }
 
-  const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green, 4);
+  const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green, 3);
   addLink(grossNode, periodNode, periodExpense, green);
-  const taxSurchargeNode = addNode('税金及附加', taxSurcharge, 'tax_surcharge', green, 4);
+  const taxSurchargeNode = addNode('税金及附加', taxSurcharge, 'tax_surcharge', green, 3);
   addLink(grossNode, taxSurchargeNode, taxSurcharge, green);
 
   const expenseDefs = [
@@ -2018,11 +2020,11 @@ async function openIncomeSankey(key) {
   ];
   for (const def of expenseDefs) {
     const value = def[2] ? def[2](row) : positiveIncomeValue(row, def[1]);
-    const node = addNode(def[0], value, def[2] || def[1], green, 5);
+    const node = addNode(def[0], value, def[2] || def[1], green, 4);
     addLink(periodNode, node, value, green);
   }
-  const netNode = addNode('净利润', netProfit, 'net_profit', red, 6);
-  const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 6);
+  const netNode = addNode('净利润', netProfit, 'net_profit', red, 5);
+  const taxNode = addNode('所得税费用', incomeTax, 'income_tax', green, 5);
   const opToNet = Math.max(netProfit - nonopIncome - nonopExpense, 0);
   addLink(nonopIncomeNode, netNode, nonopIncome, amber, 0.85);
   addLink(nonopExpenseNode, netNode, nonopExpense, green, 0.85);
@@ -2030,8 +2032,8 @@ async function openIncomeSankey(key) {
   addLink(opNode, netNode, opToNet, red);
 
   const minorityColor = minorityProfitSigned < 0 ? green : purple;
-  const parentNode = addNode('归属于母公司普通股股东的净利润', parentProfit, incomeParentProfitValue, blue, 7);
-  const minorityDepth = minorityProfitSigned < 0 ? 6 : 7;
+  const parentNode = addNode('归属于母公司普通股股东的净利润', parentProfit, incomeParentProfitValue, blue, 6);
+  const minorityDepth = minorityProfitSigned < 0 ? 5 : 6;
   const minorityNode = addNode('少数股东损益', minorityProfit, 'minority_profit', minorityColor, minorityDepth);
   if (minorityProfitSigned < 0) {
     addLink(netNode, parentNode, netProfit, blue);
