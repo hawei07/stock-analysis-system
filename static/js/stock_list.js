@@ -29,17 +29,12 @@ async function loadStocks() {
 function renderTable(stocks) {
   const tbody = document.getElementById('stockTableBody');
   const fmtNum = v => (v == null || Number.isNaN(Number(v))) ? '-' : Number(v).toFixed(2);
-  const fmtPct = v => {
-    if (v == null || Number.isNaN(Number(v))) return '-';
-    const n = Number(v);
-    const color = n > 0 ? '#cf1322' : (n < 0 ? '#389e0d' : '#666');
-    return `<span style="color:${color};font-weight:600">${n.toFixed(2)}%</span>`;
-  };
+  const fmtPct = formatRealtimePct;
   tbody.innerHTML = stocks.map(s => `
     <tr data-code="${esc(s.code)}" draggable="${reorderMode ? 'true' : 'false'}">
       <td><span class="code">${esc(s.code)}</span></td>
       <td><span class="drag-handle">::</span><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
-      <td data-col="price">${s.price != null ? Number(s.price).toFixed(2) : '-'}</td>
+      <td data-col="price">${formatPriceWithDayChange(s.price, s.day_change_pct)}</td>
       <td>${fmtNum(s.reasonable_price)}</td>
       <td data-col="reasonable_discount">${fmtPct(s.reasonable_discount)}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
@@ -77,11 +72,17 @@ function isStockListTradingTime(now = new Date()) {
   return aShareMorning || aShareAfternoon || hkMorning || hkAfternoon;
 }
 
-function formatRealtimePct(value) {
+function formatRealtimePct(value, showSign = false) {
   if (value == null || Number.isNaN(Number(value))) return '-';
   const n = Number(value);
   const color = n > 0 ? '#cf1322' : (n < 0 ? '#389e0d' : '#666');
-  return `<span style="color:${color};font-weight:600">${n.toFixed(2)}%</span>`;
+  const sign = showSign && n > 0 ? '+' : '';
+  return `<span style="color:${color};font-weight:600">${sign}${n.toFixed(2)}%</span>`;
+}
+
+function formatPriceWithDayChange(price, dayChangePct) {
+  const priceText = price != null && !Number.isNaN(Number(price)) ? Number(price).toFixed(2) : '-';
+  return `<span class="price-cell-change">${formatRealtimePct(dayChangePct, true)}</span><span class="price-cell-value">${priceText}</span>`;
 }
 
 function updateStockRealtimeCells(items) {
@@ -91,7 +92,7 @@ function updateStockRealtimeCells(items) {
     const priceCell = row.querySelector('[data-col="price"]');
     const discountCell = row.querySelector('[data-col="reasonable_discount"]');
     const pbCell = row.querySelector('[data-col="pb_ex_goodwill"]');
-    if (priceCell) priceCell.textContent = item.price != null ? Number(item.price).toFixed(2) : '-';
+    if (priceCell) priceCell.innerHTML = formatPriceWithDayChange(item.price, item.day_change_pct);
     if (discountCell) discountCell.innerHTML = formatRealtimePct(item.reasonable_discount);
     if (pbCell) pbCell.textContent = item.pb_ex_goodwill != null ? Number(item.pb_ex_goodwill).toFixed(2) : '-';
   }

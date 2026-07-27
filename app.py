@@ -906,11 +906,11 @@ def _graham_payload(code):
     }
 
 
-def _fetch_realtime_prices(stocks):
+def _fetch_realtime_quotes(stocks):
     symbols = [_quote_symbol(s["code"], s.get("market")) for s in stocks]
     if not symbols:
         return {}
-    prices = {}
+    quotes = {}
     try:
         resp = requests.get(
             "https://qt.gtimg.cn/q=" + ",".join(symbols),
@@ -927,13 +927,35 @@ def _fetch_realtime_prices(stocks):
             fields = parts[1].split("~")
             if len(fields) >= 4:
                 code = fields[2]
+                quote = {}
                 try:
-                    prices[code] = float(fields[3])
+                    quote["price"] = float(fields[3])
                 except (TypeError, ValueError):
                     pass
+                if len(fields) > 31:
+                    try:
+                        quote["day_change"] = float(fields[31])
+                    except (TypeError, ValueError):
+                        pass
+                if len(fields) > 32:
+                    try:
+                        quote["day_change_pct"] = float(fields[32])
+                    except (TypeError, ValueError):
+                        pass
+                if quote:
+                    quotes[code] = quote
     except Exception:
         pass
-    return prices
+    return quotes
+
+
+def _fetch_realtime_prices(stocks):
+    quotes = _fetch_realtime_quotes(stocks)
+    return {
+        code: quote.get("price")
+        for code, quote in quotes.items()
+        if quote.get("price") is not None
+    }
 
 
 def _fetch_ytd_return(code, market, current_price=None):
@@ -970,7 +992,7 @@ def _enrich_stock_list_metrics(stocks):
         return stocks
     codes = [s["code"] for s in stocks]
     placeholders = ",".join(["%s"] * len(codes))
-    prices = _fetch_realtime_prices(stocks)
+    quotes = _fetch_realtime_quotes(stocks)
 
     latest_shares = _latest_total_shares(codes)
     graham_defaults = _graham_defaults(codes)
@@ -1004,8 +1026,11 @@ def _enrich_stock_list_metrics(stocks):
 
     for s in stocks:
         code = s["code"]
-        price = prices.get(code)
+        quote = quotes.get(code, {})
+        price = quote.get("price")
+        day_change_pct = quote.get("day_change_pct")
         s["price"] = round(price, 2) if price is not None else None
+        s["day_change_pct"] = round(day_change_pct, 2) if day_change_pct is not None else None
         total_shares = latest_shares.get(code)
         defaults = graham_defaults.get(code, {})
         custom = graham_custom.get(code, {})
@@ -1059,7 +1084,7 @@ def _stock_realtime_list_metrics(codes):
     if not stocks:
         return []
 
-    prices = _fetch_realtime_prices(stocks)
+    quotes = _fetch_realtime_quotes(stocks)
     latest_shares = _latest_total_shares(codes)
     graham_defaults = _graham_defaults(codes)
     graham_custom = _graham_custom_params(codes)
@@ -1093,7 +1118,9 @@ def _stock_realtime_list_metrics(codes):
     result = []
     for s in stocks:
         code = s["code"]
-        price = prices.get(code)
+        quote = quotes.get(code, {})
+        price = quote.get("price")
+        day_change_pct = quote.get("day_change_pct")
         total_shares = latest_shares.get(code)
         defaults = graham_defaults.get(code, {})
         custom = graham_custom.get(code, {})
@@ -1126,6 +1153,7 @@ def _stock_realtime_list_metrics(codes):
         result.append({
             "code": code,
             "price": round(price, 2) if price is not None else None,
+            "day_change_pct": round(day_change_pct, 2) if day_change_pct is not None else None,
             "reasonable_discount": reasonable_discount,
             "pb_ex_goodwill": pb_ex_goodwill,
         })
