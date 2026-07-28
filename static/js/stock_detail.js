@@ -462,7 +462,7 @@ function renderFinancingTable(rows) {
 // ==================== 股东 ====================
 
 let shareholderCache = [];
-let shareholderYearRange = 10;
+let shareholderYearRange = 3;
 let shareholderPeriodFilter = 'quarter';
 let shareholderChangeFilter = 'all';
 
@@ -505,7 +505,7 @@ function setShareholderChangeFilter(filter) {
 }
 
 function setShareholderYearRange(years) {
-  shareholderYearRange = Number(years) || 10;
+  shareholderYearRange = Number(years) || 3;
   document.querySelectorAll('#shareholderYearRangeFilter button').forEach(btn => {
     btn.classList.toggle('active', Number(btn.dataset.years) === shareholderYearRange);
   });
