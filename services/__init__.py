@@ -1,1 +1,1 @@
-"""Service helpers for the stock analysis system."""
+"""Service helpers for stock."""

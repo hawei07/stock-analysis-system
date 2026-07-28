@@ -1,4 +1,4 @@
-"""股票分析系统 - 主入口"""
+"""stock - 主入口"""
 
 import sys
 import subprocess
@@ -10,7 +10,7 @@ APP_DIR = Path(__file__).resolve().parent
 
 def menu():
     print("=" * 50)
-    print("        股票分析系统 v1.0")
+    print("        stock v1.0")
     print("=" * 50)
     print("  1. 查看股票列表")
     print("  2. 搜索股票")

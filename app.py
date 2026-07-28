@@ -1,4 +1,4 @@
-"""股票分析系统 - Web 服务"""
+"""stock - Web 服务"""
 
 from flask import Flask, jsonify, request, render_template, send_from_directory
 import sys
@@ -4502,7 +4502,7 @@ def serve_sticky_image(filename):
 
 
 if __name__ == "__main__":
-    print("股票分析系统 Web 服务启动: http://127.0.0.1:5002")
+    print("stock Web 服务启动: http://127.0.0.1:5002")
     try:
         migration_result = run_migrations()
         if migration_result["count"]:
