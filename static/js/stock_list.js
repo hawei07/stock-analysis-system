@@ -21,6 +21,7 @@ async function loadStocks() {
     updateListControls();
     document.getElementById('emptyHint').style.display = data.total === 0 ? 'block' : 'none';
     scheduleStockPriceAutoRefresh();
+    refreshVisibleStockYtd();
   } catch (e) {
     showToast('加载失败', 'error');
   }
@@ -41,7 +42,7 @@ function renderTable(stocks) {
       <td><button class="btn btn-outline btn-sm" onclick="openGrahamModal('${esc(s.code)}')" title="编辑格雷厄姆估值参数">${fmtNum(s.reasonable_valuation)}</button></td>
       <td data-col="pb_ex_goodwill">${s.pb_ex_goodwill != null ? Number(s.pb_ex_goodwill).toFixed(2) : '-'}</td>
       <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
-      <td>${fmtPct(s.ytd_return)}</td>
+      <td data-col="ytd_return">${fmtPct(s.ytd_return)}</td>
       <td>
         <button class="icon-btn icon-btn-delete" onclick="deleteStock('${esc(s.code)}','${esc(s.name)}')" title="删除" aria-label="删除 ${esc(s.name)}">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -60,6 +61,7 @@ function renderTable(stocks) {
 
 let stockPriceAutoRefreshTimer = null;
 let stockPriceAutoRefreshBusy = false;
+let stockYtdRefreshId = 0;
 
 function isStockListTradingTime(now = new Date()) {
   const day = now.getDay();
@@ -112,6 +114,24 @@ async function refreshVisibleStockPrices() {
   } catch (e) {
   } finally {
     stockPriceAutoRefreshBusy = false;
+  }
+}
+
+async function refreshVisibleStockYtd() {
+  const rows = Array.from(document.querySelectorAll('#stockTableBody tr[data-code]'));
+  const codes = rows.map(row => row.dataset.code).filter(Boolean);
+  if (!codes.length) return;
+  const refreshId = ++stockYtdRefreshId;
+  try {
+    const res = await fetch('/api/stocks/ytd?codes=' + encodeURIComponent(codes.join(',')));
+    const payload = await res.json();
+    if (refreshId !== stockYtdRefreshId) return;
+    for (const item of payload.data || []) {
+      const row = document.querySelector(`#stockTableBody tr[data-code="${item.code}"]`);
+      const cell = row?.querySelector('[data-col="ytd_return"]');
+      if (cell) cell.innerHTML = formatRealtimePct(item.ytd_return);
+    }
+  } catch (e) {
   }
 }
 

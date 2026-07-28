@@ -987,7 +987,7 @@ def _fetch_ytd_return(code, market, current_price=None):
         return None
 
 
-def _enrich_stock_list_metrics(stocks):
+def _enrich_stock_list_metrics(stocks, include_ytd=False):
     if not stocks:
         return stocks
     codes = [s["code"] for s in stocks]
@@ -1069,7 +1069,7 @@ def _enrich_stock_list_metrics(stocks):
             net_equity = parent_equity - goodwill
             if net_equity > 0:
                 s["pb_ex_goodwill"] = round(price * total_shares / net_equity, 2)
-        s["ytd_return"] = _fetch_ytd_return(code, s.get("market"), price)
+        s["ytd_return"] = _fetch_ytd_return(code, s.get("market"), price) if include_ytd else None
     return stocks
 
 
@@ -2012,7 +2012,10 @@ def api_stocks():
             status=status or None,
             keyword=keyword or None,
         )
-        rows = _enrich_stock_list_metrics(all_result.get("data") or [])
+        rows = _enrich_stock_list_metrics(
+            all_result.get("data") or [],
+            include_ytd=sort_by == "ytd_return",
+        )
         reverse = sort_dir == "desc"
 
         def sort_value(row):
@@ -2059,6 +2062,33 @@ def api_stocks_realtime():
     if not codes:
         return jsonify({"data": []})
     return jsonify({"data": _stock_realtime_list_metrics(codes[:200])})
+
+
+@app.route("/api/stocks/ytd")
+def api_stocks_ytd():
+    raw_codes = request.args.get("codes", "")
+    codes = []
+    for code in raw_codes.split(","):
+        code = code.strip()
+        if re.match(r"^\d{5,6}$", code) and code not in codes:
+            codes.append(code)
+    if not codes:
+        return jsonify({"data": []})
+
+    placeholders = ",".join(["%s"] * len(codes[:200]))
+    stocks = execute_query(
+        f"SELECT code, market FROM stocks WHERE code IN ({placeholders})",
+        tuple(codes[:200]),
+    )
+    return jsonify({
+        "data": [
+            {
+                "code": s["code"],
+                "ytd_return": _fetch_ytd_return(s["code"], s.get("market")),
+            }
+            for s in stocks
+        ]
+    })
 
 
 @app.route("/api/stock/<code>/graham-valuation", methods=["GET"])
