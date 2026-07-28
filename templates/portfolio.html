@@ -196,8 +196,6 @@ let navChart = null;
 let allocationChart = null;
 let latestPortfolioData = {positions: [], summary: {}};
 let amountPrivacyMode = localStorage.getItem('portfolioAmountPrivacy') === 'hidden';
-let portfolioAutoRefreshTimer = null;
-let portfolioAutoRefreshBusy = false;
 
 window.onThemeChanged = function() {
   if (allocationChart) {
@@ -220,7 +218,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadPortfolio();
   loadFlows();
   loadNav(true);
-  startPortfolioMarketAutoRefresh();
   const flowDate = document.getElementById('flowDate');
   if (flowDate && !flowDate.value) flowDate.value = new Date().toISOString().slice(0, 10);
 });
@@ -364,47 +361,6 @@ async function loadPortfolio() {
     showToast(e.message || '加载持仓失败', 'error');
   }
 }
-
-function isPortfolioTradingTime(now = new Date()) {
-  const day = now.getDay();
-  if (day === 0 || day === 6) return false;
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  const aShareMorning = minutes >= 9 * 60 + 30 && minutes <= 11 * 60 + 30;
-  const aShareAfternoon = minutes >= 13 * 60 && minutes <= 15 * 60;
-  const hkMorning = minutes >= 9 * 60 + 30 && minutes <= 12 * 60;
-  const hkAfternoon = minutes >= 13 * 60 && minutes <= 16 * 60;
-  return aShareMorning || aShareAfternoon || hkMorning || hkAfternoon;
-}
-
-function isPortfolioEditing() {
-  const el = document.activeElement;
-  if (!el) return false;
-  if (el.classList?.contains('dividend-input')) return true;
-  return ['codeInput', 'sharesInput', 'cashInput', 'flowAmount', 'flowNote'].includes(el.id);
-}
-
-async function refreshPortfolioMarketData(force = false) {
-  if (portfolioAutoRefreshBusy) return;
-  if (document.hidden || isPortfolioEditing()) return;
-  if (!force && !isPortfolioTradingTime()) return;
-  portfolioAutoRefreshBusy = true;
-  try {
-    await loadPortfolio();
-    await loadNav(true);
-  } finally {
-    portfolioAutoRefreshBusy = false;
-  }
-}
-
-function startPortfolioMarketAutoRefresh() {
-  if (portfolioAutoRefreshTimer) return;
-  portfolioAutoRefreshTimer = setInterval(() => refreshPortfolioMarketData(), 10000);
-  if (isPortfolioTradingTime()) setTimeout(() => refreshPortfolioMarketData(true), 500);
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshPortfolioMarketData(true);
-});
 
 function renderSummary(summary) {
   const total = Number(summary.total_market_value || 0);
