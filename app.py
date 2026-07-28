@@ -2003,7 +2003,7 @@ def api_stocks():
     keyword = request.args.get("keyword", None)
     sort_by = request.args.get("sort_by", "").strip()
     sort_dir = request.args.get("sort_dir", "asc").lower()
-    sort_fields = {"code", "name", "price", "pe_ttm", "pb_ex_goodwill", "dividend_yield", "ytd_return", "reasonable_valuation", "reasonable_price", "reasonable_discount"}
+    sort_fields = {"code", "name", "day_change_pct", "price", "pe_ttm", "pb_ex_goodwill", "dividend_yield", "ytd_return", "reasonable_valuation", "reasonable_price", "reasonable_discount"}
 
     if sort_by in sort_fields:
         all_result = Stock.get_all(

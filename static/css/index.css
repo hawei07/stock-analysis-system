@@ -51,7 +51,6 @@ tr:hover td{background:#fafbff}
 .code{font-family:'Courier New',monospace;font-weight:600;color:#4a6cf7}
 .name-link{color:#4a6cf7;cursor:pointer;text-decoration:none;font-weight:500}
 .name-link:hover{text-decoration:underline;color:#3b5de7}
-.price-cell-change{display:inline-block;min-width:58px;margin-right:8px;text-align:right}
 .price-cell-value{font-family:'Courier New',monospace}
 .market-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
 .market-SH{background:#ffeaea;color:#cf1322}

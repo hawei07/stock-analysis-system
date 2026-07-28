@@ -35,7 +35,8 @@ function renderTable(stocks) {
     <tr data-code="${esc(s.code)}" draggable="${reorderMode ? 'true' : 'false'}">
       <td><span class="code">${esc(s.code)}</span></td>
       <td><span class="drag-handle">::</span><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
-      <td data-col="price">${formatPriceWithDayChange(s.price, s.day_change_pct)}</td>
+      <td data-col="day_change_pct">${fmtPct(s.day_change_pct, true)}</td>
+      <td data-col="price">${formatPrice(s.price)}</td>
       <td>${fmtNum(s.reasonable_price)}</td>
       <td data-col="reasonable_discount">${fmtPct(s.reasonable_discount)}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
@@ -82,19 +83,22 @@ function formatRealtimePct(value, showSign = false) {
   return `<span style="color:${color};font-weight:600">${sign}${n.toFixed(2)}%</span>`;
 }
 
-function formatPriceWithDayChange(price, dayChangePct) {
-  const priceText = price != null && !Number.isNaN(Number(price)) ? Number(price).toFixed(2) : '-';
-  return `<span class="price-cell-change">${formatRealtimePct(dayChangePct, true)}</span><span class="price-cell-value">${priceText}</span>`;
+function formatPrice(price) {
+  return price != null && !Number.isNaN(Number(price))
+    ? `<span class="price-cell-value">${Number(price).toFixed(2)}</span>`
+    : '-';
 }
 
 function updateStockRealtimeCells(items) {
   for (const item of items || []) {
     const row = document.querySelector(`#stockTableBody tr[data-code="${item.code}"]`);
     if (!row) continue;
+    const dayChangeCell = row.querySelector('[data-col="day_change_pct"]');
     const priceCell = row.querySelector('[data-col="price"]');
     const discountCell = row.querySelector('[data-col="reasonable_discount"]');
     const pbCell = row.querySelector('[data-col="pb_ex_goodwill"]');
-    if (priceCell) priceCell.innerHTML = formatPriceWithDayChange(item.price, item.day_change_pct);
+    if (dayChangeCell) dayChangeCell.innerHTML = formatRealtimePct(item.day_change_pct, true);
+    if (priceCell) priceCell.innerHTML = formatPrice(item.price);
     if (discountCell) discountCell.innerHTML = formatRealtimePct(item.reasonable_discount);
     if (pbCell) pbCell.textContent = item.pb_ex_goodwill != null ? Number(item.pb_ex_goodwill).toFixed(2) : '-';
   }
