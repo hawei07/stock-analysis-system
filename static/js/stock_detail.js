@@ -698,7 +698,7 @@ function renderIrm(data) {
     statusEl.textContent = parts.join(' | ');
   }
   if (!data.supported) {
-    list.innerHTML = '<div class="empty" id="irmEmpty">互动易目前只支持深市股票；沪市可使用上证 e 互动查看。</div>';
+    list.innerHTML = '<div class="empty" id="irmEmpty">互动问答目前支持沪深股票，其他市场暂不支持。</div>';
     return;
   }
   if (!items.length) {

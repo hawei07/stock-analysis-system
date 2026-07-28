@@ -2803,6 +2803,16 @@ def _irm_dt(value):
         return None
 
 
+def _sse_dt(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y年%m月%d日 %H:%M").strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
 def _first_item(value):
     if isinstance(value, list) and value:
         return value[0]
@@ -2824,6 +2834,13 @@ def _irm_request_json(session, method, url, **kwargs):
     return resp.json()
 
 
+def _clean_html_text(value):
+    text = re.sub(r"<script[\s\S]*?</script>", " ", str(value or ""), flags=re.I)
+    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", html_lib.unescape(text)).strip()
+
+
 def _irm_fetch_org_id(session, code):
     payload = _irm_request_json(
         session,
@@ -2842,7 +2859,51 @@ def _irm_fetch_org_id(session, code):
     return str(candidates[0].get("secid") or "") if candidates else ""
 
 
-def _sync_irm_stock(code, stock_name=None, max_pages=2, stop_on_duplicate=True):
+def _insert_irm_row(row_data):
+    execute_query(
+        """INSERT INTO irm_interactions (
+            stock_code, stock_name, org_id, question_id, answer_id, industry, board_type,
+            question, answer, questioner, answerer, source, question_time, answer_time,
+            update_time, praise_count, favorite_count, forward_count, original_url, raw_json
+        ) VALUES (
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+        ) ON DUPLICATE KEY UPDATE
+            answer=VALUES(answer),
+            answer_id=VALUES(answer_id),
+            answerer=VALUES(answerer),
+            answer_time=VALUES(answer_time),
+            update_time=VALUES(update_time),
+            praise_count=VALUES(praise_count),
+            favorite_count=VALUES(favorite_count),
+            forward_count=VALUES(forward_count),
+            raw_json=VALUES(raw_json)""",
+        (
+            row_data.get("stock_code"),
+            row_data.get("stock_name"),
+            row_data.get("org_id"),
+            row_data.get("question_id"),
+            row_data.get("answer_id"),
+            row_data.get("industry"),
+            row_data.get("board_type"),
+            row_data.get("question") or "",
+            row_data.get("answer") or "",
+            row_data.get("questioner"),
+            row_data.get("answerer"),
+            row_data.get("source"),
+            row_data.get("question_time"),
+            row_data.get("answer_time"),
+            row_data.get("update_time"),
+            int(_money_yuan(row_data.get("praise_count")) or 0),
+            int(_money_yuan(row_data.get("favorite_count")) or 0),
+            int(_money_yuan(row_data.get("forward_count")) or 0),
+            row_data.get("original_url"),
+            json.dumps(row_data.get("raw") or {}, ensure_ascii=False),
+        ),
+        fetch=False,
+    )
+
+
+def _sync_cninfo_irm_stock(code, stock_name=None, max_pages=2, stop_on_duplicate=True):
     session = requests.Session()
     org_id = _irm_fetch_org_id(session, code)
     if not org_id:
@@ -2889,47 +2950,28 @@ def _sync_irm_stock(code, stock_name=None, max_pages=2, stop_on_duplicate=True):
                 skipped += 1
                 continue
 
-            execute_query(
-                """INSERT INTO irm_interactions (
-                    stock_code, stock_name, org_id, question_id, answer_id, industry, board_type,
-                    question, answer, questioner, answerer, source, question_time, answer_time,
-                    update_time, praise_count, favorite_count, forward_count, original_url, raw_json
-                ) VALUES (
-                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
-                ) ON DUPLICATE KEY UPDATE
-                    answer=VALUES(answer),
-                    answer_id=VALUES(answer_id),
-                    answerer=VALUES(answerer),
-                    answer_time=VALUES(answer_time),
-                    update_time=VALUES(update_time),
-                    praise_count=VALUES(praise_count),
-                    favorite_count=VALUES(favorite_count),
-                    forward_count=VALUES(forward_count),
-                    raw_json=VALUES(raw_json)""",
-                (
-                    code,
-                    row.get("companyShortName") or stock_name,
-                    org_id,
-                    question_id,
-                    row.get("attachedId"),
-                    _first_item(row.get("trade")),
-                    _first_item(row.get("boardType")),
-                    row.get("mainContent") or "",
-                    answer,
-                    row.get("authorName") or row.get("author"),
-                    row.get("attachedAuthor"),
-                    _irm_source_label(row.get("pubClient")),
-                    _irm_dt(row.get("pubDate")),
-                    _irm_dt(row.get("attachedPubDate")) or _irm_dt(row.get("updateDate")),
-                    _irm_dt(row.get("updateDate")),
-                    int(_money_yuan(row.get("praiseCount")) or 0),
-                    int(_money_yuan(row.get("favoriteCount")) or 0),
-                    int(_money_yuan(row.get("forwardCount")) or 0),
-                    f"https://irm.cninfo.com.cn/ircs/question/questionDetail?questionId={question_id}",
-                    json.dumps(row, ensure_ascii=False),
-                ),
-                fetch=False,
-            )
+            _insert_irm_row({
+                "stock_code": code,
+                "stock_name": row.get("companyShortName") or stock_name,
+                "org_id": org_id,
+                "question_id": question_id,
+                "answer_id": row.get("attachedId"),
+                "industry": _first_item(row.get("trade")),
+                "board_type": _first_item(row.get("boardType")),
+                "question": row.get("mainContent") or "",
+                "answer": answer,
+                "questioner": row.get("authorName") or row.get("author"),
+                "answerer": row.get("attachedAuthor"),
+                "source": _irm_source_label(row.get("pubClient")),
+                "question_time": _irm_dt(row.get("pubDate")),
+                "answer_time": _irm_dt(row.get("attachedPubDate")) or _irm_dt(row.get("updateDate")),
+                "update_time": _irm_dt(row.get("updateDate")),
+                "praise_count": row.get("praiseCount"),
+                "favorite_count": row.get("favoriteCount"),
+                "forward_count": row.get("forwardCount"),
+                "original_url": f"https://irm.cninfo.com.cn/ircs/question/questionDetail?questionId={question_id}",
+                "raw": row,
+            })
             existing_ids.add(question_id)
             inserted += 1
 
@@ -2945,6 +2987,120 @@ def _sync_irm_stock(code, stock_name=None, max_pages=2, stop_on_duplicate=True):
         "skipped": skipped,
         "total_rows": total_rows,
     }
+
+
+def _parse_sse_items(html_text, code, stock_name, com_id):
+    items = re.findall(r'<div class="m_feed_item"[\s\S]*?(?=<div class="m_feed_item"|$)', html_text or "")
+    parsed = []
+    for item in items:
+        if "answer_ico" not in item:
+            continue
+        mid = re.search(r'id="item-(\d+)"', item)
+        if not mid:
+            continue
+        txt_blocks = re.findall(r'<div class="m_feed_txt"[^>]*>([\s\S]*?)</div>', item)
+        if len(txt_blocks) < 2:
+            continue
+        question = _clean_html_text(txt_blocks[0])
+        answer = _clean_html_text(txt_blocks[1])
+        if not question or not answer:
+            continue
+        question = re.sub(rf"^:?{re.escape(stock_name or '')}\({code}\)", "", question).strip()
+        question = re.sub(rf"^:?.*?\({code}\)", "", question).strip()
+        author_blocks = re.findall(r'<div class="m_feed_face">([\s\S]*?)</div>', item)
+        questioner = _clean_html_text(author_blocks[0]) if author_blocks else None
+        answerer = _clean_html_text(author_blocks[1]) if len(author_blocks) > 1 else stock_name
+        time_blocks = re.findall(r'<div class="m_feed_from"[^>]*>[\s\S]*?<span>([\s\S]*?)</span>', item)
+        question_time = _sse_dt(_clean_html_text(time_blocks[0])) if time_blocks else None
+        answer_time = _sse_dt(_clean_html_text(time_blocks[1])) if len(time_blocks) > 1 else None
+        source_match = re.findall(r'<div class="m_feed_from"[^>]*>[\s\S]*?<a href="javascript:;">([\s\S]*?)</a>', item)
+        parsed.append({
+            "stock_code": code,
+            "stock_name": stock_name,
+            "org_id": str(com_id),
+            "question_id": f"sse-{mid.group(1)}",
+            "answer_id": f"sse-answer-{mid.group(1)}",
+            "industry": None,
+            "board_type": "SSE",
+            "question": question,
+            "answer": answer,
+            "questioner": questioner,
+            "answerer": answerer,
+            "source": _clean_html_text(source_match[-1]) if source_match else "上证e互动",
+            "question_time": question_time,
+            "answer_time": answer_time,
+            "update_time": answer_time or question_time,
+            "praise_count": 0,
+            "favorite_count": 0,
+            "forward_count": 0,
+            "original_url": f"https://sns.sseinfo.com/company.do?stockcode={code}",
+            "raw": {"item_id": mid.group(1), "platform": "sse"},
+        })
+    return parsed
+
+
+def _sync_sse_irm_stock(code, stock_name=None, max_pages=2, stop_on_duplicate=True):
+    session = requests.Session()
+    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://sns.sseinfo.com/qa.do"}
+    resp = session.post(
+        "https://sns.sseinfo.com/ajax/getCompany.do",
+        data={"data": code},
+        headers=headers,
+        timeout=12,
+    )
+    resp.encoding = "utf-8"
+    resp.raise_for_status()
+    com_id = (resp.text or "").strip()
+    if not com_id:
+        return {"code": code, "inserted": 0, "skipped": 0, "message": "未找到上证 e 互动公司代码"}
+
+    existing_rows = execute_query("SELECT question_id FROM irm_interactions WHERE stock_code=%s", (code,))
+    existing_ids = {str(row["question_id"]) for row in existing_rows}
+    inserted = 0
+    skipped = 0
+    duplicate_seen = 0
+    total_rows = 0
+
+    for page_num in range(1, max_pages + 1):
+        resp = session.post(
+            "https://sns.sseinfo.com/getNewDataFullText.do",
+            data={"sdate": "", "edate": "", "keyword": "", "type": "1", "page": str(page_num), "comId": com_id},
+            headers=headers,
+            timeout=12,
+        )
+        resp.encoding = "utf-8"
+        resp.raise_for_status()
+        rows = _parse_sse_items(resp.text, code, stock_name, com_id)
+        if not rows:
+            if page_num == 1:
+                total_rows += len(re.findall(r'<div class="m_feed_item"', resp.text or ""))
+            break
+        total_rows += len(rows)
+        for row in rows:
+            question_id = row["question_id"]
+            if question_id in existing_ids:
+                duplicate_seen += 1
+                skipped += 1
+                continue
+            _insert_irm_row(row)
+            existing_ids.add(question_id)
+            inserted += 1
+        if stop_on_duplicate and duplicate_seen and inserted == 0:
+            break
+    return {
+        "code": code,
+        "org_id": str(com_id),
+        "inserted": inserted,
+        "skipped": skipped,
+        "total_rows": total_rows,
+    }
+
+
+def _sync_irm_stock(code, stock_name=None, market=None, max_pages=2, stop_on_duplicate=True):
+    market = (market or "").upper()
+    if market == "SH":
+        return _sync_sse_irm_stock(code, stock_name, max_pages=max_pages, stop_on_duplicate=stop_on_duplicate)
+    return _sync_cninfo_irm_stock(code, stock_name, max_pages=max_pages, stop_on_duplicate=stop_on_duplicate)
 
 
 def _sync_irm_all_background(max_pages=2):
@@ -2975,12 +3131,12 @@ def _sync_irm_all_background(max_pages=2):
         for stock in stocks:
             code = stock["code"]
             market = (stock.get("market") or "").upper()
-            if market != "SZ":
+            if market not in {"SZ", "SH"}:
                 skipped += 1
                 continue
             total += 1
             try:
-                result = _sync_irm_stock(code, stock.get("name"), max_pages=max_pages)
+                result = _sync_irm_stock(code, stock.get("name"), market=market, max_pages=max_pages)
                 inserted += result.get("inserted", 0)
                 skipped += result.get("skipped", 0)
             except Exception as e:
@@ -3053,10 +3209,10 @@ def api_stock_irm(code):
             "update_time": str(row["update_time"]) if row.get("update_time") else None,
         })
     return jsonify({
-        "source": "巨潮互动易",
+        "source": "互动问答",
         "items": items,
         "sync": _irm_status(),
-        "supported": (stock.get("market") or "").upper() == "SZ",
+        "supported": (stock.get("market") or "").upper() in {"SZ", "SH"},
     })
 
 
@@ -3065,10 +3221,11 @@ def api_stock_irm_sync(code):
     stock = Stock.get_by_code(code)
     if not stock:
         return jsonify({"error": "未找到该股票"}), 404
-    if (stock.get("market") or "").upper() != "SZ":
-        return jsonify({"ok": True, "inserted": 0, "skipped": 0, "message": "互动易暂只支持深市股票"})
+    market = (stock.get("market") or "").upper()
+    if market not in {"SZ", "SH"}:
+        return jsonify({"ok": True, "inserted": 0, "skipped": 0, "message": "互动问答暂只支持沪深股票"})
     try:
-        result = _sync_irm_stock(code, stock.get("name"), max_pages=5, stop_on_duplicate=False)
+        result = _sync_irm_stock(code, stock.get("name"), market=market, max_pages=5, stop_on_duplicate=False)
         return jsonify({"ok": True, **result})
     except Exception as e:
         return jsonify({"error": "互动易抓取失败: " + str(e)}), 502
