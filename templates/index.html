@@ -113,23 +113,23 @@
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" data-tab="chart" onclick="switchTab('chart')">走势</button>
-    <button class="tab-btn" data-tab="valuation" onclick="switchTab('valuation')">估值</button>
+    <button class="tab-btn active" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
     <button class="tab-btn" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
-    <button class="tab-btn" data-tab="financing" onclick="switchTab('financing')">融资</button>
-    <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
     <button class="tab-btn" data-tab="segments" onclick="switchTab('segments')">营收构成</button>
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
+    <button class="tab-btn" data-tab="financing" onclick="switchTab('financing')">融资</button>
     <button class="tab-btn" data-tab="shareholders" onclick="switchTab('shareholders')">股东</button>
+    <button class="tab-btn" data-tab="valuation" onclick="switchTab('valuation')">估值</button>
+    <button class="tab-btn" data-tab="chart" onclick="switchTab('chart')">走势</button>
     <button class="tab-btn" data-tab="irm" onclick="switchTab('irm')">互动易</button>
-    <button class="tab-btn" data-tab="munger-chat" onclick="switchTab('munger-chat')">💬 对话芒格</button>
     <button class="tab-btn" data-tab="sticky" onclick="switchTab('sticky')">📌 便利贴</button>
+    <button class="tab-btn" data-tab="munger-chat" onclick="switchTab('munger-chat')">💬 对话芒格</button>
   </div>
 
   <div class="detail-content">
-    <div class="tab-panel active" id="panel-chart">
+    <div class="tab-panel" id="panel-chart" style="display:none">
       <div class="toolbar-row">
         <div class="seg-switch" id="chartKlinePeriod">
           <button type="button" class="active" data-period="day" onclick="setKlinePeriod('day')">日K</button>
@@ -225,7 +225,7 @@
         <div class="empty" id="financingEmpty" style="display:none">暂无融资明细</div>
       </div>
     </div>
-    <div class="tab-panel" id="panel-financials" style="display:none">
+    <div class="tab-panel active" id="panel-financials">
       <div class="toolbar-row">
         <label>年份范围：</label>
         <input type="number" id="finFromYear" value="2016" min="2000" max="2030" style="width:70px">
@@ -574,7 +574,7 @@ let segmentBubbleChart = null;
 let segmentCache = null;
 let segmentLoadSeq = 0;
 
-let currentTab = 'chart';
+let currentTab = 'financials';
 
 function refreshChartsForTheme() {
   const detailActive = document.getElementById('view-detail')?.classList.contains('active');
