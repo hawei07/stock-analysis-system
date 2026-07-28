@@ -50,7 +50,7 @@ function getCurrentCode() {
 function refreshCurrentDetailTab(code) {
   const tab = typeof currentTab === 'string' ? currentTab : 'chart';
   if (tab === 'chart') loadKline();
-  else if (tab === 'valuation') loadValuation(3650);
+  else if (tab === 'valuation') loadValuation(1095);
   else if (tab === 'dividends') loadDividends(code);
   else if (tab === 'financing') loadFinancing(code);
   else if (tab === 'segments') loadSegments();
