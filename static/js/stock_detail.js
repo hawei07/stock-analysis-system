@@ -956,7 +956,7 @@ async function loadValuation(days) {
   });
 
   try {
-    const res = await fetch(`/api/stock/${code}/valuation`);
+    const res = await fetch(`/api/stock/${code}/valuation?days=${days}`);
     const data = await res.json();
     if (code !== getCurrentCode()) return;
     if (data.error) { statusEl.textContent = data.error; return; }

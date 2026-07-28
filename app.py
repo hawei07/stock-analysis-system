@@ -95,6 +95,9 @@ _irm_sync_last_result = {
     "skipped": 0,
     "errors": [],
 }
+_valuation_cache = {}
+_valuation_cache_lock = threading.Lock()
+VALUATION_CACHE_SECONDS = 6 * 60 * 60
 
 _db_overrides = {
     "host": _setting("db_host", "STOCK_DB_HOST"),
@@ -477,6 +480,16 @@ def schedule_auto_cloud_backup_after_change(response):
         and response.status_code < 400
         and request.endpoint in AUTO_CLOUD_BACKUP_ENDPOINTS
     ):
+        if request.endpoint in {
+            "api_update_stock",
+            "api_update_dividends",
+            "api_update_financials",
+            "api_update_balance_sheet",
+            "api_update_income",
+            "api_update_cashflow",
+        }:
+            with _valuation_cache_lock:
+                _valuation_cache.clear()
         _schedule_auto_cloud_backup(AUTO_CLOUD_BACKUP_ENDPOINTS[request.endpoint])
     return response
 
@@ -4004,33 +4017,57 @@ def api_stock_balance_sheet(code):
 @app.route("/api/stock/<code>/valuation")
 def api_stock_valuation(code):
     """PE-TTM 历史 + 股价 + 分位点"""
-    import sys as _sys2
-    _sys2.stderr.write(f"[VALUATION] Starting for {code}\n")
-    _sys2.stderr.flush()
+    days = request.args.get("days", 1095, type=int) or 1095
+    days = max(365, min(days, 36500))
+    cache_key = (code, days)
+    with _valuation_cache_lock:
+        cached = _valuation_cache.get(cache_key)
+        if cached and time.time() - cached["time"] < VALUATION_CACHE_SECONDS:
+            return jsonify({**cached["data"], "cached": True})
+
     try:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _get_json(url, timeout=12):
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=timeout)
+            return resp.json()
+
+        report_type_map = {
+            "%E5%B9%B4%E6%8A%A5": "FY",
+            "%E4%B8%80%E5%AD%A3%E6%8A%A5": "Q1",
+            "%E5%8D%8A%E5%B9%B4%E6%8A%A5": "Q2",
+            "%E4%B8%89%E5%AD%A3%E6%8A%A5": "Q3",
+        }
+        finance_rows_by_type = {}
         # 1. 获取所有财报季度的归母净利润 + 总股本，用于 TTM PE 计算
         # PE = 市值 / TTM归母净利润（比EPSJB更精确，避免股本变动和四舍五入误差）
         eps_records = []  # [(report_date, report_type, fiscal_year, parent_eps), ...]
-        for report_type in ["%E5%B9%B4%E6%8A%A5", "%E4%B8%80%E5%AD%A3%E6%8A%A5", 
-                            "%E5%8D%8A%E5%B9%B4%E6%8A%A5", "%E4%B8%89%E5%AD%A3%E6%8A%A5"]:
+        finance_urls = {}
+        for report_type in report_type_map.keys():
             url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
                    "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
                    f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22{report_type}%22)"
                    "&pageSize=50&sortColumns=REPORT_DATE&sortTypes=-1")
-            try:
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                data = resp.json()
-                if data.get("success"):
-                    for item in data["result"]["data"]:
-                        rd = item.get("REPORT_DATE", "")
-                        parent_np = item.get("PARENTNETPROFIT")  # 归母净利润
-                        total_share = item.get("TOTAL_SHARE")    # 总股本
-                        fy = int(item.get("REPORT_YEAR")) if item.get("REPORT_YEAR") else (int(rd[:4]) if rd[:4].isdigit() else 0)
-                        if rd and parent_np and total_share and float(parent_np) > 0 and int(total_share) > 0 and fy:
-                            parent_eps = float(parent_np) / int(total_share)
-                            eps_records.append((rd[:10], report_type, fy, parent_eps))
-            except Exception:
-                pass
+            finance_urls[report_type] = url
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_map = {executor.submit(_get_json, url, 15): report_type for report_type, url in finance_urls.items()}
+            for future in as_completed(future_map):
+                report_type = future_map[future]
+                try:
+                    data = future.result()
+                    if data.get("success"):
+                        rows = data["result"]["data"]
+                        finance_rows_by_type[report_type] = rows
+                        for item in rows:
+                            rd = item.get("REPORT_DATE", "")
+                            parent_np = item.get("PARENTNETPROFIT")  # 归母净利润
+                            total_share = item.get("TOTAL_SHARE")    # 总股本
+                            fy = int(item.get("REPORT_YEAR")) if item.get("REPORT_YEAR") else (int(rd[:4]) if rd[:4].isdigit() else 0)
+                            if rd and parent_np and total_share and float(parent_np) > 0 and int(total_share) > 0 and fy:
+                                parent_eps = float(parent_np) / int(total_share)
+                                eps_records.append((rd[:10], report_type, fy, parent_eps))
+                except Exception:
+                    pass
         eps_records.sort(key=lambda x: x[0])  # 按日期排序
 
         # 构建 TTM EPS 函数：给定日期，计算最近12个月每股收益
@@ -4101,18 +4138,27 @@ def api_stock_valuation(code):
         # 2. 获取股价（前复权）—— 分批拉取以覆盖更长历史
         market = "sh" if code.startswith(("6", "5", "9")) else "sz"
         symbol = f"{market}{code}"
+        current_year = datetime.now().year
+        history_years = max(1, int(days / 365) + 1)
+        start_year = current_year - history_years
+        max_batches = 3 if days <= 1825 else (5 if days <= 3650 else 10)
         price_data = []
         try:
             # 第一段：最近数据
             urls = [f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,640,qfq"]
-            # 追加更早的批次（每批约2-3年）
-            for y in range(2023, 2000, -3):
-                urls.append(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{y-3}-01-01,{y}-12-31,640,qfq")
+            for y in range(current_year - 1, start_year - 1, -2):
+                urls.append(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{max(start_year, y-1)}-01-01,{y}-12-31,640,qfq")
             seen = set()
-            for u in urls[:8]:  # 最多8批 ≈ 20年
+            with ThreadPoolExecutor(max_workers=min(6, len(urls[:max_batches]))) as executor:
+                futures = [executor.submit(_get_json, u, 10) for u in urls[:max_batches]]
+                results = []
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception:
+                        pass
+            for d2 in results:
                 try:
-                    r = requests.get(u, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                    d2 = r.json()
                     stock_data = d2.get("data", {})
                     if isinstance(stock_data, dict):
                         stock_data = stock_data.get(symbol, {})
@@ -4133,13 +4179,19 @@ def api_stock_valuation(code):
         raw_price_data = []
         try:
             raw_urls = [f"https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param={symbol},day,,,640"]
-            for y in range(2023, 2000, -3):
-                raw_urls.append(f"https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param={symbol},day,{y-3}-01-01,{y}-12-31,640")
+            for y in range(current_year - 1, start_year - 1, -2):
+                raw_urls.append(f"https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param={symbol},day,{max(start_year, y-1)}-01-01,{y}-12-31,640")
             seen_raw = set()
-            for u in raw_urls[:8]:
+            with ThreadPoolExecutor(max_workers=min(6, len(raw_urls[:max_batches]))) as executor:
+                futures = [executor.submit(_get_json, u, 10) for u in raw_urls[:max_batches]]
+                results = []
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception:
+                        pass
+            for d2 in results:
                 try:
-                    r = requests.get(u, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                    d2 = r.json()
                     stock_data = d2.get("data", {})
                     if isinstance(stock_data, dict):
                         stock_data = stock_data.get(symbol, {})
@@ -4255,18 +4307,9 @@ def api_stock_valuation(code):
         except Exception:
             pass
 
-        import sys as _sys
-        _sys.stderr.write(f"[PB] Starting PB computation for {code}\n")
-        _sys.stderr.flush()
         pb_data = []
         try:
             # 获取东方财富财报数据（含 TOTAL_SHARE），同时匹配 balance_sheets 的归母权益和商誉
-            report_type_map = {
-                "%E5%B9%B4%E6%8A%A5": "FY",
-                "%E4%B8%80%E5%AD%A3%E6%8A%A5": "Q1",
-                "%E5%8D%8A%E5%B9%B4%E6%8A%A5": "Q2",
-                "%E4%B8%89%E5%AD%A3%E6%8A%A5": "Q3",
-            }
             # 从 balance_sheets 加载归母权益和商誉
             bs_rows = execute_query(
                 "SELECT fiscal_year, report_period, parent_equity, goodwill "
@@ -4280,52 +4323,34 @@ def api_stock_valuation(code):
                 gw_val = float(r["goodwill"]) if r["goodwill"] is not None else 0.0
                 if pe_val is not None:
                     bs_map[(r["fiscal_year"], r["report_period"])] = (pe_val, gw_val)
-            print(f"[PB DEBUG] bs_map has {len(bs_map)} keys, sample: {list(bs_map.keys())[:3]}", flush=True)
 
             # 从东方财富获取 total_share 并匹配 balance_sheets 构建 每股净资产
             bv_records = []  # [(report_date, effective_date, bvps), ...]
-            for report_type in ["%E5%B9%B4%E6%8A%A5", "%E4%B8%80%E5%AD%A3%E6%8A%A5",
-                                "%E5%8D%8A%E5%B9%B4%E6%8A%A5", "%E4%B8%89%E5%AD%A3%E6%8A%A5"]:
-                url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
-                       "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
-                       f"&filter=(SECURITY_CODE=%22{code}%22)(REPORT_TYPE=%22{report_type}%22)"
-                       "&pageSize=50&sortColumns=REPORT_DATE&sortTypes=-1")
-                try:
-                    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                    data = resp.json()
-                    if data.get("success"):
-                        for item in data["result"]["data"]:
-                            rd = item.get("REPORT_DATE", "")
-                            total_share = item.get("TOTAL_SHARE")
-                            fy = int(item.get("REPORT_YEAR")) if item.get("REPORT_YEAR") else (int(rd[:4]) if rd[:4].isdigit() else 0)
-                            rp = report_type_map.get(report_type, "FY")
-                            if not rd or not total_share or int(total_share) <= 0 or not fy:
-                                continue
-                            # 匹配 balance_sheets
-                            bs_key = (fy, rp)
-                            if bs_key in bs_map:
-                                parent_eq_亿, goodwill_亿 = bs_map[bs_key]
-                                # 归母权益(元) = parent_equity_亿 * 1e8
-                                # 商誉(元) = goodwill_亿 * 1e8
-                                net_equity = (parent_eq_亿 - goodwill_亿) * 1e8
-                                if net_equity > 0:
-                                    bvps = net_equity / int(total_share)
-                                    # 披露延迟
-                                    rd_dt = datetime.strptime(rd[:10], "%Y-%m-%d")
-                                    if rp == "FY":
-                                        effective = datetime(fy + 1, 5, 1)
-                                    elif rp == "Q2":
-                                        effective = datetime(fy, 9, 1)
-                                    elif rp == "Q3":
-                                        effective = datetime(fy, 11, 1)
-                                    else:  # Q1
-                                        effective = datetime(fy, 5, 1)
-                                    bv_records.append((rd[:10], effective, bvps))
-                except Exception:
-                    pass
+            for report_type, rows in finance_rows_by_type.items():
+                for item in rows:
+                    rd = item.get("REPORT_DATE", "")
+                    total_share = item.get("TOTAL_SHARE")
+                    fy = int(item.get("REPORT_YEAR")) if item.get("REPORT_YEAR") else (int(rd[:4]) if rd[:4].isdigit() else 0)
+                    rp = report_type_map.get(report_type, "FY")
+                    if not rd or not total_share or int(total_share) <= 0 or not fy:
+                        continue
+                    bs_key = (fy, rp)
+                    if bs_key in bs_map:
+                        parent_eq_亿, goodwill_亿 = bs_map[bs_key]
+                        net_equity = (parent_eq_亿 - goodwill_亿) * 1e8
+                        if net_equity > 0:
+                            bvps = net_equity / int(total_share)
+                            if rp == "FY":
+                                effective = datetime(fy + 1, 5, 1)
+                            elif rp == "Q2":
+                                effective = datetime(fy, 9, 1)
+                            elif rp == "Q3":
+                                effective = datetime(fy, 11, 1)
+                            else:
+                                effective = datetime(fy, 5, 1)
+                            bv_records.append((rd[:10], effective, bvps))
 
             bv_records.sort(key=lambda x: x[1])  # 按生效日期排序
-            print(f"[PB DEBUG] bv_records count: {len(bv_records)}", flush=True)
 
             # 对每个交易日，取最新生效的 每股净资产，计算 PB
             if price_data and bv_records:
@@ -4365,7 +4390,14 @@ def api_stock_valuation(code):
         else:
             p80_pb = p50_pb = p20_pb = cur_pb = cur_pb_pct = max_pb = min_pb = avg_pb = None
 
-        return jsonify({
+        cutoff_date = datetime.fromtimestamp(time.time() - days * 86400).strftime("%Y-%m-%d")
+        if days <= 3650:
+            pe_data = [item for item in pe_data if item["date"] >= cutoff_date]
+            pb_data = [item for item in pb_data if item["date"] >= cutoff_date]
+            price_data = [item for item in price_data if item["date"] >= cutoff_date]
+            dividend_yield_data = [item for item in dividend_yield_data if item["date"] >= cutoff_date]
+
+        payload = {
             "pe_data": pe_data,
             "pb_data": pb_data,
             "price_data": price_data,
@@ -4385,7 +4417,11 @@ def api_stock_valuation(code):
             "realtime_pb": realtime_pb,
             "dividend_yield_data": dividend_yield_data,
             "current_dividend_yield": current_dividend_yield,
-        })
+            "cached": False,
+        }
+        with _valuation_cache_lock:
+            _valuation_cache[cache_key] = {"time": time.time(), "data": payload}
+        return jsonify(payload)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
