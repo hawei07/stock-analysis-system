@@ -1679,6 +1679,18 @@ def api_portfolio_nav():
            FROM portfolio_nav_snapshots
            ORDER BY snapshot_date ASC"""
     )
+    if request.args.get("live") == "1":
+        summary = _portfolio_current_state()["summary"]
+        today = datetime.now().date().isoformat()
+        live_row = {
+            "snapshot_date": today,
+            "total_market_value": summary["total_market_value"],
+            "expected_dividend": summary["expected_dividend"],
+            "cash_amount": summary["cash_amount"],
+            "total_asset_value": summary["total_asset_value"],
+        }
+        rows = [r for r in rows if str(r["snapshot_date"]) != today]
+        rows.append(live_row)
     flow_rows = execute_query(
         """SELECT flow_date, SUM(amount) AS net_flow
            FROM portfolio_cash_flows
