@@ -9,6 +9,26 @@ async function resolveStockCode(input) {
   return null;
 }
 
+function fiscalPeriodOrder(key) {
+  if (key.indexOf('|') === -1) return { year: Number(key) || 0, period: 0 };
+  const [year, period] = key.split('|');
+  const periodOrder = { Q1: 1, Q2: 2, Q3: 3, FY: 4 };
+  return { year: Number(year) || 0, period: periodOrder[period] || 9 };
+}
+
+function sortFiscalKeysAsc(a, b) {
+  const left = fiscalPeriodOrder(a);
+  const right = fiscalPeriodOrder(b);
+  if (left.year !== right.year) return left.year - right.year;
+  return left.period - right.period;
+}
+
+function formatFiscalKeyLabel(key) {
+  if (key.indexOf('|') === -1) return key;
+  const [year, period] = key.split('|');
+  return year + '-' + period;
+}
+
 function onFinPeriodChange() {
   const period = document.getElementById('finPeriod').value;
   const qEl = document.getElementById('finQuarter');
@@ -1342,13 +1362,9 @@ function openBSChart(field, name) {
   const stockName = document.getElementById('detailName').textContent.trim();
   let title = stockName + ' - ' + name;
 
-  const sortedKeys = [...keys].sort((a, b) => a.localeCompare(b)); // oldest first
+  const sortedKeys = [...keys].sort(sortFiscalKeysAsc); // oldest first, Q1/Q2/Q3/FY within each year
   // Build display labels: annual shows year, quarterly shows year-period
-  const labels = sortedKeys.map(k => {
-    if (k.indexOf('|') === -1) return k;
-    const [yr, rp] = k.split('|');
-    return yr + '-' + rp;
-  });
+  const labels = sortedKeys.map(formatFiscalKeyLabel);
   const values = sortedKeys.map(k => {
     const d = dataMap[k];
     return d && d[field] != null ? d[field] : null;
@@ -2093,8 +2109,8 @@ function openFinanceChart(field, name, prefix) {
 
   const stockName = document.getElementById('detailName').textContent.trim();
   let title = stockName + ' - ' + name;
-  const sortedKeys = [...keys].sort((a, b) => a.localeCompare(b));
-  const labels = sortedKeys.map(k => { if (k.indexOf('|') === -1) return k; const [yr, rp] = k.split('|'); return yr + '-' + rp; });
+  const sortedKeys = [...keys].sort(sortFiscalKeysAsc);
+  const labels = sortedKeys.map(formatFiscalKeyLabel);
   const values = sortedKeys.map(k => { const d = dataMap[k]; return d && d[field] != null ? d[field] : null; });
   const yoyValues = sortedKeys.map((k, i) => { if (i === 0) return null; const cur = values[i]; const prev = values[i - 1]; if (cur == null || prev == null || prev === 0) return null; return parseFloat(((cur - prev) / Math.abs(prev) * 100).toFixed(2)); });
 
@@ -2156,15 +2172,15 @@ function openIndicatorChart(field, name) {
   const stockName = document.getElementById('detailName').textContent.trim();
   let title = stockName + ' - ' + name;
 
-  const sortedKeys = [...keys].sort((a, b) => a.localeCompare(b));
+  const sortedKeys = [...keys].sort(sortFiscalKeysAsc);
   const vals = sortedKeys.map(k => {
     const d = dataMap[k];
     return d && d[ind.field] != null ? d[ind.field] : null;
   });
-  const labels = sortedKeys;
+  const labels = sortedKeys.map(formatFiscalKeyLabel);
 
   // YoY line data
-  const yoyValues = keys.map((k, i) => {
+  const yoyValues = sortedKeys.map((k, i) => {
     if (i === 0) return null;
     const cur = vals[i];
     const prev = vals[i - 1];
@@ -2316,7 +2332,7 @@ function openIndicatorChart(field, name) {
 
 function isQuarterlyChart(labels) {
   for (const l of labels) {
-    if (typeof l === 'string' && l.indexOf('|') > 0) return true;
+    if (typeof l === 'string' && /-(Q1|Q2|Q3|FY)$/.test(l)) return true;
   }
   return false;
 }
