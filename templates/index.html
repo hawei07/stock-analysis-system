@@ -123,6 +123,7 @@
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
     <button class="tab-btn" data-tab="shareholders" onclick="switchTab('shareholders')">股东</button>
+    <button class="tab-btn" data-tab="irm" onclick="switchTab('irm')">互动易</button>
     <button class="tab-btn" data-tab="munger-chat" onclick="switchTab('munger-chat')">💬 对话芒格</button>
     <button class="tab-btn" data-tab="sticky" onclick="switchTab('sticky')">📌 便利贴</button>
   </div>
@@ -402,6 +403,16 @@
         <div class="empty" id="shareholdersEmpty">正在加载股东数据...</div>
       </div>
     </div>
+    <div class="tab-panel" id="panel-irm" style="display:none">
+      <div class="toolbar-row irm-toolbar">
+        <button class="btn btn-sm btn-primary" type="button" onclick="syncCurrentIrm()">立即抓取</button>
+        <button class="btn btn-sm btn-outline" type="button" onclick="loadIrm(getCurrentCode())">刷新列表</button>
+        <span id="irmStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="irm-list" id="irmList">
+        <div class="empty" id="irmEmpty">正在加载互动易问答...</div>
+      </div>
+    </div>
     <div class="tab-panel" id="panel-munger-chat" style="display:none">
       <div class="chat-panel">
         <div class="chat-header">
@@ -616,6 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
   bindFinanceRowHighlight();
   checkCloudUpdateOnStartup();
   startCloudBackupStatusPolling();
+  startIrmAutoSync();
   const path = window.location.pathname;
   const match = path.match(/^\/stock\/(\d+)$/);
   if (match) {
@@ -650,6 +662,8 @@ function switchTab(name) {
     loadCashflow();
   } else if (name === 'shareholders') {
     loadShareholders(getCurrentCode());
+  } else if (name === 'irm') {
+    loadIrm(getCurrentCode());
   } else if (name === 'munger-chat') {
     loadMungerChat();
   } else if (name === 'dividends') {

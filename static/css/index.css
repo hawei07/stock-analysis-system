@@ -90,6 +90,19 @@ tr:hover td{background:#fafbff}
 .shareholder-change.unchanged{color:#777}
 .shareholder-cell.filtered-out{opacity:.18}
 .shareholder-grid .year-break{border-left:2px solid #13a8a8}
+.irm-toolbar{justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.irm-list{background:#fff;border:1px solid #e8e8e8;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:4px 0}
+.irm-item{border-left:3px solid #178bff;padding:10px 12px 8px 9px;margin:10px 12px 18px;background:#fff}
+.irm-line{display:flex;align-items:flex-start;gap:8px;line-height:1.75;font-size:13px;color:#111}
+.irm-line+.irm-line{margin-top:6px}
+.irm-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:34px;height:20px;padding:0 6px;border-radius:4px;color:#fff;font-size:12px;font-weight:700;line-height:20px}
+.irm-badge.question{background:#13b5f0}
+.irm-badge.answer{background:#1479e8}
+.irm-content{min-width:0;white-space:normal;word-break:break-word}
+.irm-time{flex:0 0 auto;color:#666;font-size:12px;white-space:nowrap}
+.irm-link{flex:0 0 auto;color:#006dff;font-size:12px;text-decoration:none;white-space:nowrap}
+.irm-link:hover{text-decoration:underline}
+.irm-actions{display:flex;gap:14px;margin:8px 0 0 0;color:#666;font-size:12px}
 
 .pagination{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px}
 .pagination button{padding:6px 14px;border:1px solid #d9d9d9;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;transition:all .2s}
@@ -364,6 +377,11 @@ html[data-theme="dark"] .chat-input-bar{background:var(--surface)!important;bord
 html[data-theme="dark"] .realtime-card,
 html[data-theme="dark"] #valSidebar,
 html[data-theme="dark"] #pbSidebar{background:var(--surface-soft)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .irm-list,
+html[data-theme="dark"] .irm-item{background:var(--surface)!important;border-color:var(--border)!important;color:var(--text)!important}
+html[data-theme="dark"] .irm-content{color:var(--text)!important}
+html[data-theme="dark"] .irm-time,
+html[data-theme="dark"] .irm-actions{color:var(--text-muted)!important}
 html[data-theme="dark"] th,
 html[data-theme="dark"] .fin-table th,
 html[data-theme="dark"] .fin-table thead th.sticky-col,
