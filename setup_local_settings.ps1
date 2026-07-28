@@ -110,11 +110,11 @@ function Find-MySqlInfo {
       "C:\Program Files\MySQL\MySQL Server 8.4",
       "C:\Program Files\MySQL\MySQL Server 8.0"
     )
-    foreach ($home in $commonHomes) {
-      $mysqlExe = Join-Path $home "bin\mysql.exe"
+    foreach ($candidateHome in $commonHomes) {
+      $mysqlExe = Join-Path $candidateHome "bin\mysql.exe"
       if (Test-Path -LiteralPath $mysqlExe) {
         $binDir = Split-Path -Parent $mysqlExe
-        $mysqlHome = $home
+        $mysqlHome = $candidateHome
         break
       }
     }
