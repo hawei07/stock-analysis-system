@@ -463,30 +463,48 @@ function renderFinancingTable(rows) {
 // ==================== 股东 ====================
 
 let shareholderCache = [];
+let shareholderCacheCode = '';
 let shareholderYearRange = 3;
 let shareholderPeriodFilter = 'quarter';
 let shareholderChangeFilter = 'all';
 
-async function loadShareholders(code) {
+async function loadShareholders(code, options = {}) {
   if (!code) return;
+  const force = Boolean(options.force);
   const statusEl = document.getElementById('shareholdersStatus');
   const wrap = document.getElementById('shareholderGridWrap');
-  if (statusEl) statusEl.textContent = '加载中...';
-  if (wrap) wrap.innerHTML = '<div class="empty" id="shareholdersEmpty">正在加载股东数据...</div>';
+  if (!force && shareholderCacheCode === code && shareholderCache.length) {
+    renderShareholders();
+    return;
+  }
+  if (statusEl) statusEl.textContent = force ? '正在更新...' : '加载中...';
+  if (wrap) wrap.innerHTML = '<div class="empty" id="shareholdersEmpty">' + (force ? '正在更新股东数据...' : '正在加载股东数据...') + '</div>';
   try {
-    const res = await fetch('/api/stock/' + code + '/shareholders');
+    const url = '/api/stock/' + code + '/shareholders' + (force ? '?refresh=1' : '');
+    const res = await fetch(url);
     const data = await res.json();
     if (code !== getCurrentCode()) return;
     if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     shareholderCache = data.periods || [];
+    shareholderCacheCode = code;
     renderShareholders();
-    if (statusEl) statusEl.textContent = data.source || '';
+    if (statusEl) {
+      const fetchedAt = data.fetched_at ? ' · ' + data.fetched_at : '';
+      statusEl.textContent = (data.source || '') + fetchedAt;
+    }
   } catch (e) {
     shareholderCache = [];
+    shareholderCacheCode = '';
     renderShareholders();
     if (statusEl) statusEl.textContent = '';
     showToast(e.message || '加载股东数据失败', 'error');
   }
+}
+
+function refreshShareholders() {
+  const code = getCurrentCode();
+  if (!code) return;
+  loadShareholders(code, { force: true });
 }
 
 function setShareholderPeriodFilter(filter) {

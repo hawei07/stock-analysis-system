@@ -47,7 +47,7 @@ LOCAL_SETTINGS_PATH = os.path.join(APP_DIR, "local_settings.json")
 
 
 from models import Stock
-from db import execute_query, execute_update
+from db import get_connection, execute_query, execute_update
 from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
@@ -778,6 +778,34 @@ def _ensure_graham_valuation_table():
             CONSTRAINT fk_graham_stock FOREIGN KEY (stock_code)
                 REFERENCES stocks (code) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+
+
+def _ensure_shareholders_table():
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS stock_shareholders (
+            id BIGINT NOT NULL AUTO_INCREMENT,
+            stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+            report_date DATE NOT NULL,
+            holder_rank INT NOT NULL,
+            holder_name VARCHAR(255) NOT NULL,
+            shares_type VARCHAR(80) DEFAULT NULL,
+            hold_num DECIMAL(24,4) DEFAULT NULL,
+            hold_ratio DECIMAL(10,4) DEFAULT NULL,
+            hold_change_label VARCHAR(80) DEFAULT NULL,
+            hold_change_num DECIMAL(24,4) DEFAULT NULL,
+            change_ratio DECIMAL(10,4) DEFAULT NULL,
+            change_type VARCHAR(20) DEFAULT NULL,
+            is_report_date TINYINT(1) DEFAULT 1,
+            source VARCHAR(80) DEFAULT NULL,
+            fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uk_stock_shareholder_period_rank (stock_code, report_date, holder_rank),
+            KEY idx_stock_shareholders_stock_date (stock_code, report_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci""",
         fetch=False,
     )
 
@@ -2635,17 +2663,7 @@ def _change_type(value):
     return "unchanged"
 
 
-@app.route("/api/stock/<code>/shareholders")
-def api_stock_shareholders(code):
-    stock = Stock.get_by_code(code)
-    if not stock:
-        return jsonify({"error": "未找到该股票"}), 404
-    if (stock.get("market") or "").upper() == "HK":
-        return jsonify({
-            "source": "港股暂不支持 A 股前十大股东口径",
-            "periods": [],
-        })
-
+def _fetch_shareholder_periods_from_eastmoney(code, stock):
     secu_code = _eastmoney_secu_code(code, stock.get("market"))
     rows = []
     source = "东方财富数据中心 十大股东"
@@ -2765,8 +2783,13 @@ def api_stock_shareholders(code):
                         "change_type": _change_type(change_label),
                     })
         except Exception as e:
-            return jsonify({"error": "股东数据获取失败: " + str(e)}), 502
+            raise RuntimeError("股东数据获取失败: " + str(e)) from e
 
+    return _build_shareholder_periods(rows_by_date, report_dates), source
+
+
+def _build_shareholder_periods(rows_by_date, report_dates=None):
+    report_dates = report_dates or {}
     periods = []
     for date in sorted(rows_by_date.keys(), reverse=True):
         holders = sorted(rows_by_date[date], key=lambda item: item["rank"])
@@ -2788,9 +2811,154 @@ def api_stock_shareholders(code):
             "top10_ratio": round(top_ratio, 2),
             "holders": holders,
         })
+    return periods
+
+
+def _load_shareholder_periods_from_db(code):
+    _ensure_shareholders_table()
+    rows = execute_query(
+        """SELECT report_date, holder_rank, holder_name, shares_type, hold_num, hold_ratio,
+                  hold_change_label, hold_change_num, change_ratio, change_type,
+                  is_report_date, source, fetched_at
+           FROM stock_shareholders
+           WHERE stock_code = %s
+           ORDER BY report_date DESC, holder_rank ASC""",
+        (code,),
+    )
+    rows_by_date = {}
+    report_dates = {}
+    source = None
+    latest_fetched_at = None
+    for row in rows:
+        date = row["report_date"].strftime("%Y-%m-%d") if hasattr(row["report_date"], "strftime") else str(row["report_date"])
+        fetched_at = row.get("fetched_at")
+        if fetched_at and (latest_fetched_at is None or fetched_at > latest_fetched_at):
+            latest_fetched_at = fetched_at
+        if row.get("source") and not source:
+            source = row["source"]
+        report_dates[date] = bool(row.get("is_report_date"))
+        change_num = row.get("hold_change_num")
+        change = float(change_num) if change_num is not None else row.get("hold_change_label")
+        rows_by_date.setdefault(date, []).append({
+            "rank": int(row["holder_rank"]),
+            "name": row.get("holder_name") or "",
+            "shares_type": row.get("shares_type") or "",
+            "hold_num": float(row["hold_num"]) if row.get("hold_num") is not None else None,
+            "hold_ratio": float(row["hold_ratio"]) if row.get("hold_ratio") is not None else None,
+            "change": change,
+            "change_ratio": float(row["change_ratio"]) if row.get("change_ratio") is not None else None,
+            "change_type": row.get("change_type") or "",
+        })
+    fetched_at_text = latest_fetched_at.strftime("%Y-%m-%d %H:%M:%S") if hasattr(latest_fetched_at, "strftime") else latest_fetched_at
+    return _build_shareholder_periods(rows_by_date, report_dates), source, fetched_at_text
+
+
+def _save_shareholder_periods_to_db(code, periods, source):
+    if not periods:
+        return 0
+    _ensure_shareholders_table()
+    values = []
+    for period in periods:
+        date = period.get("date")
+        if not date:
+            continue
+        for holder in period.get("holders") or []:
+            rank = int(holder.get("rank") or 0)
+            name = holder.get("name") or ""
+            if rank < 1 or rank > 10 or not name:
+                continue
+            change = holder.get("change")
+            change_num = change if isinstance(change, (int, float)) else _to_float(change)
+            values.append((
+                code,
+                date,
+                rank,
+                name,
+                holder.get("shares_type") or None,
+                holder.get("hold_num"),
+                holder.get("hold_ratio"),
+                None if change_num is not None else (str(change) if change not in (None, "") else None),
+                change_num,
+                holder.get("change_ratio"),
+                holder.get("change_type") or None,
+                1 if period.get("is_report_date", True) else 0,
+                source,
+            ))
+    if not values:
+        return 0
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.executemany(
+            """INSERT INTO stock_shareholders (
+                   stock_code, report_date, holder_rank, holder_name, shares_type,
+                   hold_num, hold_ratio, hold_change_label, hold_change_num,
+                   change_ratio, change_type, is_report_date, source, fetched_at
+               ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+               ON DUPLICATE KEY UPDATE
+                   holder_name = VALUES(holder_name),
+                   shares_type = VALUES(shares_type),
+                   hold_num = VALUES(hold_num),
+                   hold_ratio = VALUES(hold_ratio),
+                   hold_change_label = VALUES(hold_change_label),
+                   hold_change_num = VALUES(hold_change_num),
+                   change_ratio = VALUES(change_ratio),
+                   change_type = VALUES(change_type),
+                   is_report_date = VALUES(is_report_date),
+                   source = VALUES(source),
+                   fetched_at = NOW(),
+                   updated_at = CURRENT_TIMESTAMP""",
+            values,
+        )
+        conn.commit()
+        return len(values)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/stock/<code>/shareholders")
+def api_stock_shareholders(code):
+    stock = Stock.get_by_code(code)
+    if not stock:
+        return jsonify({"error": "未找到该股票"}), 404
+    if (stock.get("market") or "").upper() == "HK":
+        return jsonify({
+            "source": "港股暂不支持 A 股前十大股东口径",
+            "periods": [],
+        })
+
+    refresh = request.args.get("refresh") in {"1", "true", "yes"}
+    if not refresh:
+        periods, source, fetched_at = _load_shareholder_periods_from_db(code)
+        if periods:
+            return jsonify({
+                "source": f"本地缓存 · {source or '前十大股东'}",
+                "cached": True,
+                "fetched_at": fetched_at,
+                "periods": periods,
+            })
+
+    try:
+        periods, source = _fetch_shareholder_periods_from_eastmoney(code, stock)
+    except Exception as e:
+        periods, source, fetched_at = _load_shareholder_periods_from_db(code)
+        if periods:
+            return jsonify({
+                "source": f"本地缓存 · 外部刷新失败: {e}",
+                "cached": True,
+                "fetched_at": fetched_at,
+                "periods": periods,
+            })
+        return jsonify({"error": str(e)}), 502
+
+    saved_count = _save_shareholder_periods_to_db(code, periods, source)
 
     return jsonify({
         "source": source,
+        "cached": False,
+        "saved_count": saved_count,
         "periods": periods,
     })
 
@@ -5372,6 +5540,7 @@ if __name__ == "__main__":
         _ensure_stock_order_column()
         _ensure_portfolio_tables()
         _ensure_graham_valuation_table()
+        _ensure_shareholders_table()
         print("✓ 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"⚠ 表结构检查异常: {e}")
