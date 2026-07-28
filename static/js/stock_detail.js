@@ -462,6 +462,7 @@ function renderFinancingTable(rows) {
 // ==================== 股东 ====================
 
 let shareholderCache = [];
+let shareholderYearRange = 10;
 let shareholderPeriodFilter = 'quarter';
 let shareholderChangeFilter = 'all';
 
@@ -503,6 +504,19 @@ function setShareholderChangeFilter(filter) {
   renderShareholders();
 }
 
+function setShareholderYearRange(years) {
+  shareholderYearRange = Number(years) || 10;
+  document.querySelectorAll('#shareholderYearRangeFilter button').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.years) === shareholderYearRange);
+  });
+  renderShareholders();
+}
+
+function shareholderYearVisible(period, latestYear) {
+  if (!period || !period.year || !latestYear) return true;
+  return Number(period.year) >= latestYear - shareholderYearRange + 1;
+}
+
 function shareholderPeriodVisible(period) {
   if (shareholderPeriodFilter === 'all') return true;
   if (shareholderPeriodFilter === 'year') return period.month_day === '12-31';
@@ -535,7 +549,11 @@ function shareholderChangeHtml(holder) {
 function renderShareholders() {
   const wrap = document.getElementById('shareholderGridWrap');
   if (!wrap) return;
-  const periods = shareholderCache.filter(shareholderPeriodVisible);
+  const latestYear = shareholderCache.reduce((maxYear, period) => {
+    const year = Number(period.year);
+    return Number.isFinite(year) ? Math.max(maxYear, year) : maxYear;
+  }, 0);
+  const periods = shareholderCache.filter(period => shareholderYearVisible(period, latestYear) && shareholderPeriodVisible(period));
   if (!periods.length) {
     wrap.innerHTML = '<div class="empty" id="shareholdersEmpty">暂无股东数据</div>';
     return;
@@ -544,7 +562,6 @@ function renderShareholders() {
   const visiblePeriods = periods.slice().sort((a, b) => a.date.localeCompare(b.date));
   const yearHeader = visiblePeriods.map((period, index) => {
     const prev = visiblePeriods[index - 1];
-    const next = visiblePeriods[index + 1];
     const startsYear = !prev || prev.year !== period.year;
     const span = visiblePeriods.filter(item => item.year === period.year).length;
     if (!startsYear) return '';

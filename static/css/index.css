@@ -68,7 +68,8 @@ tr:hover td{background:#fafbff}
 .finance-note{background:#fff1f0;border:1px solid #ffa39e;color:#8c1d18;border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
 .financing-table th,.financing-table td{vertical-align:top}
 .financing-table td:nth-child(6),.financing-table td:nth-child(7),.financing-table td:nth-child(8){white-space:normal;line-height:1.6;min-width:180px}
-.shareholders-toolbar{justify-content:flex-end;gap:10px}
+.shareholders-toolbar{justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.shareholder-range-filter button{min-width:48px}
 .shareholder-grid-wrap{overflow:auto;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid #e8e8e8}
 .shareholder-grid{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
 .shareholder-grid th,.shareholder-grid td{border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;vertical-align:top}
