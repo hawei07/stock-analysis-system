@@ -68,6 +68,27 @@ tr:hover td{background:#fafbff}
 .finance-note{background:#fff1f0;border:1px solid #ffa39e;color:#8c1d18;border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
 .financing-table th,.financing-table td{vertical-align:top}
 .financing-table td:nth-child(6),.financing-table td:nth-child(7),.financing-table td:nth-child(8){white-space:normal;line-height:1.6;min-width:180px}
+.shareholders-toolbar{justify-content:flex-end;gap:10px}
+.shareholder-grid-wrap{overflow:auto;background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid #e8e8e8}
+.shareholder-grid{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+.shareholder-grid th,.shareholder-grid td{border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;vertical-align:top}
+.shareholder-grid th{background:linear-gradient(#fff,#f5f5f5);text-align:center;color:#111;font-weight:700}
+.shareholder-grid .rank-col{position:sticky;left:0;z-index:4;width:54px;min-width:54px;background:#f7f9fc;text-align:center;color:#4a6cf7;font-weight:700}
+.shareholder-grid thead .rank-col{z-index:6;background:#f0f5ff}
+.shareholder-period{min-width:220px;width:220px}
+.shareholder-period-main{font-size:13px;font-weight:700;margin-bottom:7px}
+.shareholder-period-sub{font-size:12px;color:#0076a8;font-weight:400;line-height:1.7}
+.shareholder-cell{min-width:220px;width:220px;line-height:1.55}
+.shareholder-name{color:#006dff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+.shareholder-meta{font-size:12px;color:#555}
+.shareholder-ratio{font-weight:700;color:#111}
+.shareholder-change{display:inline-flex;align-items:center;gap:3px;margin-right:4px;font-weight:700}
+.shareholder-change.increase{color:#e60012}
+.shareholder-change.decrease{color:#008000}
+.shareholder-change.new{color:#d4380d}
+.shareholder-change.unchanged{color:#777}
+.shareholder-cell.filtered-out{opacity:.18}
+.shareholder-grid .year-break{border-left:2px solid #13a8a8}
 
 .pagination{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px}
 .pagination button{padding:6px 14px;border:1px solid #d9d9d9;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;transition:all .2s}

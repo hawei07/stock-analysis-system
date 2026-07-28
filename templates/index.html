@@ -122,6 +122,7 @@
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
+    <button class="tab-btn" data-tab="shareholders" onclick="switchTab('shareholders')">股东</button>
     <button class="tab-btn" data-tab="munger-chat" onclick="switchTab('munger-chat')">💬 对话芒格</button>
     <button class="tab-btn" data-tab="sticky" onclick="switchTab('sticky')">📌 便利贴</button>
   </div>
@@ -374,6 +375,27 @@
         <div class="empty" id="cfEmpty">请点击"查询"加载现金流量表数据</div>
       </div>
     </div>
+    <div class="tab-panel" id="panel-shareholders" style="display:none">
+      <div class="toolbar-row shareholders-toolbar">
+        <div class="seg-switch" id="shareholderPeriodFilter">
+          <button type="button" data-filter="year" onclick="setShareholderPeriodFilter('year')">年</button>
+          <button type="button" data-filter="half" onclick="setShareholderPeriodFilter('half')">半年</button>
+          <button type="button" class="active" data-filter="quarter" onclick="setShareholderPeriodFilter('quarter')">季度</button>
+          <button type="button" data-filter="all" onclick="setShareholderPeriodFilter('all')">全部</button>
+        </div>
+        <div class="seg-switch" id="shareholderChangeFilter">
+          <button type="button" class="active" data-filter="all" onclick="setShareholderChangeFilter('all')">全部</button>
+          <button type="button" data-filter="new" onclick="setShareholderChangeFilter('new')">新进</button>
+          <button type="button" data-filter="increase" onclick="setShareholderChangeFilter('increase')">增持</button>
+          <button type="button" data-filter="decrease" onclick="setShareholderChangeFilter('decrease')">减持</button>
+          <button type="button" data-filter="unchanged" onclick="setShareholderChangeFilter('unchanged')">不变</button>
+        </div>
+        <span id="shareholdersStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
+      </div>
+      <div class="shareholder-grid-wrap" id="shareholderGridWrap">
+        <div class="empty" id="shareholdersEmpty">正在加载股东数据...</div>
+      </div>
+    </div>
     <div class="tab-panel" id="panel-munger-chat" style="display:none">
       <div class="chat-panel">
         <div class="chat-header">
@@ -620,6 +642,8 @@ function switchTab(name) {
     loadIncome();
   } else if (name === 'cashflow') {
     loadCashflow();
+  } else if (name === 'shareholders') {
+    loadShareholders(getCurrentCode());
   } else if (name === 'munger-chat') {
     loadMungerChat();
   } else if (name === 'dividends') {
