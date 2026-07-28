@@ -65,6 +65,9 @@ tr:hover td{background:#fafbff}
 .status-正常{background:#f6ffed;color:#52c41a}
 .status-ST{background:#fff7e6;color:#fa8c16}
 .status-\*ST{background:#fff1f0;color:#ff4d4f}
+.finance-note{background:#fff1f0;border:1px solid #ffa39e;color:#8c1d18;border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+.financing-table th,.financing-table td{vertical-align:top}
+.financing-table td:nth-child(6),.financing-table td:nth-child(7),.financing-table td:nth-child(8){white-space:normal;line-height:1.6;min-width:180px}
 
 .pagination{display:flex;align-items:center;justify-content:center;gap:8px;padding:20px}
 .pagination button{padding:6px 14px;border:1px solid #d9d9d9;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;transition:all .2s}

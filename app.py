@@ -2421,6 +2421,146 @@ def api_stock_dividends(code):
     return jsonify(result)
 
 
+def _eastmoney_secu_code(code, market=None):
+    market = (market or "").upper()
+    if market in {"SH", "SZ", "BJ"}:
+        return f"{code}.{market}"
+    if code.startswith(("6", "5", "9")):
+        return f"{code}.SH"
+    if code.startswith(("4", "8")):
+        return f"{code}.BJ"
+    return f"{code}.SZ"
+
+
+def _as_list(value):
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _date_only(value):
+    if not value:
+        return None
+    return str(value)[:10]
+
+
+def _money_yuan(value):
+    n = _to_float(value)
+    return n if n is not None else 0.0
+
+
+@app.route("/api/stock/<code>/financing")
+def api_stock_financing(code):
+    stock = Stock.get_by_code(code)
+    if not stock:
+        return jsonify({"error": "未找到该股票"}), 404
+    if (stock.get("market") or "").upper() == "HK":
+        return jsonify({
+            "source": "港股暂不支持 A 股分红融资口径",
+            "annual": [],
+            "details": [],
+        })
+
+    secu_code = _eastmoney_secu_code(code, stock.get("market"))
+    try:
+        resp = requests.get(
+            "https://emweb.securities.eastmoney.com/PC_HSF10/BonusFinancing/PageAjax",
+            params={"code": secu_code},
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": f"https://emweb.securities.eastmoney.com/PC_HSF10/BonusFinancing/Index?code={stock.get('market', '')}{code}&type=web",
+            },
+            timeout=12,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+    except Exception as e:
+        return jsonify({"error": "融资数据获取失败: " + str(e)}), 502
+
+    annual_by_year = {}
+    for row in _as_list(payload.get("lnfhrz")):
+        year = str(row.get("STATISTICS_YEAR") or "").strip()
+        if not year:
+            continue
+        annual_by_year[year] = {
+            "year": year,
+            "dividend_amount": _money_yuan(row.get("TOTAL_DIVIDEND")),
+            "financing_amount": 0.0,
+            "seo_shares": _money_yuan(row.get("SEO_NUM")),
+            "allotment_shares": _money_yuan(row.get("ALLOTMENT_NUM")),
+            "ipo_shares": _money_yuan(row.get("IPO_NUM")),
+        }
+
+    details = []
+
+    def add_detail(row, financing_type):
+        if not row:
+            return
+        notice_date = _date_only(row.get("NOTICE_DATE"))
+        year = (notice_date or "")[:4]
+        issue_price = _to_float(row.get("ISSUE_PRICE"))
+        issue_shares = _money_yuan(row.get("ISSUE_NUM"))
+        if financing_type == "增发":
+            amount = _money_yuan(row.get("NET_RAISE_FUNDS") or row.get("TOTAL_RAISE_FUNDS"))
+            method = row.get("ISSUE_WAY_EXPLAIN")
+            price_method = row.get("ISSUE_PRICE_EXPLAIN")
+            target = row.get("ISSUE_OBJECT") or row.get("ISSUE_TARGET") or row.get("OBJECT")
+            listing_date = _date_only(row.get("LISTING_DATE"))
+        else:
+            amount = _money_yuan(row.get("TOTAL_RAISE_FUNDS") or row.get("NET_RAISE_FUNDS"))
+            method = row.get("EVENT_EXPLAIN")
+            price_method = row.get("ISSUE_PRICE_EXPLAIN")
+            target = None
+            listing_date = _date_only(row.get("EX_DIVIDEND_DATEE") or row.get("EX_DIVIDEND_DATE"))
+
+        if year:
+            annual = annual_by_year.setdefault(year, {
+                "year": year,
+                "dividend_amount": 0.0,
+                "financing_amount": 0.0,
+                "seo_shares": 0.0,
+                "allotment_shares": 0.0,
+                "ipo_shares": 0.0,
+            })
+            annual["financing_amount"] += amount
+
+        details.append({
+            "date": notice_date,
+            "type": financing_type,
+            "issue_price": issue_price,
+            "issue_shares": issue_shares,
+            "amount": amount,
+            "amount_label": "实际募集净额" if financing_type == "增发" else "实际募资总额",
+            "method": method,
+            "price_method": price_method,
+            "target": target,
+            "registration_date": _date_only(row.get("REG_DATE") or row.get("EQUITY_RECORD_DATE")),
+            "listing_date": listing_date,
+            "receive_date": _date_only(row.get("RECEIVE_DATE")),
+        })
+
+    for row in _as_list(payload.get("zfmx")):
+        add_detail(row, "增发")
+    for row in _as_list(payload.get("pgmx")):
+        add_detail(row, "配股")
+
+    annual = []
+    for year, row in sorted(annual_by_year.items(), key=lambda item: item[0]):
+        financing_amount = row["financing_amount"]
+        ratio = (row["dividend_amount"] / financing_amount * 100) if financing_amount > 0 else None
+        annual.append({
+            **row,
+            "ratio": round(ratio, 2) if ratio is not None else None,
+        })
+
+    details.sort(key=lambda item: item.get("date") or "", reverse=True)
+    return jsonify({
+        "source": "东方财富 F10 分红融资",
+        "annual": annual,
+        "details": details,
+    })
+
+
 # ==================== 数据更新 API ====================
 
 @app.route("/api/update-dividends", methods=["POST"])
