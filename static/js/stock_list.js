@@ -38,7 +38,7 @@ function renderTable(stocks) {
       <td data-col="day_change_pct">${fmtPct(s.day_change_pct, true)}</td>
       <td data-col="price">${formatPrice(s.price)}</td>
       <td>${fmtNum(s.reasonable_price)}</td>
-      <td data-col="reasonable_discount">${fmtPct(s.reasonable_discount)}</td>
+      <td data-col="reasonable_discount">${formatDiscountPct(s.reasonable_discount)}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
       <td><button class="btn btn-outline btn-sm" onclick="openGrahamModal('${esc(s.code)}')" title="编辑格雷厄姆估值参数">${fmtNum(s.reasonable_valuation)}</button></td>
       <td data-col="pb_ex_goodwill">${s.pb_ex_goodwill != null ? Number(s.pb_ex_goodwill).toFixed(2) : '-'}</td>
@@ -83,6 +83,14 @@ function formatRealtimePct(value, showSign = false) {
   return `<span style="color:${color};font-weight:600">${sign}${n.toFixed(2)}%</span>`;
 }
 
+function formatDiscountPct(value) {
+  if (value == null || Number.isNaN(Number(value))) return '-';
+  const n = Number(value);
+  const cls = n < 0 ? 'discount-undervalued' : (n > 0 ? 'discount-overvalued' : 'discount-neutral');
+  const sign = n > 0 ? '+' : '';
+  return `<span class="discount-cell ${cls}">${sign}${n.toFixed(2)}%</span>`;
+}
+
 function formatPrice(price) {
   return price != null && !Number.isNaN(Number(price))
     ? `<span class="price-cell-value">${Number(price).toFixed(2)}</span>`
@@ -99,7 +107,7 @@ function updateStockRealtimeCells(items) {
     const pbCell = row.querySelector('[data-col="pb_ex_goodwill"]');
     if (dayChangeCell) dayChangeCell.innerHTML = formatRealtimePct(item.day_change_pct, true);
     if (priceCell) priceCell.innerHTML = formatPrice(item.price);
-    if (discountCell) discountCell.innerHTML = formatRealtimePct(item.reasonable_discount);
+    if (discountCell) discountCell.innerHTML = formatDiscountPct(item.reasonable_discount);
     if (pbCell) pbCell.textContent = item.pb_ex_goodwill != null ? Number(item.pb_ex_goodwill).toFixed(2) : '-';
   }
 }

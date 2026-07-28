@@ -52,6 +52,10 @@ tr:hover td{background:#fafbff}
 .name-link{color:#4a6cf7;cursor:pointer;text-decoration:none;font-weight:500}
 .name-link:hover{text-decoration:underline;color:#3b5de7}
 .price-cell-value{font-family:'Courier New',monospace}
+.discount-cell{font-weight:700}
+.discount-undervalued{color:#2563eb}
+.discount-overvalued{color:#d97706}
+.discount-neutral{color:#6b7280}
 .market-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
 .market-SH{background:#ffeaea;color:#cf1322}
 .market-SZ{background:#e6f7ff;color:#096dd9}
