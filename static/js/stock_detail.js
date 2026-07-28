@@ -395,7 +395,7 @@ function renderFinancingChart(rows) {
         return html;
       }
     },
-    legend: { top: 4, data: ['A股-总融资额', 'A股-总分红', 'A股-分红融资比'] },
+    legend: { top: 4, data: ['A股-累计融资额', 'A股-累计分红', 'A股-累计分红融资比'] },
     dataZoom: [
       { type: 'slider', start: rows.length > 18 ? Math.max(0, 100 - (18 / rows.length * 100)) : 0, end: 100, height: 20, bottom: 10 },
       { type: 'inside' }
@@ -403,12 +403,12 @@ function renderFinancingChart(rows) {
     grid: { left: 64, right: 82, top: 52, bottom: rows.length > 18 ? 54 : 42 },
     xAxis: { type: 'category', data: years, axisLabel: { fontSize: 12 } },
     yAxis: [
-      { type: 'value', name: '总融资/分红', axisLabel: { formatter: v => v + '亿' } },
+      { type: 'value', name: '累计融资/分红', axisLabel: { formatter: v => v + '亿' } },
       { type: 'value', name: '分红融资比', axisLabel: { formatter: v => v + '%' }, splitLine: { show: false } }
     ],
     series: [
       {
-        name: 'A股-总融资额',
+        name: 'A股-累计融资额',
         type: 'bar',
         data: financing,
         barMaxWidth: 38,
@@ -416,7 +416,7 @@ function renderFinancingChart(rows) {
         label: { show: showLabel, position: 'top', fontSize: 10, formatter: p => p.value ? p.value.toFixed(2) + '亿' : '' }
       },
       {
-        name: 'A股-总分红',
+        name: 'A股-累计分红',
         type: 'bar',
         data: dividends,
         barMaxWidth: 38,
@@ -424,7 +424,7 @@ function renderFinancingChart(rows) {
         label: { show: showLabel, position: 'top', fontSize: 10, formatter: p => p.value ? p.value.toFixed(2) + '亿' : '' }
       },
       {
-        name: 'A股-分红融资比',
+        name: 'A股-累计分红融资比',
         type: 'line',
         yAxisIndex: 1,
         data: ratios,

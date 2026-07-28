@@ -2545,11 +2545,18 @@ def api_stock_financing(code):
         add_detail(row, "配股")
 
     annual = []
+    cumulative_dividend = 0.0
+    cumulative_financing = 0.0
     for year, row in sorted(annual_by_year.items(), key=lambda item: item[0]):
-        financing_amount = row["financing_amount"]
-        ratio = (row["dividend_amount"] / financing_amount * 100) if financing_amount > 0 else None
+        cumulative_dividend += row["dividend_amount"]
+        cumulative_financing += row["financing_amount"]
+        ratio = (cumulative_dividend / cumulative_financing * 100) if cumulative_financing > 0 else None
         annual.append({
             **row,
+            "annual_dividend_amount": row["dividend_amount"],
+            "annual_financing_amount": row["financing_amount"],
+            "dividend_amount": cumulative_dividend,
+            "financing_amount": cumulative_financing,
             "ratio": round(ratio, 2) if ratio is not None else None,
         })
 
