@@ -1560,7 +1560,9 @@ function getIncomeSections() {
     { title: '其他收益', items: [
       { name: '其他收益', field: 'other_income' }, { name: '投资收益', field: 'invest_income' },
       { name: '公允价值变动收益', field: 'fair_value_change' }, { name: '信用减值损失', field: 'credit_impairment_loss' },
-      { name: '资产减值损失', field: 'asset_impairment_loss' }, { name: '资产处置收益', field: 'asset_disposal_income' }
+      { name: '资产减值损失', field: 'asset_impairment_loss' }, { name: '资产处置收益', field: 'asset_disposal_income' },
+      { name: '核心利润', field: 'sankey_core_profit', bold: true },
+      { name: '核心利润率', field: 'sankey_core_profit_rate', isPercent: true }
     ] },
     { title: '利润', items: [
       { name: '营业利润', field: 'operating_profit', bold: true }, { name: '营业外收入', field: 'nonop_income' },
@@ -1672,6 +1674,16 @@ async function loadFinanceTable(prefix) {
 function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
   const yoyClass = (y) => { if (y == null) return 'fin-yoy-neutral'; return y > 0 ? 'fin-yoy-up' : (y < 0 ? 'fin-yoy-down' : 'fin-yoy-neutral'); };
   const yoyFmt = (y) => { if (y == null) return '-'; return y.toFixed(1) + '%'; };
+  const fmtVal = (v, item) => {
+    if (v == null) return '-';
+    if (item.isPercent || item.unit === '%') return Number(v).toFixed(2) + '%';
+    return Math.abs(v) >= 100 ? Number(v).toFixed(0) : Number(v).toFixed(2);
+  };
+
+  if (t.prefix === 'inc') {
+    data.forEach(enrichIncomeDerivedFields);
+    if (cmpData && cmpData.length > 0) cmpData.forEach(enrichIncomeDerivedFields);
+  }
 
   const periods = new Set(data.map(d => d.report_period || 'FY'));
   const isQuarterly = !(periods.size === 1 && periods.has('FY'));
@@ -1722,8 +1734,9 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
   for (const lbl of keyLabels) { html += '<th class="sticky-header sub-header">原值</th>'; html += '<th class="sticky-header sub-header">同比%</th>'; }
   html += '</tr></thead><tbody>';
 
-  html += '<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">单位：亿元</td>';
-  for (const k of keys) { html += '<td style="text-align:center;background:#fafafa">亿元</td>'; html += '<td style="text-align:center;background:#fafafa">%</td>'; }
+  const unitLabel = t.prefix === 'inc' ? '单位：金额亿元，比例%' : '单位：亿元';
+  html += `<tr class="unit-row"><td class="sticky-col" style="background:#fafafa;font-weight:500">${unitLabel}</td>`;
+  for (const k of keys) { html += '<td style="text-align:center;background:#fafafa">原值</td>'; html += '<td style="text-align:center;background:#fafafa">同比%</td>'; }
   html += '</tr>';
 
   for (const section of sections) {
@@ -1731,11 +1744,11 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
     for (const item of section.items) {
       const bs = item.bold ? 'font-weight:600;' : '';
       html += `<tr><td class="sticky-col" style="${bs}"${hasCmp ? ' rowspan="2"' : ''}>${item.name}<span class="chart-icon" data-field="${item.field}" data-name="${esc(item.name)}" data-prefix="${t.prefix}" title="查看趋势图"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><polyline points="2,13 5,8 8,10 11,4 14,7" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></td>`;
-      for (const k of keys) { const d = dataMap[k]; const val = d ? d[item.field] : null; const yoy = yoyMap[k] ? yoyMap[k][item.field] : null; html += `<td style="text-align:right;${bs}">${val != null ? (Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2)) : '-'}</td>`; html += `<td class="${yoyClass(yoy)}" style="text-align:right">${yoyFmt(yoy)}</td>`; }
+      for (const k of keys) { const d = dataMap[k]; const val = d ? d[item.field] : null; const yoy = yoyMap[k] ? yoyMap[k][item.field] : null; html += `<td style="text-align:right;${bs}">${fmtVal(val, item)}</td>`; html += `<td class="${yoyClass(yoy)}" style="text-align:right">${yoyFmt(yoy)}</td>`; }
       html += '</tr>';
       if (hasCmp) {
         html += '<tr style="background:#fff7e6;color:#fa8c16">';
-        for (const k of keys) { const d = cmpDataMap[k]; const val = d ? d[item.field] : null; const yoy = cmpYoyMap[k] ? cmpYoyMap[k][item.field] : null; html += `<td style="text-align:right;background:#fff7e6;color:#fa8c16;${bs}">${val != null ? (Math.abs(val) >= 100 ? val.toFixed(0) : val.toFixed(2)) : '-'}</td>`; html += `<td class="${yoyClass(yoy)}" style="background:#fff7e6;text-align:right">${yoyFmt(yoy)}</td>`; }
+        for (const k of keys) { const d = cmpDataMap[k]; const val = d ? d[item.field] : null; const yoy = cmpYoyMap[k] ? cmpYoyMap[k][item.field] : null; html += `<td style="text-align:right;background:#fff7e6;color:#fa8c16;${bs}">${fmtVal(val, item)}</td>`; html += `<td class="${yoyClass(yoy)}" style="background:#fff7e6;text-align:right">${yoyFmt(yoy)}</td>`; }
         html += '</tr>';
       }
     }
@@ -1816,6 +1829,15 @@ function incomeCoreProfitValue(row) {
     incomeGrossValue(row) - incomePeriodExpenseValue(row) - positiveIncomeValue(row, 'tax_surcharge'),
     0
   );
+}
+
+function enrichIncomeDerivedFields(row) {
+  if (!row) return row;
+  const coreProfit = incomeCoreProfitValue(row);
+  const revenue = incomeRevenueValue(row);
+  row.sankey_core_profit = coreProfit;
+  row.sankey_core_profit_rate = revenue > 0 ? coreProfit / revenue * 100 : null;
+  return row;
 }
 
 function incomeOperatingSignedAdjustmentSum(row) {
