@@ -621,8 +621,8 @@ function renderShareholders() {
           ${shareholderChangeHtml(holder)}
           <span class="shareholder-ratio">${holder.hold_ratio == null ? '--' : Number(holder.hold_ratio).toFixed(2) + '%'}</span>
           (${formatShareholderShares(holder.hold_num)})
+          ${holder.shares_type ? '<span class="shareholder-type">' + esc(holder.shares_type) + '</span>' : ''}
         </div>
-        <div class="shareholder-meta">${esc(holder.shares_type || '')}</div>
       </td>`;
     }).join('');
     bodyRows.push(`<tr><td class="rank-col">第${rank}</td>${cells}</tr>`);

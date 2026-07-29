@@ -82,6 +82,7 @@ tr:hover td{background:#fafbff}
 .shareholder-cell{min-width:220px;width:220px;line-height:1.55}
 .shareholder-name{color:#006dff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
 .shareholder-meta{font-size:12px;color:#555}
+.shareholder-type{margin-left:6px;color:#8a94a6}
 .shareholder-ratio{font-weight:700;color:#111}
 .shareholder-change{display:inline-flex;align-items:center;gap:3px;margin-right:4px;font-weight:700}
 .shareholder-change.increase{color:#e60012}
