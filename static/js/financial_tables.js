@@ -1551,6 +1551,7 @@ function getIncomeSections() {
     { title: '收入', items: [{ name: '营业总收入', field: 'total_revenue', bold: true }, { name: '营业收入', field: 'operating_revenue' }, { name: '利息收入', field: 'interest_income' }] },
     { title: '成本与费用', items: [
       { name: '营业总成本', field: 'operating_cost', bold: true }, { name: '营业成本', field: 'cost_of_revenue' },
+      { name: '毛利率', field: 'income_gross_margin', isPercent: true },
       { name: '利息支出', field: 'interest_expense' }, { name: '手续费及佣金支出', field: 'fee_commission_expense' },
       { name: '营业税金及附加', field: 'tax_surcharge' }, { name: '销售费用', field: 'selling_expense' },
       { name: '管理费用', field: 'admin_expense' }, { name: '财务费用', field: 'finance_expense' },
@@ -1836,6 +1837,9 @@ function enrichIncomeDerivedFields(row) {
   if (!row) return row;
   const coreProfit = incomeCoreProfitRawValue(row);
   const revenue = incomeRevenueValue(row);
+  const operatingRevenue = incomeOperatingRevenueValue(row);
+  const cost = positiveIncomeValue(row, 'cost_of_revenue');
+  row.income_gross_margin = operatingRevenue > 0 ? (operatingRevenue - cost) / operatingRevenue * 100 : null;
   row.sankey_core_profit = coreProfit;
   row.sankey_core_profit_rate = revenue > 0 ? coreProfit / revenue * 100 : null;
   return row;
