@@ -1221,6 +1221,7 @@ def _ensure_portfolio_tables():
             id INT NOT NULL AUTO_INCREMENT,
             stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
             shares DECIMAL(18,4) NOT NULL DEFAULT 0,
+            cost_price DECIMAL(18,4) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -1268,6 +1269,15 @@ def _ensure_portfolio_tables():
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
         fetch=False,
     )
+    try:
+        rows = execute_query("SHOW COLUMNS FROM portfolio_positions LIKE 'cost_price'")
+        if not rows:
+            execute_query(
+                "ALTER TABLE portfolio_positions ADD COLUMN cost_price DECIMAL(18,4) NULL AFTER shares",
+                fetch=False,
+            )
+    except Exception:
+        pass
     try:
         rows = execute_query("SHOW COLUMNS FROM portfolio_positions LIKE 'custom_dividend_per_share'")
         if not rows:
@@ -1387,7 +1397,7 @@ def _portfolio_current_state():
     _ensure_portfolio_tables()
     cash_amount = _portfolio_cash_amount()
     rows = execute_query(
-        """SELECT p.id, p.stock_code, p.shares, p.custom_dividend_per_share,
+        """SELECT p.id, p.stock_code, p.shares, p.cost_price, p.custom_dividend_per_share,
                   s.name, s.market, s.industry
            FROM portfolio_positions p
            JOIN stocks s ON s.code = p.stock_code
@@ -1402,6 +1412,9 @@ def _portfolio_current_state():
                 "cash_amount": round(cash_amount, 2),
                 "total_asset_value": round(cash_amount, 2),
                 "cash_allocation_pct": 100.0 if cash_amount > 0 else 0,
+                "total_cost_value": 0,
+                "unrealized_profit": None,
+                "unrealized_profit_pct": None,
                 "expected_dividend": 0,
                 "count": 0,
             },
@@ -1412,11 +1425,14 @@ def _portfolio_current_state():
     dividends = _latest_dividend_per_share([r["stock_code"] for r in rows])
     exchange_rates = {}
     total_market_value = 0.0
+    total_cost_value = 0.0
+    total_costed_market_value = 0.0
     expected_dividend = 0.0
 
     for r in rows:
         code = r["stock_code"]
         shares = float(r["shares"])
+        cost_price = float(r["cost_price"]) if r.get("cost_price") is not None else None
         price = prices.get(code)
         currency = _currency_for_market(r.get("market"))
         fx = exchange_rates.get(currency)
@@ -1429,10 +1445,18 @@ def _portfolio_current_state():
         dividend_per_share = custom_dividend if custom_dividend is not None else div.get("dividend_per_share")
         original_market_value = shares * price if price is not None else None
         market_value = original_market_value * fx_rate if original_market_value is not None and fx_rate is not None else None
+        original_cost_value = shares * cost_price if cost_price is not None else None
+        cost_value = original_cost_value * fx_rate if original_cost_value is not None and fx_rate is not None else None
+        unrealized_profit = market_value - cost_value if market_value is not None and cost_value is not None else None
+        unrealized_profit_pct = unrealized_profit / cost_value * 100 if unrealized_profit is not None and cost_value and cost_value > 0 else None
         original_dividend_amount = shares * dividend_per_share if dividend_per_share is not None else None
         dividend_amount = original_dividend_amount * fx_rate if original_dividend_amount is not None and fx_rate is not None else None
         if market_value is not None:
             total_market_value += market_value
+        if cost_value is not None:
+            total_cost_value += cost_value
+            if market_value is not None:
+                total_costed_market_value += market_value
         if dividend_amount is not None:
             expected_dividend += dividend_amount
         positions.append({
@@ -1442,6 +1466,8 @@ def _portfolio_current_state():
             "market": r["market"],
             "industry": r.get("industry"),
             "shares": shares,
+            "cost_price": round(cost_price, 4) if cost_price is not None else None,
+            "cost_price_currency": currency,
             "price": round(price, 2) if price is not None else None,
             "price_currency": currency,
             "fx_rate_to_cny": round(fx_rate, 6) if fx_rate is not None else None,
@@ -1451,6 +1477,12 @@ def _portfolio_current_state():
             "original_market_value_currency": currency,
             "market_value": round(market_value, 2) if market_value is not None else None,
             "market_value_currency": "CNY",
+            "original_cost_value": round(original_cost_value, 2) if original_cost_value is not None else None,
+            "original_cost_value_currency": currency,
+            "cost_value": round(cost_value, 2) if cost_value is not None else None,
+            "cost_value_currency": "CNY",
+            "unrealized_profit": round(unrealized_profit, 2) if unrealized_profit is not None else None,
+            "unrealized_profit_pct": round(unrealized_profit_pct, 2) if unrealized_profit_pct is not None else None,
             "dividend_per_share": round(dividend_per_share, 4) if dividend_per_share is not None else None,
             "dividend_year": div.get("fiscal_year"),
             "auto_dividend_per_share": round(div.get("dividend_per_share"), 4) if div.get("dividend_per_share") is not None else None,
@@ -1475,6 +1507,9 @@ def _portfolio_current_state():
             "cash_amount": round(cash_amount, 2),
             "total_asset_value": round(total_asset_value, 2),
             "cash_allocation_pct": round(cash_amount / total_asset_value * 100, 2) if total_asset_value > 0 else 0,
+            "total_cost_value": round(total_cost_value, 2),
+            "unrealized_profit": round(total_costed_market_value - total_cost_value, 2) if total_cost_value > 0 else None,
+            "unrealized_profit_pct": round((total_costed_market_value - total_cost_value) / total_cost_value * 100, 2) if total_cost_value > 0 else None,
             "expected_dividend": round(expected_dividend, 2),
             "count": len(positions),
             "currency": "CNY",
@@ -1530,21 +1565,31 @@ def api_portfolio_save_position():
     data = request.get_json(force=True)
     identifier = str(data.get("code", data.get("identifier", ""))).strip()
     shares = data.get("shares")
+    cost_price = data.get("cost_price")
     try:
         shares = float(shares)
     except (TypeError, ValueError):
         return jsonify({"error": "股数必须是数字"}), 400
     if shares <= 0:
         return jsonify({"error": "股数必须大于 0"}), 400
+    if cost_price in (None, ""):
+        cost_price = None
+    else:
+        try:
+            cost_price = float(cost_price)
+        except (TypeError, ValueError):
+            return jsonify({"error": "成本价必须是数字"}), 400
+        if cost_price < 0:
+            return jsonify({"error": "成本价不能小于 0"}), 400
     stock = _resolve_portfolio_stock(identifier)
     if not stock:
         return jsonify({"error": "未找到匹配的股票，请输入代码或更准确的名称"}), 404
     code = stock["code"]
     execute_query(
-        """INSERT INTO portfolio_positions (stock_code, shares)
-           VALUES (%s, %s)
-           ON DUPLICATE KEY UPDATE shares=VALUES(shares), updated_at=CURRENT_TIMESTAMP""",
-        (code, shares),
+        """INSERT INTO portfolio_positions (stock_code, shares, cost_price)
+           VALUES (%s, %s, %s)
+           ON DUPLICATE KEY UPDATE shares=VALUES(shares), cost_price=VALUES(cost_price), updated_at=CURRENT_TIMESTAMP""",
+        (code, shares, cost_price),
         fetch=False,
     )
     state = _save_portfolio_snapshot()
@@ -1556,7 +1601,7 @@ def api_portfolio_save_position():
 def api_portfolio_position_get(code):
     _ensure_portfolio_tables()
     rows = execute_query(
-        """SELECT p.stock_code, p.shares, p.custom_dividend_per_share,
+        """SELECT p.stock_code, p.shares, p.cost_price, p.custom_dividend_per_share,
                   s.name, s.market, s.industry
            FROM portfolio_positions p
            JOIN stocks s ON s.code = p.stock_code
@@ -1581,6 +1626,8 @@ def api_portfolio_position_get(code):
         "market": r["market"],
         "industry": r.get("industry"),
         "shares": shares,
+        "cost_price": round(float(r["cost_price"]), 4) if r.get("cost_price") is not None else None,
+        "cost_price_currency": _currency_for_market(r.get("market")),
         "custom_dividend_per_share": round(custom_dividend, 4) if custom_dividend is not None else None,
         "auto_dividend_per_share": round(auto_dividend, 4) if auto_dividend is not None else None,
         "dividend_per_share": round(dividend_per_share, 4) if dividend_per_share is not None else None,

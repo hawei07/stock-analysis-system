@@ -41,6 +41,11 @@
       <div class="sub" id="totalValueSub">统一折算为人民币，取不到价格时不计入</div>
     </div>
     <div class="summary-card">
+      <div class="label">持仓盈亏</div>
+      <div class="value" id="portfolioProfit">--</div>
+      <div class="sub" id="portfolioProfitPct">按录入成本价计算</div>
+    </div>
+    <div class="summary-card">
       <div class="label">当年预期分红</div>
       <div class="value" id="expectedDividend">--</div>
       <div class="sub">按最新每股分红 x 当前股数估算</div>
@@ -74,6 +79,10 @@
           <label>股数</label>
           <input id="sharesInput" type="number" min="0" step="1" placeholder="例如 100">
         </div>
+        <div class="field">
+          <label>成本价</label>
+          <input id="costPriceInput" type="number" min="0" step="0.0001" placeholder="每股成本">
+        </div>
         <button class="btn btn-primary" onclick="savePosition()">保存持仓</button>
         <div class="field">
           <label>现金金额</label>
@@ -96,8 +105,11 @@
             <th>代码</th>
             <th>名称</th>
             <th class="num">股数</th>
+            <th class="num">成本价</th>
             <th class="num">最新价</th>
+            <th class="num">持仓成本</th>
             <th class="num">市值</th>
+            <th class="num">持仓盈亏</th>
             <th class="num">占比</th>
             <th class="num">每股分红</th>
             <th class="num">预期分红</th>
@@ -360,6 +372,19 @@ function privateMoney(v) {
   return amountPrivacyMode ? maskedMoney() : money(v);
 }
 
+function signedPrivateMoney(v) {
+  if (v == null || Number.isNaN(Number(v))) return '--';
+  if (amountPrivacyMode) return maskedMoney();
+  const n = Number(v);
+  return (n > 0 ? '+' : '') + money(n);
+}
+
+function profitClass(v) {
+  const n = Number(v);
+  if (Number.isNaN(n) || n === 0) return '';
+  return n > 0 ? 'profit-positive' : 'profit-negative';
+}
+
 function updateAmountPrivacyButton() {
   const btn = document.getElementById('amountPrivacyToggle');
   if (btn) {
@@ -414,6 +439,12 @@ function renderSummary(summary) {
   document.getElementById('totalValueSub').textContent = hkdRate?.rate
     ? `统一折算为人民币；HKD→CNY ${Number(hkdRate.rate).toFixed(4)}（${hkdRate.date || '最新'}）`
     : '统一折算为人民币，取不到价格时不计入';
+  const profit = summary.unrealized_profit;
+  const profitPct = summary.unrealized_profit_pct;
+  const profitEl = document.getElementById('portfolioProfit');
+  profitEl.textContent = signedPrivateMoney(profit);
+  profitEl.className = 'value ' + profitClass(profit);
+  document.getElementById('portfolioProfitPct').textContent = profitPct == null ? '按录入成本价计算' : `${Number(profitPct).toFixed(2)}% · 成本 ${privateMoney(summary.total_cost_value)}`;
   const cashInput = document.getElementById('cashInput');
   if (cashInput) cashInput.value = cash ? cash.toFixed(2) : '';
   document.getElementById('expectedDividend').textContent = money(dividend);
@@ -429,12 +460,23 @@ function renderPositions(rows) {
       <td><span class="code">${esc(r.code)}</span></td>
       <td><a class="name-link" href="/stock/${esc(r.code)}">${esc(r.name)}</a></td>
       <td class="num">${plain(r.shares)}</td>
+      <td class="num">${r.cost_price == null ? '--' : plain(r.cost_price)} ${r.cost_price_currency || ''}</td>
       <td class="num">${money(r.price)} ${r.price_currency || ''}</td>
+      <td class="num">
+        ${money(r.cost_value)} CNY
+        ${r.original_cost_value_currency && r.original_cost_value_currency !== 'CNY'
+          ? `<div class="dividend-meta">${money(r.original_cost_value)} ${r.original_cost_value_currency} × ${r.fx_rate_to_cny == null ? '--' : Number(r.fx_rate_to_cny).toFixed(4)}</div>`
+          : ''}
+      </td>
       <td class="num">
         ${money(r.market_value)} CNY
         ${r.original_market_value_currency && r.original_market_value_currency !== 'CNY'
           ? `<div class="dividend-meta">${money(r.original_market_value)} ${r.original_market_value_currency} × ${r.fx_rate_to_cny == null ? '--' : Number(r.fx_rate_to_cny).toFixed(4)}</div>`
           : ''}
+      </td>
+      <td class="num ${profitClass(r.unrealized_profit)}">
+        ${signedPrivateMoney(r.unrealized_profit)}
+        <div class="dividend-meta">${r.unrealized_profit_pct == null ? '--' : (Number(r.unrealized_profit_pct) > 0 ? '+' : '') + Number(r.unrealized_profit_pct).toFixed(2) + '%'}</div>
       </td>
       <td class="num">${r.allocation_pct == null ? '--' : Number(r.allocation_pct).toFixed(2) + '%'}</td>
       <td class="num">
@@ -449,34 +491,37 @@ function renderPositions(rows) {
       </td>
       <td class="num">${money(r.expected_dividend)}</td>
       <td>
-        <button class="btn btn-outline btn-sm" onclick="editPosition('${esc(r.code)}', ${Number(r.shares)})">编辑</button>
+        <button class="btn btn-outline btn-sm" onclick="editPosition('${esc(r.code)}', ${Number(r.shares)}, ${r.cost_price == null ? 'null' : Number(r.cost_price)})">编辑</button>
         <button class="btn btn-danger btn-sm" onclick="deletePosition('${esc(r.code)}')">删除</button>
       </td>
     </tr>
   `).join('');
 }
 
-function editPosition(code, shares) {
+function editPosition(code, shares, costPrice = null) {
   document.getElementById('codeInput').value = code;
   document.getElementById('sharesInput').value = shares;
-  document.getElementById('sharesInput').focus();
+  document.getElementById('costPriceInput').value = costPrice == null ? '' : costPrice;
+  document.getElementById('costPriceInput').focus();
 }
 
 async function savePosition() {
   const identifier = document.getElementById('codeInput').value.trim();
   const shares = document.getElementById('sharesInput').value;
+  const costPrice = document.getElementById('costPriceInput').value;
   try {
     const code = await resolveStockCode(identifier);
     const res = await fetch('/api/portfolio/positions', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({code, shares})
+      body: JSON.stringify({code, shares, cost_price: costPrice})
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || '保存失败');
     latestPortfolioData = data;
     document.getElementById('codeInput').value = '';
     document.getElementById('sharesInput').value = '';
+    document.getElementById('costPriceInput').value = '';
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     await loadNav();
