@@ -276,7 +276,7 @@ function renderDividendsChart(data) {
         barMaxWidth: 40,
         itemStyle: { color: '#4a6cf7', borderRadius: [4, 4, 0, 0] },
         label: {
-          show: showLabel,
+          show: true,
           position: 'top',
           fontSize: 11,
           formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
@@ -290,7 +290,7 @@ function renderDividendsChart(data) {
         barMaxWidth: 40,
         itemStyle: { color: '#52c41a', borderRadius: [4, 4, 0, 0] },
         label: {
-          show: showLabel,
+          show: true,
           position: 'top',
           fontSize: 11,
           formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
