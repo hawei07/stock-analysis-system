@@ -2089,19 +2089,23 @@ async function openIncomeSankey(key) {
   const residual = incomeOperatingAdjustmentResidual(row);
   const residualValue = Math.abs(residual);
   const hasResidual = residualValue > Math.max(operatingProfit * 0.001, 0.01);
+  let residualNode = null;
+  let residualColor = null;
+  if (hasResidual) {
+    residualColor = residual >= 0 ? amber : green;
+    const residualDepth = residual >= 0 ? 3 : 4;
+    residualNode = addNode('其他营业利润调整项', residualValue, incomeOperatingAdjustmentResidual, residualColor, residualDepth);
+    if (residual >= 0) positiveOperatingAdjustmentLinks.push([residualNode, opNode, residualValue, residualColor]);
+  }
+  positiveOperatingAdjustmentLinks.forEach(link => addLink(link[0], link[1], link[2], link[3], 0.08));
   if (coreProfit >= 0) {
     const coreToOperatingProfit = Math.max(coreProfitValue - (hasResidual && residual < 0 ? residualValue : 0), 0);
     addLink(coreNode, opNode, coreToOperatingProfit, red);
   } else {
     addLink(coreNode, opNode, coreProfitValue, green);
   }
-  positiveOperatingAdjustmentLinks.forEach(link => addLink(link[0], link[1], link[2], link[3], 0.18));
-  if (hasResidual) {
-    const residualColor = residual >= 0 ? amber : green;
-    const residualDepth = residual >= 0 ? 3 : 4;
-    const residualNode = addNode('其他营业利润调整项', residualValue, incomeOperatingAdjustmentResidual, residualColor, residualDepth);
-    if (residual >= 0) addLink(residualNode, opNode, residualValue, residualColor, 0.18);
-    else addLink(coreNode, residualNode, residualValue, residualColor);
+  if (hasResidual && residual < 0) {
+    addLink(coreNode, residualNode, residualValue, residualColor);
   }
 
   const periodNode = addNode('期间费用', periodExpense, incomePeriodExpenseValue, green, 3);
