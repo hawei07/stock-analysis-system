@@ -165,6 +165,42 @@
     </div>
     <div class="chart-box" id="navChart"></div>
   </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">净值明细</div>
+      <div class="form-row nav-history-toolbar">
+        <div class="field">
+          <label>开始日期</label>
+          <input id="navFromDate" type="date" onchange="applyNavHistoryFilter()">
+        </div>
+        <div class="field">
+          <label>结束日期</label>
+          <input id="navToDate" type="date" onchange="applyNavHistoryFilter()">
+        </div>
+        <button class="btn btn-outline btn-sm" type="button" onclick="resetNavHistoryFilter()">重置</button>
+        <button class="btn btn-primary btn-sm" type="button" onclick="exportNavHistoryExcel()">导出 Excel</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th class="num">净值</th>
+            <th class="num">总市值</th>
+            <th class="num">仓位</th>
+          </tr>
+        </thead>
+        <tbody id="navHistoryBody"></tbody>
+      </table>
+      <div class="empty" id="navHistoryEmpty" style="display:none">暂无净值明细</div>
+    </div>
+    <div class="nav-history-footer">
+      <div class="nav-history-total" id="navHistoryTotal">共 0 条</div>
+      <div class="nav-history-pagination" id="navHistoryPagination"></div>
+    </div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="flowModalOverlay" onclick="if(event.target===this)closeFlowModal()">
@@ -196,6 +232,9 @@ let navChart = null;
 let allocationChart = null;
 let latestPortfolioData = {positions: [], summary: {}};
 let amountPrivacyMode = localStorage.getItem('portfolioAmountPrivacy') === 'hidden';
+let navHistoryRows = [];
+let navHistoryPage = 1;
+const NAV_HISTORY_PAGE_SIZE = 20;
 
 window.onThemeChanged = function() {
   if (allocationChart) {
@@ -627,6 +666,8 @@ async function loadNav(live = false) {
   const res = await fetch('/api/portfolio/nav' + (live ? '?live=1' : ''));
   const rows = await res.json();
   renderNav(rows || []);
+  navHistoryRows = Array.isArray(rows) ? rows : [];
+  renderNavHistoryTable();
 }
 
 function renderNav(rows) {
@@ -673,6 +714,134 @@ function renderNav(rows) {
       }
     ]
   });
+}
+
+function navPositionPct(row) {
+  const totalAsset = Number(row.total_asset_value || row.total_market_value || 0);
+  const stockMarketValue = Number(row.stock_market_value || row.total_market_value || 0);
+  if (!totalAsset || totalAsset <= 0) return null;
+  return stockMarketValue / totalAsset * 100;
+}
+
+function navHistoryFilteredRows() {
+  const from = document.getElementById('navFromDate')?.value || '';
+  const to = document.getElementById('navToDate')?.value || '';
+  return navHistoryRows
+    .filter(row => {
+      const date = String(row.date || '');
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    })
+    .slice()
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+function renderNavHistoryTable() {
+  const body = document.getElementById('navHistoryBody');
+  const empty = document.getElementById('navHistoryEmpty');
+  const totalEl = document.getElementById('navHistoryTotal');
+  const pagination = document.getElementById('navHistoryPagination');
+  if (!body || !empty || !totalEl || !pagination) return;
+
+  const filtered = navHistoryFilteredRows();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / NAV_HISTORY_PAGE_SIZE));
+  if (navHistoryPage > totalPages) navHistoryPage = totalPages;
+  const start = (navHistoryPage - 1) * NAV_HISTORY_PAGE_SIZE;
+  const pageRows = filtered.slice(start, start + NAV_HISTORY_PAGE_SIZE);
+
+  empty.style.display = filtered.length ? 'none' : 'block';
+  body.innerHTML = pageRows.map(row => {
+    const positionPct = navPositionPct(row);
+    const totalValue = row.total_asset_value != null ? row.total_asset_value : row.total_market_value;
+    return `<tr>
+      <td>${esc(String(row.date || ''))}</td>
+      <td class="num">${row.nav_index == null ? '--' : Number(row.nav_index).toFixed(4)}</td>
+      <td class="num">${money(totalValue)}</td>
+      <td class="num">${positionPct == null ? '--' : positionPct.toFixed(2) + '%'}</td>
+    </tr>`;
+  }).join('');
+
+  totalEl.textContent = '共 ' + filtered.length + ' 条';
+  pagination.innerHTML = renderNavHistoryPagination(totalPages);
+}
+
+function renderNavHistoryPagination(totalPages) {
+  const disabledPrev = navHistoryPage <= 1 ? ' disabled' : '';
+  const disabledNext = navHistoryPage >= totalPages ? ' disabled' : '';
+  const pages = [];
+  const start = Math.max(1, navHistoryPage - 2);
+  const end = Math.min(totalPages, navHistoryPage + 2);
+  for (let page = start; page <= end; page++) {
+    pages.push(`<button class="page-btn${page === navHistoryPage ? ' active' : ''}" type="button" onclick="setNavHistoryPage(${page})">${page}</button>`);
+  }
+  return `
+    <button class="page-btn"${disabledPrev} type="button" onclick="setNavHistoryPage(${navHistoryPage - 1})">上一页</button>
+    ${start > 1 ? '<span class="page-ellipsis">...</span>' : ''}
+    ${pages.join('')}
+    ${end < totalPages ? '<span class="page-ellipsis">...</span>' : ''}
+    <button class="page-btn"${disabledNext} type="button" onclick="setNavHistoryPage(${navHistoryPage + 1})">下一页</button>
+  `;
+}
+
+function setNavHistoryPage(page) {
+  const filtered = navHistoryFilteredRows();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / NAV_HISTORY_PAGE_SIZE));
+  navHistoryPage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  renderNavHistoryTable();
+}
+
+function applyNavHistoryFilter() {
+  navHistoryPage = 1;
+  renderNavHistoryTable();
+}
+
+function resetNavHistoryFilter() {
+  const from = document.getElementById('navFromDate');
+  const to = document.getElementById('navToDate');
+  if (from) from.value = '';
+  if (to) to.value = '';
+  applyNavHistoryFilter();
+}
+
+function excelCell(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function exportNavHistoryExcel() {
+  const rows = navHistoryFilteredRows();
+  if (!rows.length) {
+    showToast('没有可导出的净值明细', 'error');
+    return;
+  }
+  const bodyRows = rows.map(row => {
+    const positionPct = navPositionPct(row);
+    const totalValue = row.total_asset_value != null ? row.total_asset_value : row.total_market_value;
+    return `<tr>
+      <td>${excelCell(row.date)}</td>
+      <td>${row.nav_index == null ? '' : Number(row.nav_index).toFixed(4)}</td>
+      <td>${totalValue == null ? '' : Number(totalValue).toFixed(2)}</td>
+      <td>${positionPct == null ? '' : positionPct.toFixed(2) + '%'}</td>
+    </tr>`;
+  }).join('');
+  const html = `<!doctype html><html><head><meta charset="UTF-8"></head><body>
+    <table border="1">
+      <thead><tr><th>日期</th><th>净值</th><th>总市值</th><th>仓位</th></tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </body></html>`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const from = document.getElementById('navFromDate')?.value || '全部';
+  const to = document.getElementById('navToDate')?.value || '全部';
+  a.href = url;
+  a.download = `净值明细_${from}_${to}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('净值明细已导出', 'success');
 }
 
 window.addEventListener('resize', () => {
