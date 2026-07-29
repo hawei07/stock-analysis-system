@@ -565,6 +565,14 @@ function shareholderChangeHtml(holder) {
   return '';
 }
 
+function scrollShareholdersToLatest() {
+  const wrap = document.getElementById('shareholderGridWrap');
+  if (!wrap) return;
+  requestAnimationFrame(() => {
+    wrap.scrollLeft = wrap.scrollWidth;
+  });
+}
+
 function renderShareholders() {
   const wrap = document.getElementById('shareholderGridWrap');
   if (!wrap) return;
@@ -627,6 +635,7 @@ function renderShareholders() {
     </thead>
     <tbody>${bodyRows.join('')}</tbody>
   </table>`;
+  scrollShareholdersToLatest();
 }
 
 // ==================== 互动易 ====================
