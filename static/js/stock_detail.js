@@ -290,12 +290,10 @@ function renderDividendsChart(data) {
         barMaxWidth: 40,
         itemStyle: { color: '#52c41a', borderRadius: [4, 4, 0, 0] },
         label: {
-          show: true,
+          show: showLabel,
           position: 'top',
           fontSize: 11,
-          color: '#d46b08',
-          fontWeight: 600,
-          formatter: p => payoutRatios[p.dataIndex] !== null ? payoutRatios[p.dataIndex] + '%' : ''
+          formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
         }
       },
       {
@@ -308,7 +306,7 @@ function renderDividendsChart(data) {
         symbol: 'circle',
         symbolSize: 6,
         label: {
-          show: false,
+          show: true,
           position: 'top',
           fontSize: 10,
           color: '#fa8c16',
