@@ -245,7 +245,7 @@ function renderDividendsChart(data) {
     grid: {
       left: 60,
       right: 80,
-      top: 50,
+      top: 60,
       bottom: data.length > 15 ? 50 : 40
     },
     xAxis: {
@@ -290,10 +290,12 @@ function renderDividendsChart(data) {
         barMaxWidth: 40,
         itemStyle: { color: '#52c41a', borderRadius: [4, 4, 0, 0] },
         label: {
-          show: showLabel,
+          show: true,
           position: 'top',
           fontSize: 11,
-          formatter: p => p.value >= 100 ? p.value.toFixed(0) : p.value.toFixed(2)
+          color: '#d46b08',
+          fontWeight: 600,
+          formatter: p => payoutRatios[p.dataIndex] !== null ? payoutRatios[p.dataIndex] + '%' : ''
         }
       },
       {
@@ -306,7 +308,7 @@ function renderDividendsChart(data) {
         symbol: 'circle',
         symbolSize: 6,
         label: {
-          show: showLabel,
+          show: false,
           position: 'top',
           fontSize: 10,
           color: '#fa8c16',
