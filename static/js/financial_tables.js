@@ -2077,13 +2077,8 @@ async function openIncomeSankey(key) {
     const signedValue = def[3] ? -Math.abs(raw) : raw;
     const value = Math.abs(signedValue);
     const node = addNode(def[0], value, def[1], def[2], 3);
-    if (signedValue >= 0) positiveOperatingAdjustmentLinks.push([node, opNode, value, def[2]]);
+    if (signedValue >= 0) positiveOperatingAdjustmentLinks.push([node, value, def[2]]);
     else addLink(opNode, node, value, def[2]);
-  }
-
-  const coreNode = addNode('核心利润', coreProfitValue, incomeCoreProfitValue, coreProfitColor, 3);
-  if (coreProfit >= 0) {
-    addLink(grossNode, coreNode, coreProfitValue, red);
   }
 
   const residual = incomeOperatingAdjustmentResidual(row);
@@ -2095,9 +2090,19 @@ async function openIncomeSankey(key) {
     residualColor = residual >= 0 ? amber : green;
     const residualDepth = residual >= 0 ? 3 : 4;
     residualNode = addNode('其他营业利润调整项', residualValue, incomeOperatingAdjustmentResidual, residualColor, residualDepth);
-    if (residual >= 0) positiveOperatingAdjustmentLinks.push([residualNode, opNode, residualValue, residualColor]);
+    if (residual >= 0) positiveOperatingAdjustmentLinks.push([residualNode, residualValue, residualColor]);
   }
-  positiveOperatingAdjustmentLinks.forEach(link => addLink(link[0], link[1], link[2], link[3], 0.08));
+  const positiveAdjustmentTotal = positiveOperatingAdjustmentLinks.reduce((sum, link) => sum + link[1], 0);
+  if (positiveAdjustmentTotal > 0) {
+    const adjustmentGroupNode = addNode('营业利润调整项', positiveAdjustmentTotal, null, amber, 3);
+    positiveOperatingAdjustmentLinks.forEach(link => addLink(link[0], adjustmentGroupNode, link[1], link[2], 0.08));
+    addLink(adjustmentGroupNode, opNode, positiveAdjustmentTotal, amber, 0.08);
+  }
+
+  const coreNode = addNode('核心利润', coreProfitValue, incomeCoreProfitValue, coreProfitColor, 3);
+  if (coreProfit >= 0) {
+    addLink(grossNode, coreNode, coreProfitValue, red);
+  }
   if (coreProfit >= 0) {
     const coreToOperatingProfit = Math.max(coreProfitValue - (hasResidual && residual < 0 ? residualValue : 0), 0);
     addLink(coreNode, opNode, coreToOperatingProfit, red);
