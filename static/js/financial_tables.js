@@ -2071,12 +2071,13 @@ async function openIncomeSankey(key) {
     ['资产减值损失', 'asset_impairment_loss', green, true],
     ['资产处置收益', 'asset_disposal_income', amber, false],
   ];
+  const positiveOperatingAdjustmentLinks = [];
   for (const def of adjustmentDefs) {
     const raw = incomeValue(row, def[1]);
     const signedValue = def[3] ? -Math.abs(raw) : raw;
     const value = Math.abs(signedValue);
     const node = addNode(def[0], value, def[1], def[2], 3);
-    if (signedValue >= 0) addLink(node, opNode, value, def[2]);
+    if (signedValue >= 0) positiveOperatingAdjustmentLinks.push([node, opNode, value, def[2]]);
     else addLink(opNode, node, value, def[2]);
   }
 
@@ -2094,11 +2095,12 @@ async function openIncomeSankey(key) {
   } else {
     addLink(coreNode, opNode, coreProfitValue, green);
   }
+  positiveOperatingAdjustmentLinks.forEach(link => addLink(link[0], link[1], link[2], link[3], 0.18));
   if (hasResidual) {
     const residualColor = residual >= 0 ? amber : green;
     const residualDepth = residual >= 0 ? 3 : 4;
     const residualNode = addNode('其他营业利润调整项', residualValue, incomeOperatingAdjustmentResidual, residualColor, residualDepth);
-    if (residual >= 0) addLink(residualNode, opNode, residualValue, residualColor);
+    if (residual >= 0) addLink(residualNode, opNode, residualValue, residualColor, 0.18);
     else addLink(coreNode, residualNode, residualValue, residualColor);
   }
 
