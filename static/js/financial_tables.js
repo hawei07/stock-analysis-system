@@ -1825,15 +1825,16 @@ function incomeGrossValue(row) {
 }
 
 function incomeCoreProfitValue(row) {
-  return Math.max(
-    incomeGrossValue(row) - incomePeriodExpenseValue(row) - positiveIncomeValue(row, 'tax_surcharge'),
-    0
-  );
+  return incomeCoreProfitRawValue(row);
+}
+
+function incomeCoreProfitRawValue(row) {
+  return incomeGrossValue(row) - incomePeriodExpenseValue(row) - positiveIncomeValue(row, 'tax_surcharge');
 }
 
 function enrichIncomeDerivedFields(row) {
   if (!row) return row;
-  const coreProfit = incomeCoreProfitValue(row);
+  const coreProfit = incomeCoreProfitRawValue(row);
   const revenue = incomeRevenueValue(row);
   row.sankey_core_profit = coreProfit;
   row.sankey_core_profit_rate = revenue > 0 ? coreProfit / revenue * 100 : null;
@@ -1858,7 +1859,7 @@ function incomeOperatingSignedAdjustmentSum(row) {
 }
 
 function incomeOperatingAdjustmentResidual(row) {
-  return incomeValue(row, 'operating_profit') - incomeCoreProfitValue(row) - incomeOperatingSignedAdjustmentSum(row);
+  return incomeValue(row, 'operating_profit') - incomeCoreProfitRawValue(row) - incomeOperatingSignedAdjustmentSum(row);
 }
 
 function incomeParentProfitValue(row) {
@@ -1969,7 +1970,9 @@ async function openIncomeSankey(key) {
   const gross = incomeGrossValue(row);
   const periodExpense = incomePeriodExpenseValue(row);
   const taxSurcharge = positiveIncomeValue(row, 'tax_surcharge');
-  const coreProfit = incomeCoreProfitValue(row);
+  const coreProfit = incomeCoreProfitRawValue(row);
+  const coreProfitValue = Math.abs(coreProfit);
+  const coreProfitColor = coreProfit >= 0 ? red : green;
   const operatingProfit = positiveIncomeValue(row, 'operating_profit');
   const netProfit = positiveIncomeValue(row, 'net_profit');
   const parentProfit = Math.max(incomeParentProfitValue(row), 0);
@@ -2029,14 +2032,20 @@ async function openIncomeSankey(key) {
     else addLink(opNode, node, value, def[2]);
   }
 
-  const coreNode = addNode('核心利润', coreProfit, incomeCoreProfitValue, red, 3);
-  addLink(grossNode, coreNode, coreProfit, red);
+  const coreNode = addNode('核心利润', coreProfitValue, incomeCoreProfitValue, coreProfitColor, 3);
+  if (coreProfit >= 0) {
+    addLink(grossNode, coreNode, coreProfitValue, red);
+  }
 
   const residual = incomeOperatingAdjustmentResidual(row);
   const residualValue = Math.abs(residual);
   const hasResidual = residualValue > Math.max(operatingProfit * 0.001, 0.01);
-  const coreToOperatingProfit = Math.max(coreProfit - (hasResidual && residual < 0 ? residualValue : 0), 0);
-  addLink(coreNode, opNode, coreToOperatingProfit, red);
+  if (coreProfit >= 0) {
+    const coreToOperatingProfit = Math.max(coreProfitValue - (hasResidual && residual < 0 ? residualValue : 0), 0);
+    addLink(coreNode, opNode, coreToOperatingProfit, red);
+  } else {
+    addLink(coreNode, opNode, coreProfitValue, green);
+  }
   if (hasResidual) {
     const residualColor = residual >= 0 ? amber : green;
     const residualDepth = residual >= 0 ? 3 : 4;
