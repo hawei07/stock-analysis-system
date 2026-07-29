@@ -1182,6 +1182,7 @@ function bsGroupItems(row, defs, total, remainderName) {
 
 function prepareChartModalBox() {
   const dom = document.getElementById('chartModalBox');
+  setChartModalControls('');
   if (window._chartModalInstances) {
     window._chartModalInstances.forEach(chart => {
       if (chart) chart.dispose();
@@ -1198,6 +1199,49 @@ function prepareChartModalBox() {
   dom.classList.remove('bs-composition-box');
   dom.classList.remove('income-sankey-box');
   return dom;
+}
+
+function setChartModalControls(html) {
+  const controls = document.getElementById('chartModalControls');
+  if (!controls) return;
+  controls.innerHTML = html || '';
+  controls.style.display = html ? 'flex' : 'none';
+}
+
+function incomeSankeySortedKeys() {
+  const keys = window._incKeys || [];
+  return [...keys].sort(sortFiscalKeysAsc);
+}
+
+function renderIncomeSankeyPeriodControls(activeKey) {
+  const keys = incomeSankeySortedKeys();
+  if (!keys.length) {
+    setChartModalControls('');
+    return;
+  }
+  const index = keys.indexOf(activeKey);
+  const options = keys.map(key => `<option value="${esc(key)}"${key === activeKey ? ' selected' : ''}>${esc(bsPeriodLabel(key))}</option>`).join('');
+  setChartModalControls(`
+    <button class="period-btn" type="button" onclick="stepIncomeSankeyPeriod(-1)"${index <= 0 ? ' disabled' : ''}>上一期</button>
+    <select id="incomeSankeyPeriodSelect" data-active-key="${esc(activeKey)}" onchange="switchIncomeSankeyPeriod(this.value)">
+      ${options}
+    </select>
+    <button class="period-btn" type="button" onclick="stepIncomeSankeyPeriod(1)"${index < 0 || index >= keys.length - 1 ? ' disabled' : ''}>下一期</button>
+  `);
+}
+
+function switchIncomeSankeyPeriod(key) {
+  if (key) openIncomeSankey(key);
+}
+
+function stepIncomeSankeyPeriod(delta) {
+  const select = document.getElementById('incomeSankeyPeriodSelect');
+  const activeKey = select?.dataset.activeKey || select?.value;
+  const keys = incomeSankeySortedKeys();
+  const index = keys.indexOf(activeKey);
+  if (index < 0) return;
+  const nextKey = keys[index + delta];
+  if (nextKey) openIncomeSankey(nextKey);
 }
 
 function bsSafeTotal(row, preferredField, fallbackTotal) {
@@ -2098,6 +2142,7 @@ async function openIncomeSankey(key) {
   document.getElementById('chartModalOverlay').classList.add('active');
 
   const dom = prepareChartModalBox();
+  renderIncomeSankeyPeriodControls(key);
   dom.classList.add('income-sankey-box');
   const chart = echarts.init(dom);
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -2374,6 +2419,7 @@ function isQuarterlyChart(labels) {
 
 function closeIndicatorChart() {
   document.getElementById('chartModalOverlay').classList.remove('active');
+  setChartModalControls('');
   if (window._chartModalInstances) {
     window._chartModalInstances.forEach(chart => {
       if (chart) chart.dispose();
