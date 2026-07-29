@@ -3419,12 +3419,13 @@ def api_update_dividends():
     """从东方财富和新浪财经更新股票的分红和净利润数据
     mode: full=全量更新, incremental=增量更新(仅更新有缺失的年份)
     """
-    mode = request.get_json(silent=True).get("mode", "full") if request.is_json else "full"
+    payload = request.get_json(silent=True) if request.is_json else {}
+    mode = payload.get("mode", "full") if request.is_json else "full"
     if request.args.get("mode"):
         mode = request.args["mode"]
 
     try:
-        stocks = execute_query("SELECT code, name, market FROM stocks WHERE status='正常'")
+        stocks = _get_update_stocks(payload, include_name_market=True)
         updated_count = 0
         errors = []
 
@@ -3593,15 +3594,27 @@ def _ensure_financials_columns():
             pass  # 列已存在则忽略
 
 
+def _get_update_stocks(payload=None, include_name_market=False):
+    """Return all active stocks, or one explicit stock when code is provided."""
+    payload = payload or {}
+    code = (payload.get("code") or request.args.get("code") or "").strip()
+    columns = "code, name, market" if include_name_market else "code"
+    if code:
+        code = _normalize_stock_code(code)
+        return execute_query(f"SELECT {columns} FROM stocks WHERE code=%s", (code,))
+    return execute_query(f"SELECT {columns} FROM stocks WHERE status='正常'")
+
+
 @app.route("/api/update-financials", methods=["POST"])
 def api_update_financials():
     """从东方财富拉取财务数据并存入 custom_financials 表
     mode: full=全量拉取, incremental=增量拉取(仅更新无数据的记录)
     支持年报+季报（全部报告类型）。
     """
+    payload = request.get_json(silent=True) if request.is_json else {}
     mode = "full"
     if request.is_json:
-        mode = request.get_json(silent=True).get("mode", "full")
+        mode = payload.get("mode", "full")
     if request.args.get("mode"):
         mode = request.args["mode"]
 
@@ -3612,7 +3625,7 @@ def api_update_financials():
     period_map = {"年报": "FY", "三季报": "Q3", "中报": "Q2", "一季报": "Q1"}
 
     try:
-        stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+        stocks = _get_update_stocks(payload)
         updated_count = 0
         stocks_processed = 0
         errors = []
@@ -4050,14 +4063,15 @@ def _parse_sina_bs(html):
 @app.route("/api/update-balance-sheet", methods=["POST"])
 def api_update_balance_sheet():
     """从新浪财经拉取资产负债表数据并存入 balance_sheets 表"""
+    payload = request.get_json(silent=True) if request.is_json else {}
     mode = "full"
     if request.is_json:
-        mode = request.get_json(silent=True).get("mode", "full")
+        mode = payload.get("mode", "full")
     if request.args.get("mode"):
         mode = request.args["mode"]
 
     try:
-        stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+        stocks = _get_update_stocks(payload)
         updated_count = 0
         errors = []
 
@@ -5268,11 +5282,7 @@ def api_stock_segments(code):
 def api_update_segments():
     _ensure_segments_table()
     payload = request.get_json(silent=True) or {}
-    code = (payload.get("code") or request.args.get("code") or "").strip()
-    if code:
-        stocks = [{"code": code}]
-    else:
-        stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+    stocks = _get_update_stocks(payload)
 
     updated = 0
     errors = []
@@ -5342,11 +5352,12 @@ def api_stock_income(code):
 
 @app.route("/api/update-income", methods=["POST"])
 def api_update_income():
-    mode = request.get_json(silent=True).get("mode", "full") if request.is_json else "full"
+    payload = request.get_json(silent=True) if request.is_json else {}
+    mode = payload.get("mode", "full") if request.is_json else "full"
     if request.args.get("mode"):
         mode = request.args["mode"]
 
-    stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+    stocks = _get_update_stocks(payload)
     updated = 0
     errors = []
 
@@ -5410,11 +5421,12 @@ def api_stock_cashflow(code):
 
 @app.route("/api/update-cashflow", methods=["POST"])
 def api_update_cashflow():
-    mode = request.get_json(silent=True).get("mode", "full") if request.is_json else "full"
+    payload = request.get_json(silent=True) if request.is_json else {}
+    mode = payload.get("mode", "full") if request.is_json else "full"
     if request.args.get("mode"):
         mode = request.args["mode"]
 
-    stocks = execute_query("SELECT code FROM stocks WHERE status='正常'")
+    stocks = _get_update_stocks(payload)
     updated = 0
     errors = []
 
