@@ -1759,8 +1759,8 @@ def api_portfolio_add_trade():
         if shares > old_shares:
             return jsonify({"error": f"卖出股数不能超过当前持仓 {old_shares:g} 股"}), 400
         new_shares = old_shares - shares
-        new_cost = old_cost if new_shares > 0 else None
         realized_profit = (price - old_cost) * shares if old_cost is not None else None
+        new_cost = ((old_shares * old_cost) - amount) / new_shares if new_shares > 0 and old_cost is not None else None
         if new_shares > 0:
             execute_query(
                 "UPDATE portfolio_positions SET shares=%s, cost_price=%s, updated_at=CURRENT_TIMESTAMP WHERE stock_code=%s",

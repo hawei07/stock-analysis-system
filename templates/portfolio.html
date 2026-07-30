@@ -590,7 +590,7 @@ function updateTradeModalMode() {
   document.getElementById('tradeModalTitle').textContent = isSell ? '卖出' : '买入';
   if (isSell && row.shares != null) {
     sharesInput.max = Number(row.shares);
-    document.getElementById('tradeHint').textContent = `最多可卖出 ${plain(row.shares)} 股`;
+    document.getElementById('tradeHint').textContent = `最多可卖出 ${plain(row.shares)} 股；卖出会按摊薄成本口径重算剩余成本价`;
   } else {
     sharesInput.removeAttribute('max');
     document.getElementById('tradeHint').textContent = isSell
