@@ -469,6 +469,7 @@ AUTO_CLOUD_BACKUP_ENDPOINTS = {
     "api_portfolio_update_cash": "portfolio-cash-update",
     "api_portfolio_update_fee_config": "portfolio-fee-config-update",
     "api_portfolio_add_trade": "portfolio-trade-add",
+    "api_portfolio_add_corporate_action": "portfolio-action-add",
     "api_portfolio_add_flow": "portfolio-flow-add",
     "api_portfolio_delete_flow": "portfolio-flow-delete",
     "api_portfolio_snapshot": "portfolio-snapshot",
@@ -1328,6 +1329,28 @@ def _ensure_portfolio_tables():
         fetch=False,
     )
     execute_query(
+        """CREATE TABLE IF NOT EXISTS portfolio_corporate_actions (
+            id INT NOT NULL AUTO_INCREMENT,
+            action_date DATE NOT NULL,
+            stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+            action_type VARCHAR(20) NOT NULL,
+            cash_amount DECIMAL(18,2) NOT NULL DEFAULT 0,
+            shares DECIMAL(18,4) NOT NULL DEFAULT 0,
+            price DECIMAL(18,4) NULL,
+            amount DECIMAL(18,2) NOT NULL DEFAULT 0,
+            cash_delta DECIMAL(18,2) NOT NULL DEFAULT 0,
+            shares_before DECIMAL(18,4) NOT NULL DEFAULT 0,
+            shares_after DECIMAL(18,4) NOT NULL DEFAULT 0,
+            cost_price_before DECIMAL(18,4) NULL,
+            cost_price_after DECIMAL(18,4) NULL,
+            note VARCHAR(255) NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_action_stock_date (stock_code, action_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+    execute_query(
         """INSERT IGNORE INTO portfolio_fee_config
            (id, commission_rate, min_commission, stamp_tax_rate, transfer_fee_rate)
            VALUES (1, 0.000250, 5.00, 0.000500, 0.000010)""",
@@ -1490,23 +1513,38 @@ def _calculate_portfolio_trade_fees(amount, trade_type, market, config=None):
 
 
 def _sync_portfolio_cost_basis_from_trades():
-    rows = execute_query(
+    trade_rows = execute_query(
         """SELECT id, stock_code, trade_date, trade_type, shares, price, amount,
                   commission, stamp_tax, transfer_fee, total_fee, cash_delta,
                   shares_before, shares_after, cost_price_before, cost_price_after, realized_profit
            FROM portfolio_trades
            ORDER BY stock_code, trade_date, id"""
     )
-    if not rows:
+    action_rows = execute_query(
+        """SELECT id, action_date, stock_code, action_type, cash_amount, shares, price, amount, cash_delta,
+                  shares_before, shares_after, cost_price_before, cost_price_after, note
+           FROM portfolio_corporate_actions
+           ORDER BY stock_code, action_date, id"""
+    )
+    if not trade_rows and not action_rows:
         return False
 
     changed = False
     grouped = {}
-    for row in rows:
-        grouped.setdefault(row["stock_code"], []).append(row)
+    for row in trade_rows:
+        item = dict(row)
+        item["_kind"] = "trade"
+        item["_date"] = row["trade_date"]
+        grouped.setdefault(row["stock_code"], []).append(item)
+    for row in action_rows:
+        item = dict(row)
+        item["_kind"] = "action"
+        item["_date"] = row["action_date"]
+        grouped.setdefault(row["stock_code"], []).append(item)
 
-    for code, trades in grouped.items():
-        first = trades[0]
+    for code, items in grouped.items():
+        items.sort(key=lambda item: (item["_date"], 0 if item["_kind"] == "trade" else 1, item["id"]))
+        first = items[0]
         shares = _decimal_value(first.get("shares_before"))
         cost = _decimal_value(first.get("cost_price_before")) if first.get("cost_price_before") is not None else None
         if cost is None and shares == 0:
@@ -1514,53 +1552,102 @@ def _sync_portfolio_cost_basis_from_trades():
         if cost is None:
             continue
 
-        for trade in trades:
-            trade_shares = _decimal_value(trade["shares"])
-            price = _decimal_value(trade["price"])
-            amount = _decimal_value(trade["amount"])
-            total_fee = _decimal_value(trade.get("total_fee"))
-            cash_delta = _decimal_value(trade.get("cash_delta")) if trade.get("cash_delta") is not None else None
+        for item in items:
             before_shares = shares
             before_cost = cost if before_shares > 0 else None
             realized_profit = None
+            next_cash_delta = Decimal("0.00")
 
-            if trade["trade_type"] == "buy":
-                buy_cost = amount + total_fee
-                shares = before_shares + trade_shares
-                cost = ((before_shares * cost) + buy_cost) / shares if before_shares > 0 and shares > 0 else buy_cost / trade_shares
-                next_cash_delta = -buy_cost
+            if item["_kind"] == "trade":
+                trade_shares = _decimal_value(item["shares"])
+                price = _decimal_value(item["price"])
+                amount = _decimal_value(item["amount"])
+                total_fee = _decimal_value(item.get("total_fee"))
+                cash_delta = _decimal_value(item.get("cash_delta")) if item.get("cash_delta") is not None else None
+                if item["trade_type"] == "buy":
+                    buy_cost = amount + total_fee
+                    shares = before_shares + trade_shares
+                    cost = ((before_shares * cost) + buy_cost) / shares if before_shares > 0 and shares > 0 else buy_cost / trade_shares
+                    next_cash_delta = -buy_cost
+                else:
+                    if before_cost is None:
+                        break
+                    sell_proceeds = amount - total_fee
+                    realized_profit = sell_proceeds - (before_cost * trade_shares)
+                    shares = before_shares - trade_shares
+                    cost = ((before_shares * before_cost) - sell_proceeds) / shares if shares > 0 else None
+                    next_cash_delta = sell_proceeds
+
+                trade_changed = (
+                    not _decimal_equal(item.get("shares_before"), before_shares)
+                    or not _decimal_equal(item.get("shares_after"), shares)
+                    or not _decimal_equal(item.get("cost_price_before"), before_cost)
+                    or not _decimal_equal(item.get("cost_price_after"), cost)
+                    or not _decimal_equal(item.get("realized_profit"), realized_profit, "0.01")
+                    or not _decimal_equal(cash_delta, next_cash_delta, "0.01")
+                )
+                if trade_changed:
+                    execute_query(
+                        """UPDATE portfolio_trades
+                           SET shares_before=%s, shares_after=%s,
+                               cost_price_before=%s, cost_price_after=%s, realized_profit=%s,
+                               cash_delta=%s
+                           WHERE id=%s""",
+                        (
+                            _quantize(before_shares),
+                            _quantize(shares),
+                            _quantize(before_cost) if before_cost is not None else None,
+                            _quantize(cost) if cost is not None else None,
+                            _quantize(realized_profit, "0.01") if realized_profit is not None else None,
+                            _quantize(next_cash_delta, "0.01"),
+                            item["id"],
+                        ),
+                        fetch=False,
+                    )
+                    changed = True
+                continue
+
+            action_type = item["action_type"]
+            if before_cost is None:
+                break
+            if action_type == "cash_dividend":
+                cash_amount = _decimal_value(item["cash_amount"])
+                shares = before_shares
+                cost = ((before_shares * before_cost) - cash_amount) / shares if shares > 0 else None
+                next_cash_delta = cash_amount
+            elif action_type == "bonus_share":
+                bonus_shares = _decimal_value(item["shares"])
+                shares = before_shares + bonus_shares
+                cost = (before_shares * before_cost) / shares if shares > 0 else None
+            elif action_type == "rights_issue":
+                issue_shares = _decimal_value(item["shares"])
+                amount = _decimal_value(item["amount"])
+                shares = before_shares + issue_shares
+                cost = ((before_shares * before_cost) + amount) / shares if shares > 0 else None
+                next_cash_delta = -amount
             else:
-                if before_cost is None:
-                    break
-                sell_proceeds = amount - total_fee
-                realized_profit = sell_proceeds - (before_cost * trade_shares)
-                shares = before_shares - trade_shares
-                cost = ((before_shares * before_cost) - sell_proceeds) / shares if shares > 0 else None
-                next_cash_delta = sell_proceeds
+                continue
 
-            trade_changed = (
-                not _decimal_equal(trade.get("shares_before"), before_shares)
-                or not _decimal_equal(trade.get("shares_after"), shares)
-                or not _decimal_equal(trade.get("cost_price_before"), before_cost)
-                or not _decimal_equal(trade.get("cost_price_after"), cost)
-                or not _decimal_equal(trade.get("realized_profit"), realized_profit, "0.01")
-                or not _decimal_equal(cash_delta, next_cash_delta, "0.01")
+            action_changed = (
+                not _decimal_equal(item.get("shares_before"), before_shares)
+                or not _decimal_equal(item.get("shares_after"), shares)
+                or not _decimal_equal(item.get("cost_price_before"), before_cost)
+                or not _decimal_equal(item.get("cost_price_after"), cost)
+                or not _decimal_equal(item.get("cash_delta"), next_cash_delta, "0.01")
             )
-            if trade_changed:
+            if action_changed:
                 execute_query(
-                    """UPDATE portfolio_trades
+                    """UPDATE portfolio_corporate_actions
                        SET shares_before=%s, shares_after=%s,
-                           cost_price_before=%s, cost_price_after=%s, realized_profit=%s,
-                           cash_delta=%s
+                           cost_price_before=%s, cost_price_after=%s, cash_delta=%s
                        WHERE id=%s""",
                     (
                         _quantize(before_shares),
                         _quantize(shares),
                         _quantize(before_cost) if before_cost is not None else None,
                         _quantize(cost) if cost is not None else None,
-                        _quantize(realized_profit, "0.01") if realized_profit is not None else None,
                         _quantize(next_cash_delta, "0.01"),
-                        trade["id"],
+                        item["id"],
                     ),
                     fetch=False,
                 )
@@ -1650,6 +1737,31 @@ def _portfolio_trades_payload(limit=100):
         for field in ("shares", "price", "amount", "commission", "stamp_tax", "transfer_fee", "total_fee", "cash_delta", "shares_before", "shares_after"):
             item[field] = float(r[field])
         for field in ("cost_price_before", "cost_price_after", "realized_profit"):
+            item[field] = float(r[field]) if r.get(field) is not None else None
+        result.append(item)
+    return result
+
+
+def _portfolio_actions_payload(limit=100):
+    _ensure_portfolio_tables()
+    rows = execute_query(
+        """SELECT a.id, a.action_date, a.stock_code, s.name, s.market, a.action_type,
+                  a.cash_amount, a.shares, a.price, a.amount, a.cash_delta,
+                  a.shares_before, a.shares_after, a.cost_price_before, a.cost_price_after, a.note
+           FROM portfolio_corporate_actions a
+           JOIN stocks s ON s.code = a.stock_code
+           ORDER BY a.action_date DESC, a.id DESC
+           LIMIT %s""",
+        (limit,),
+    )
+    result = []
+    for r in rows:
+        item = dict(r)
+        item["action_date"] = str(r["action_date"])
+        item["currency"] = _currency_for_market(r.get("market"))
+        for field in ("cash_amount", "shares", "price", "amount", "cash_delta", "shares_before", "shares_after"):
+            item[field] = float(r[field]) if r.get(field) is not None else None
+        for field in ("cost_price_before", "cost_price_after"):
             item[field] = float(r[field]) if r.get(field) is not None else None
         result.append(item)
     return result
@@ -1971,6 +2083,11 @@ def api_portfolio_trades():
     return jsonify(_portfolio_trades_payload())
 
 
+@app.route("/api/portfolio/actions", methods=["GET"])
+def api_portfolio_actions():
+    return jsonify(_portfolio_actions_payload())
+
+
 @app.route("/api/portfolio/trades", methods=["POST"])
 def api_portfolio_add_trade():
     _ensure_portfolio_tables()
@@ -2095,6 +2212,144 @@ def api_portfolio_add_trade():
     )
     state = _save_portfolio_snapshot()
     state["trades"] = _portfolio_trades_payload()
+    state["actions"] = _portfolio_actions_payload()
+    state["flows"] = _portfolio_flows_payload()
+    return jsonify({"ok": True, **state})
+
+
+@app.route("/api/portfolio/actions", methods=["POST"])
+def api_portfolio_add_corporate_action():
+    _ensure_portfolio_tables()
+    data = request.get_json(force=True)
+    action_date = str(data.get("action_date") or datetime.now().date()).strip()
+    try:
+        datetime.strptime(action_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "日期格式必须是 YYYY-MM-DD"}), 400
+
+    action_type = str(data.get("action_type") or "").strip().lower()
+    if action_type not in ("cash_dividend", "bonus_share", "rights_issue"):
+        return jsonify({"error": "权益类型必须是现金分红、送股/转增或配股"}), 400
+
+    stock = _resolve_portfolio_stock(str(data.get("code", data.get("identifier", ""))).strip())
+    if not stock:
+        return jsonify({"error": "未找到匹配的股票，请输入代码或更准确的名称"}), 404
+    code = stock["code"]
+
+    position_rows = execute_query(
+        "SELECT shares, cost_price FROM portfolio_positions WHERE stock_code=%s LIMIT 1",
+        (code,),
+    )
+    if not position_rows:
+        return jsonify({"error": "当前没有这只股票的持仓，无法记录权益事件"}), 400
+    old_shares = _decimal_value(position_rows[0]["shares"])
+    old_cost = _decimal_value(position_rows[0]["cost_price"]) if position_rows[0].get("cost_price") is not None else None
+    if old_shares <= 0 or old_cost is None:
+        return jsonify({"error": "这只股票缺少有效持仓或成本，无法记录权益事件"}), 400
+
+    note = str(data.get("note") or "").strip()[:255]
+    cash_amount = Decimal("0.00")
+    action_shares = Decimal("0.0000")
+    price = None
+    amount = Decimal("0.00")
+    cash_delta = Decimal("0.00")
+    new_shares = old_shares
+    new_cost = old_cost
+
+    if action_type == "cash_dividend":
+        raw_cash = data.get("cash_amount")
+        if raw_cash in (None, ""):
+            try:
+                cash_amount = _decimal_value(data.get("dividend_per_share")) * old_shares
+            except Exception:
+                return jsonify({"error": "现金分红金额必须是数字"}), 400
+        else:
+            try:
+                cash_amount = _decimal_value(raw_cash)
+            except Exception:
+                return jsonify({"error": "现金分红金额必须是数字"}), 400
+        if cash_amount <= 0:
+            return jsonify({"error": "现金分红金额必须大于 0"}), 400
+        cash_amount = _quantize(cash_amount, "0.01")
+        amount = cash_amount
+        cash_delta = cash_amount
+        new_cost = ((old_shares * old_cost) - cash_amount) / old_shares
+    elif action_type == "bonus_share":
+        try:
+            action_shares = _decimal_value(data.get("shares"))
+        except Exception:
+            return jsonify({"error": "送股/转增股数必须是数字"}), 400
+        if action_shares <= 0:
+            return jsonify({"error": "送股/转增股数必须大于 0"}), 400
+        new_shares = old_shares + action_shares
+        new_cost = (old_shares * old_cost) / new_shares
+    else:
+        try:
+            action_shares = _decimal_value(data.get("shares"))
+            price = _decimal_value(data.get("price"))
+        except Exception:
+            return jsonify({"error": "配股股数和价格必须是数字"}), 400
+        if action_shares <= 0:
+            return jsonify({"error": "配股股数必须大于 0"}), 400
+        if price < 0:
+            return jsonify({"error": "配股价格不能小于 0"}), 400
+        amount = _quantize(action_shares * price, "0.01")
+        cash_delta = -amount
+        cash_amount_now = _decimal_value(_portfolio_cash_amount())
+        if cash_amount_now + cash_delta < 0:
+            return jsonify({"error": "现金不足，无法记录配股"}), 400
+        new_shares = old_shares + action_shares
+        new_cost = ((old_shares * old_cost) + amount) / new_shares
+
+    execute_query(
+        """INSERT INTO portfolio_corporate_actions
+           (action_date, stock_code, action_type, cash_amount, shares, price, amount, cash_delta,
+            shares_before, shares_after, cost_price_before, cost_price_after, note)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (
+            action_date,
+            code,
+            action_type,
+            cash_amount,
+            _quantize(action_shares),
+            _quantize(price) if price is not None else None,
+            amount,
+            cash_delta,
+            _quantize(old_shares),
+            _quantize(new_shares),
+            _quantize(old_cost),
+            _quantize(new_cost) if new_cost is not None else None,
+            note,
+        ),
+        fetch=False,
+    )
+    if new_shares > 0:
+        execute_query(
+            "UPDATE portfolio_positions SET shares=%s, cost_price=%s, updated_at=CURRENT_TIMESTAMP WHERE stock_code=%s",
+            (_quantize(new_shares), _quantize(new_cost) if new_cost is not None else None, code),
+            fetch=False,
+        )
+    else:
+        execute_query("DELETE FROM portfolio_positions WHERE stock_code=%s", (code,), fetch=False)
+
+    if cash_delta != 0:
+        cash_amount_now = _decimal_value(_portfolio_cash_amount())
+        execute_query(
+            "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+            (_quantize(cash_amount_now + cash_delta, "0.01"),),
+            fetch=False,
+        )
+        flow_label = {"cash_dividend": "分红到账", "rights_issue": "配股扣款"}.get(action_type, "权益现金")
+        flow_note = note or f"{stock['name']}({code}) {flow_label}"
+        execute_query(
+            "INSERT INTO portfolio_cash_flows (flow_date, amount, flow_source, note) VALUES (%s, %s, %s, %s)",
+            (action_date, _quantize(cash_delta, "0.01"), "action", flow_note[:255]),
+            fetch=False,
+        )
+
+    state = _save_portfolio_snapshot()
+    state["trades"] = _portfolio_trades_payload()
+    state["actions"] = _portfolio_actions_payload()
     state["flows"] = _portfolio_flows_payload()
     return jsonify({"ok": True, **state})
 

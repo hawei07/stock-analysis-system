@@ -175,6 +175,34 @@
 
   <div class="panel">
     <div class="panel-header">
+      <div class="panel-title">权益记录</div>
+      <button class="btn btn-outline btn-sm" onclick="loadActions()">刷新权益</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>类型</th>
+            <th>代码</th>
+            <th>名称</th>
+            <th class="num">现金</th>
+            <th class="num">股数</th>
+            <th class="num">价格</th>
+            <th class="num">现金变动</th>
+            <th class="num">权益后股数</th>
+            <th class="num">权益后成本价</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody id="actionsBody"></tbody>
+      </table>
+      <div class="empty" id="actionsEmpty" style="display:none">还没有权益记录。</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
       <div class="panel-title">净值曲线</div>
       <div style="font-size:12px;color:#999">历史快照独立保存，后续持仓变动不会改写过去日期</div>
     </div>
@@ -280,6 +308,59 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="actionModalOverlay" onclick="if(event.target===this)closeActionModal()">
+  <div class="modal trade-modal">
+    <div class="modal-header">
+      <div class="modal-title" id="actionModalTitle">权益事件</div>
+      <button class="modal-close" onclick="closeActionModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="trade-stock-card">
+        <div>
+          <div class="trade-stock-name" id="actionStockName">--</div>
+          <div class="trade-stock-meta" id="actionStockMeta">--</div>
+        </div>
+      </div>
+      <div class="form-row trade-form-row">
+        <div class="field">
+          <label>日期</label>
+          <input id="actionDate" type="date">
+        </div>
+        <div class="field">
+          <label>类型</label>
+          <select id="actionType" onchange="updateActionModalMode()">
+            <option value="cash_dividend">现金分红</option>
+            <option value="bonus_share">送股/转增</option>
+            <option value="rights_issue">配股</option>
+          </select>
+        </div>
+        <div class="field" id="actionCashField">
+          <label>现金金额</label>
+          <input id="actionCashInput" type="number" min="0" step="0.01" placeholder="到账总额">
+        </div>
+        <div class="field" id="actionSharesField">
+          <label>股数</label>
+          <input id="actionSharesInput" type="number" min="0" step="1" placeholder="新增股数">
+        </div>
+        <div class="field" id="actionPriceField">
+          <label>配股价</label>
+          <input id="actionPriceInput" type="number" min="0" step="0.01" placeholder="每股价格">
+        </div>
+        <div class="field trade-note-field">
+          <label>备注</label>
+          <input id="actionNoteInput" placeholder="可选">
+        </div>
+      </div>
+      <input id="actionCodeInput" type="hidden">
+      <div class="trade-hint" id="actionHint"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeActionModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveAction()">保存权益</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="feeConfigModalOverlay" onclick="if(event.target===this)closeFeeConfigModal()">
   <div class="modal trade-modal">
     <div class="modal-header">
@@ -360,11 +441,14 @@ document.addEventListener('DOMContentLoaded', () => {
   loadPortfolio();
   loadFlows();
   loadTrades();
+  loadActions();
   loadNav(true);
   const flowDate = document.getElementById('flowDate');
   if (flowDate && !flowDate.value) flowDate.value = new Date().toISOString().slice(0, 10);
   const tradeDate = document.getElementById('tradeDate');
   if (tradeDate && !tradeDate.value) tradeDate.value = new Date().toISOString().slice(0, 10);
+  const actionDate = document.getElementById('actionDate');
+  if (actionDate && !actionDate.value) actionDate.value = new Date().toISOString().slice(0, 10);
 });
 
 function mountFlowPanel() {
@@ -686,6 +770,7 @@ function renderPositions(rows) {
       <td>
         <button class="btn btn-outline btn-sm trade-action-buy" onclick="openTradeModal('${esc(r.code)}', 'buy')">买入</button>
         <button class="btn btn-outline btn-sm trade-action-sell" onclick="openTradeModal('${esc(r.code)}', 'sell')">卖出</button>
+        <button class="btn btn-outline btn-sm" onclick="openActionModal('${esc(r.code)}')">分红</button>
       </td>
     </tr>
   `).join('');
@@ -740,6 +825,80 @@ function closeTradeModal() {
   document.getElementById('tradeModalOverlay').classList.remove('active');
 }
 
+function openActionModal(code) {
+  const row = (latestPortfolioData.positions || []).find(p => String(p.code) === String(code)) || {};
+  document.getElementById('actionModalOverlay').classList.add('active');
+  document.getElementById('actionCodeInput').value = code;
+  document.getElementById('actionDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('actionType').value = 'cash_dividend';
+  document.getElementById('actionCashInput').value = '';
+  document.getElementById('actionSharesInput').value = '';
+  document.getElementById('actionPriceInput').value = '';
+  document.getElementById('actionNoteInput').value = '';
+  document.getElementById('actionStockName').textContent = `${row.name || ''} ${code}`;
+  document.getElementById('actionStockMeta').textContent = [
+    `当前持仓 ${plain(row.shares)} 股`,
+    row.cost_price == null ? '成本价 --' : `成本价 ${plain(row.cost_price)} ${row.cost_price_currency || ''}`
+  ].join(' · ');
+  updateActionModalMode();
+  setTimeout(() => document.getElementById('actionCashInput').focus(), 0);
+}
+
+function updateActionModalMode() {
+  const type = document.getElementById('actionType').value;
+  const cashField = document.getElementById('actionCashField');
+  const sharesField = document.getElementById('actionSharesField');
+  const priceField = document.getElementById('actionPriceField');
+  cashField.style.display = type === 'cash_dividend' ? '' : 'none';
+  sharesField.style.display = type === 'bonus_share' || type === 'rights_issue' ? '' : 'none';
+  priceField.style.display = type === 'rights_issue' ? '' : 'none';
+  const hint = document.getElementById('actionHint');
+  if (type === 'cash_dividend') {
+    hint.textContent = '现金分红会增加现金，并用到账金额摊薄当前持仓成本价';
+  } else if (type === 'bonus_share') {
+    hint.textContent = '送股/转增只增加股数，总成本不变，每股成本价会自动摊薄';
+  } else {
+    hint.textContent = '配股会扣现金并增加股数，按配股金额重算成本价';
+  }
+}
+
+function closeActionModal() {
+  document.getElementById('actionModalOverlay').classList.remove('active');
+}
+
+async function saveAction() {
+  const payload = {
+    action_date: document.getElementById('actionDate').value,
+    action_type: document.getElementById('actionType').value,
+    code: document.getElementById('actionCodeInput').value,
+    cash_amount: document.getElementById('actionCashInput').value,
+    shares: document.getElementById('actionSharesInput').value,
+    price: document.getElementById('actionPriceInput').value,
+    note: document.getElementById('actionNoteInput').value.trim()
+  };
+  try {
+    const res = await fetch('/api/portfolio/actions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存权益失败');
+    latestPortfolioData = data;
+    if (data.fee_config) latestFeeConfig = data.fee_config;
+    closeActionModal();
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    renderTrades(data.trades || []);
+    renderActions(data.actions || []);
+    renderFlows(data.flows || []);
+    await loadNav();
+    showToast('权益事件已保存，并自动摊薄持仓成本', 'success');
+  } catch (e) {
+    showToast(e.message || '保存权益失败', 'error');
+  }
+}
+
 async function saveTrade() {
   const tradeDate = document.getElementById('tradeDate').value;
   const tradeType = document.getElementById('tradeType').value;
@@ -769,6 +928,7 @@ async function saveTrade() {
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     renderTrades(data.trades || []);
+    renderActions(data.actions || []);
     renderFlows(data.flows || []);
     await loadNav();
     showToast((tradeType === 'buy' ? '买入' : '卖出') + '已保存，并自动更新持仓成本', 'success');
@@ -809,6 +969,16 @@ async function loadTrades() {
   }
 }
 
+async function loadActions() {
+  try {
+    const res = await fetch('/api/portfolio/actions');
+    const rows = await res.json();
+    renderActions(Array.isArray(rows) ? rows : []);
+  } catch (e) {
+    showToast('加载权益记录失败', 'error');
+  }
+}
+
 function renderTrades(rows) {
   const body = document.getElementById('tradesBody');
   const empty = document.getElementById('tradesEmpty');
@@ -839,6 +1009,30 @@ function renderTrades(rows) {
   }).join('');
 }
 
+function renderActions(rows) {
+  const body = document.getElementById('actionsBody');
+  const empty = document.getElementById('actionsEmpty');
+  if (!body || !empty) return;
+  const typeMap = {cash_dividend: '现金分红', bonus_share: '送股/转增', rights_issue: '配股'};
+  empty.style.display = rows.length ? 'none' : 'block';
+  body.innerHTML = rows.map(r => {
+    const cashDelta = Number(r.cash_delta || 0);
+    return `<tr>
+      <td>${esc(r.action_date)}</td>
+      <td>${typeMap[r.action_type] || esc(r.action_type)}</td>
+      <td><span class="code">${esc(r.stock_code)}</span></td>
+      <td><a class="name-link" href="/stock/${esc(r.stock_code)}">${esc(r.name)}</a></td>
+      <td class="num">${money(r.cash_amount)} ${r.currency || ''}</td>
+      <td class="num">${plain(r.shares)}</td>
+      <td class="num">${r.price == null ? '--' : price2(r.price)} ${r.currency || ''}</td>
+      <td class="num ${cashDelta >= 0 ? 'flow-in' : 'flow-out'}">${signedPrivateMoney(cashDelta)} ${r.currency || ''}</td>
+      <td class="num">${plain(r.shares_after)}</td>
+      <td class="num">${r.cost_price_after == null ? '--' : plain(r.cost_price_after)} ${r.currency || ''}</td>
+      <td>${esc(r.note || '')}</td>
+    </tr>`;
+  }).join('');
+}
+
 function renderFlows(rows) {
   const body = document.getElementById('flowsBody');
   const empty = document.getElementById('flowsEmpty');
@@ -852,13 +1046,18 @@ function renderFlows(rows) {
     const cls = Number(r.amount) >= 0 ? 'flow-in' : 'flow-out';
     const sign = Number(r.amount) >= 0 ? '+' : '';
     const isTrade = r.flow_source === 'trade';
-    const typeText = isTrade ? (Number(r.amount) >= 0 ? '卖出到账' : '买入扣款') : (Number(r.amount) >= 0 ? '入金' : '出金');
+    const isAction = r.flow_source === 'action';
+    const typeText = isTrade
+      ? (Number(r.amount) >= 0 ? '卖出到账' : '买入扣款')
+      : isAction
+        ? (Number(r.amount) >= 0 ? '分红到账' : '配股扣款')
+        : (Number(r.amount) >= 0 ? '入金' : '出金');
     return `<tr>
       <td>${esc(r.flow_date)}</td>
       <td>${typeText}</td>
       <td class="num ${cls}">${sign}${money(r.amount)}</td>
       <td>${esc(r.note || '')}</td>
-      <td>${isTrade ? '--' : `<button class="btn btn-danger btn-sm" onclick="deleteFlow(${r.id})">删除</button>`}</td>
+      <td>${isTrade || isAction ? '--' : `<button class="btn btn-danger btn-sm" onclick="deleteFlow(${r.id})">删除</button>`}</td>
     </tr>`;
   }).join('');
 }
