@@ -16,6 +16,7 @@ import uuid
 import html as html_lib
 import mysql.connector
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
@@ -1353,6 +1354,125 @@ def _ensure_portfolio_tables():
                 )
         except Exception:
             pass
+    try:
+        _sync_portfolio_cost_basis_from_trades()
+    except Exception:
+        pass
+
+
+def _decimal_value(value, default="0"):
+    if value is None:
+        value = default
+    return Decimal(str(value))
+
+
+def _quantize(value, scale="0.0001"):
+    return _decimal_value(value).quantize(Decimal(scale), rounding=ROUND_HALF_UP)
+
+
+def _decimal_equal(left, right, scale="0.0001"):
+    if left is None or right is None:
+        return left is None and right is None
+    return _quantize(left, scale) == _quantize(right, scale)
+
+
+def _sync_portfolio_cost_basis_from_trades():
+    rows = execute_query(
+        """SELECT id, stock_code, trade_date, trade_type, shares, price, amount,
+                  shares_before, shares_after, cost_price_before, cost_price_after, realized_profit
+           FROM portfolio_trades
+           ORDER BY stock_code, trade_date, id"""
+    )
+    if not rows:
+        return False
+
+    changed = False
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["stock_code"], []).append(row)
+
+    for code, trades in grouped.items():
+        first = trades[0]
+        shares = _decimal_value(first.get("shares_before"))
+        cost = _decimal_value(first.get("cost_price_before")) if first.get("cost_price_before") is not None else None
+        if cost is None and shares == 0:
+            cost = Decimal("0")
+        if cost is None:
+            continue
+
+        for trade in trades:
+            trade_shares = _decimal_value(trade["shares"])
+            price = _decimal_value(trade["price"])
+            amount = _decimal_value(trade["amount"])
+            before_shares = shares
+            before_cost = cost if before_shares > 0 else None
+            realized_profit = None
+
+            if trade["trade_type"] == "buy":
+                shares = before_shares + trade_shares
+                cost = ((before_shares * cost) + amount) / shares if before_shares > 0 and shares > 0 else price
+            else:
+                if before_cost is None:
+                    break
+                realized_profit = (price - before_cost) * trade_shares
+                shares = before_shares - trade_shares
+                cost = ((before_shares * before_cost) - amount) / shares if shares > 0 else None
+
+            trade_changed = (
+                not _decimal_equal(trade.get("shares_before"), before_shares)
+                or not _decimal_equal(trade.get("shares_after"), shares)
+                or not _decimal_equal(trade.get("cost_price_before"), before_cost)
+                or not _decimal_equal(trade.get("cost_price_after"), cost)
+                or not _decimal_equal(trade.get("realized_profit"), realized_profit, "0.01")
+            )
+            if trade_changed:
+                execute_query(
+                    """UPDATE portfolio_trades
+                       SET shares_before=%s, shares_after=%s,
+                           cost_price_before=%s, cost_price_after=%s, realized_profit=%s
+                       WHERE id=%s""",
+                    (
+                        _quantize(before_shares),
+                        _quantize(shares),
+                        _quantize(before_cost) if before_cost is not None else None,
+                        _quantize(cost) if cost is not None else None,
+                        _quantize(realized_profit, "0.01") if realized_profit is not None else None,
+                        trade["id"],
+                    ),
+                    fetch=False,
+                )
+                changed = True
+
+        position_rows = execute_query(
+            "SELECT shares, cost_price FROM portfolio_positions WHERE stock_code=%s LIMIT 1",
+            (code,),
+        )
+        if shares > 0:
+            if position_rows:
+                current = position_rows[0]
+                position_changed = (
+                    not _decimal_equal(current.get("shares"), shares)
+                    or not _decimal_equal(current.get("cost_price"), cost)
+                )
+                if position_changed:
+                    execute_query(
+                        "UPDATE portfolio_positions SET shares=%s, cost_price=%s, updated_at=CURRENT_TIMESTAMP WHERE stock_code=%s",
+                        (_quantize(shares), _quantize(cost) if cost is not None else None, code),
+                        fetch=False,
+                    )
+                    changed = True
+            else:
+                execute_query(
+                    "INSERT INTO portfolio_positions (stock_code, shares, cost_price) VALUES (%s, %s, %s)",
+                    (code, _quantize(shares), _quantize(cost) if cost is not None else None),
+                    fetch=False,
+                )
+                changed = True
+        elif position_rows:
+            execute_query("DELETE FROM portfolio_positions WHERE stock_code=%s", (code,), fetch=False)
+            changed = True
+
+    return changed
 
 
 def _portfolio_cash_amount():
