@@ -1716,7 +1716,7 @@ def _portfolio_flows_payload():
     ]
 
 
-def _portfolio_trades_payload(limit=100):
+def _portfolio_trades_payload(limit=1000):
     _ensure_portfolio_tables()
     rows = execute_query(
         """SELECT t.id, t.trade_date, t.stock_code, s.name, s.market, t.trade_type,

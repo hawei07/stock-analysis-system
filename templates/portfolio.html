@@ -171,6 +171,10 @@
       </table>
       <div class="empty" id="tradesEmpty" style="display:none">还没有交易记录。</div>
     </div>
+    <div class="nav-history-footer">
+      <div class="nav-history-total" id="tradesTotal">共 0 条</div>
+      <div class="nav-history-pagination" id="tradesPagination"></div>
+    </div>
   </div>
 
   <div class="panel">
@@ -415,6 +419,9 @@ let allocationChart = null;
 let latestPortfolioData = {positions: [], summary: {}};
 let latestFeeConfig = {commission_rate: 0.00025, min_commission: 5, stamp_tax_rate: 0.0005, transfer_fee_rate: 0.00001};
 let amountPrivacyMode = localStorage.getItem('portfolioAmountPrivacy') === 'hidden';
+let tradeRows = [];
+let tradesPage = 1;
+const TRADES_PAGE_SIZE = 5;
 let navHistoryRows = [];
 let navHistoryPage = 1;
 const NAV_HISTORY_PAGE_SIZE = 20;
@@ -889,6 +896,7 @@ async function saveAction() {
     closeActionModal();
     renderSummary(data.summary);
     renderPositions(data.positions || []);
+    tradesPage = 1;
     renderTrades(data.trades || []);
     renderActions(data.actions || []);
     renderFlows(data.flows || []);
@@ -927,6 +935,7 @@ async function saveTrade() {
     closeTradeModal();
     renderSummary(data.summary);
     renderPositions(data.positions || []);
+    tradesPage = 1;
     renderTrades(data.trades || []);
     renderActions(data.actions || []);
     renderFlows(data.flows || []);
@@ -963,6 +972,7 @@ async function loadTrades() {
   try {
     const res = await fetch('/api/portfolio/trades');
     const rows = await res.json();
+    tradesPage = 1;
     renderTrades(Array.isArray(rows) ? rows : []);
   } catch (e) {
     showToast('加载交易记录失败', 'error');
@@ -982,9 +992,16 @@ async function loadActions() {
 function renderTrades(rows) {
   const body = document.getElementById('tradesBody');
   const empty = document.getElementById('tradesEmpty');
-  if (!body || !empty) return;
-  empty.style.display = rows.length ? 'none' : 'block';
-  body.innerHTML = rows.map(r => {
+  const totalEl = document.getElementById('tradesTotal');
+  const pagination = document.getElementById('tradesPagination');
+  if (!body || !empty || !totalEl || !pagination) return;
+  tradeRows = Array.isArray(rows) ? rows : [];
+  const totalPages = Math.max(1, Math.ceil(tradeRows.length / TRADES_PAGE_SIZE));
+  if (tradesPage > totalPages) tradesPage = totalPages;
+  const start = (tradesPage - 1) * TRADES_PAGE_SIZE;
+  const pageRows = tradeRows.slice(start, start + TRADES_PAGE_SIZE);
+  empty.style.display = tradeRows.length ? 'none' : 'block';
+  body.innerHTML = pageRows.map(r => {
     const isBuy = r.trade_type === 'buy';
     const typeText = isBuy ? '买入' : '卖出';
     const typeClass = isBuy ? 'trade-buy' : 'trade-sell';
@@ -1007,6 +1024,32 @@ function renderTrades(rows) {
       <td>${esc(r.note || '')}</td>
     </tr>`;
   }).join('');
+  totalEl.textContent = '共 ' + tradeRows.length + ' 条';
+  pagination.innerHTML = renderTradesPagination(totalPages);
+}
+
+function renderTradesPagination(totalPages) {
+  const disabledPrev = tradesPage <= 1 ? ' disabled' : '';
+  const disabledNext = tradesPage >= totalPages ? ' disabled' : '';
+  const pages = [];
+  const start = Math.max(1, tradesPage - 2);
+  const end = Math.min(totalPages, tradesPage + 2);
+  for (let page = start; page <= end; page++) {
+    pages.push(`<button class="page-btn${page === tradesPage ? ' active' : ''}" type="button" onclick="setTradesPage(${page})">${page}</button>`);
+  }
+  return `
+    <button class="page-btn"${disabledPrev} type="button" onclick="setTradesPage(${tradesPage - 1})">上一页</button>
+    ${start > 1 ? '<span class="page-ellipsis">...</span>' : ''}
+    ${pages.join('')}
+    ${end < totalPages ? '<span class="page-ellipsis">...</span>' : ''}
+    <button class="page-btn"${disabledNext} type="button" onclick="setTradesPage(${tradesPage + 1})">下一页</button>
+  `;
+}
+
+function setTradesPage(page) {
+  const totalPages = Math.max(1, Math.ceil(tradeRows.length / TRADES_PAGE_SIZE));
+  tradesPage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  renderTrades(tradeRows);
 }
 
 function renderActions(rows) {
