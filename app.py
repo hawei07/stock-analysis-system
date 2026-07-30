@@ -467,6 +467,8 @@ AUTO_CLOUD_BACKUP_ENDPOINTS = {
     "api_portfolio_update_dividend": "portfolio-dividend-update",
     "api_portfolio_reset_dividend": "portfolio-dividend-reset",
     "api_portfolio_update_cash": "portfolio-cash-update",
+    "api_portfolio_update_fee_config": "portfolio-fee-config-update",
+    "api_portfolio_add_trade": "portfolio-trade-add",
     "api_portfolio_add_flow": "portfolio-flow-add",
     "api_portfolio_delete_flow": "portfolio-flow-delete",
     "api_portfolio_snapshot": "portfolio-snapshot",
@@ -1314,6 +1316,51 @@ def _ensure_portfolio_tables():
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
         fetch=False,
     )
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS portfolio_fee_config (
+            id TINYINT NOT NULL PRIMARY KEY,
+            commission_rate DECIMAL(10,6) NOT NULL DEFAULT 0.000250,
+            min_commission DECIMAL(18,2) NOT NULL DEFAULT 5.00,
+            stamp_tax_rate DECIMAL(10,6) NOT NULL DEFAULT 0.000500,
+            transfer_fee_rate DECIMAL(10,6) NOT NULL DEFAULT 0.000010,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+    execute_query(
+        """INSERT IGNORE INTO portfolio_fee_config
+           (id, commission_rate, min_commission, stamp_tax_rate, transfer_fee_rate)
+           VALUES (1, 0.000250, 5.00, 0.000500, 0.000010)""",
+        fetch=False,
+    )
+    for column_name, column_def in (
+        ("commission", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER amount"),
+        ("stamp_tax", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER commission"),
+        ("transfer_fee", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER stamp_tax"),
+        ("total_fee", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER transfer_fee"),
+        ("cash_delta", "DECIMAL(18,2) NULL AFTER total_fee"),
+    ):
+        try:
+            rows = execute_query(f"SHOW COLUMNS FROM portfolio_trades LIKE '{column_name}'")
+            if not rows:
+                execute_query(
+                    f"ALTER TABLE portfolio_trades ADD COLUMN {column_name} {column_def}",
+                    fetch=False,
+                )
+        except Exception:
+            pass
+    try:
+        execute_query(
+            """UPDATE portfolio_trades
+               SET cash_delta = CASE
+                   WHEN trade_type='buy' THEN -(amount + total_fee)
+                   ELSE amount - total_fee
+               END
+               WHERE cash_delta IS NULL""",
+            fetch=False,
+        )
+    except Exception:
+        pass
     try:
         rows = execute_query("SHOW FULL COLUMNS FROM portfolio_trades LIKE 'stock_code'")
         if rows and rows[0].get("Collation") != "utf8mb4_unicode_ci":
@@ -1376,9 +1423,76 @@ def _decimal_equal(left, right, scale="0.0001"):
     return _quantize(left, scale) == _quantize(right, scale)
 
 
+def _portfolio_fee_config():
+    rows = execute_query(
+        """SELECT commission_rate, min_commission, stamp_tax_rate, transfer_fee_rate
+           FROM portfolio_fee_config
+           WHERE id=1"""
+    )
+    if not rows:
+        return {
+            "commission_rate": Decimal("0.000250"),
+            "min_commission": Decimal("5.00"),
+            "stamp_tax_rate": Decimal("0.000500"),
+            "transfer_fee_rate": Decimal("0.000010"),
+        }
+    row = rows[0]
+    return {
+        "commission_rate": _decimal_value(row.get("commission_rate")),
+        "min_commission": _decimal_value(row.get("min_commission")),
+        "stamp_tax_rate": _decimal_value(row.get("stamp_tax_rate")),
+        "transfer_fee_rate": _decimal_value(row.get("transfer_fee_rate")),
+    }
+
+
+def _portfolio_fee_config_payload():
+    _ensure_portfolio_tables()
+    config = _portfolio_fee_config()
+    return {
+        "commission_rate": float(config["commission_rate"]),
+        "min_commission": float(config["min_commission"]),
+        "stamp_tax_rate": float(config["stamp_tax_rate"]),
+        "transfer_fee_rate": float(config["transfer_fee_rate"]),
+    }
+
+
+def _is_domestic_market(market):
+    return str(market or "").upper() in {"SH", "SZ", "BJ"}
+
+
+def _calculate_portfolio_trade_fees(amount, trade_type, market, config=None):
+    amount = _decimal_value(amount)
+    if not _is_domestic_market(market):
+        return {
+            "commission": Decimal("0.00"),
+            "stamp_tax": Decimal("0.00"),
+            "transfer_fee": Decimal("0.00"),
+            "total_fee": Decimal("0.00"),
+        }
+
+    config = config or _portfolio_fee_config()
+    commission_rate = config["commission_rate"]
+    min_commission = config["min_commission"]
+    commission = amount * commission_rate
+    if commission > 0 and commission < min_commission:
+        commission = min_commission
+    stamp_tax = amount * config["stamp_tax_rate"] if trade_type == "sell" else Decimal("0")
+    transfer_fee = amount * config["transfer_fee_rate"]
+    commission = _quantize(commission, "0.01")
+    stamp_tax = _quantize(stamp_tax, "0.01")
+    transfer_fee = _quantize(transfer_fee, "0.01")
+    return {
+        "commission": commission,
+        "stamp_tax": stamp_tax,
+        "transfer_fee": transfer_fee,
+        "total_fee": commission + stamp_tax + transfer_fee,
+    }
+
+
 def _sync_portfolio_cost_basis_from_trades():
     rows = execute_query(
         """SELECT id, stock_code, trade_date, trade_type, shares, price, amount,
+                  commission, stamp_tax, transfer_fee, total_fee, cash_delta,
                   shares_before, shares_after, cost_price_before, cost_price_after, realized_profit
            FROM portfolio_trades
            ORDER BY stock_code, trade_date, id"""
@@ -1404,19 +1518,25 @@ def _sync_portfolio_cost_basis_from_trades():
             trade_shares = _decimal_value(trade["shares"])
             price = _decimal_value(trade["price"])
             amount = _decimal_value(trade["amount"])
+            total_fee = _decimal_value(trade.get("total_fee"))
+            cash_delta = _decimal_value(trade.get("cash_delta")) if trade.get("cash_delta") is not None else None
             before_shares = shares
             before_cost = cost if before_shares > 0 else None
             realized_profit = None
 
             if trade["trade_type"] == "buy":
+                buy_cost = amount + total_fee
                 shares = before_shares + trade_shares
-                cost = ((before_shares * cost) + amount) / shares if before_shares > 0 and shares > 0 else price
+                cost = ((before_shares * cost) + buy_cost) / shares if before_shares > 0 and shares > 0 else buy_cost / trade_shares
+                next_cash_delta = -buy_cost
             else:
                 if before_cost is None:
                     break
-                realized_profit = (price - before_cost) * trade_shares
+                sell_proceeds = amount - total_fee
+                realized_profit = sell_proceeds - (before_cost * trade_shares)
                 shares = before_shares - trade_shares
-                cost = ((before_shares * before_cost) - amount) / shares if shares > 0 else None
+                cost = ((before_shares * before_cost) - sell_proceeds) / shares if shares > 0 else None
+                next_cash_delta = sell_proceeds
 
             trade_changed = (
                 not _decimal_equal(trade.get("shares_before"), before_shares)
@@ -1424,12 +1544,14 @@ def _sync_portfolio_cost_basis_from_trades():
                 or not _decimal_equal(trade.get("cost_price_before"), before_cost)
                 or not _decimal_equal(trade.get("cost_price_after"), cost)
                 or not _decimal_equal(trade.get("realized_profit"), realized_profit, "0.01")
+                or not _decimal_equal(cash_delta, next_cash_delta, "0.01")
             )
             if trade_changed:
                 execute_query(
                     """UPDATE portfolio_trades
                        SET shares_before=%s, shares_after=%s,
-                           cost_price_before=%s, cost_price_after=%s, realized_profit=%s
+                           cost_price_before=%s, cost_price_after=%s, realized_profit=%s,
+                           cash_delta=%s
                        WHERE id=%s""",
                     (
                         _quantize(before_shares),
@@ -1437,6 +1559,7 @@ def _sync_portfolio_cost_basis_from_trades():
                         _quantize(before_cost) if before_cost is not None else None,
                         _quantize(cost) if cost is not None else None,
                         _quantize(realized_profit, "0.01") if realized_profit is not None else None,
+                        _quantize(next_cash_delta, "0.01"),
                         trade["id"],
                     ),
                     fetch=False,
@@ -1510,7 +1633,8 @@ def _portfolio_trades_payload(limit=100):
     _ensure_portfolio_tables()
     rows = execute_query(
         """SELECT t.id, t.trade_date, t.stock_code, s.name, s.market, t.trade_type,
-                  t.shares, t.price, t.amount, t.shares_before, t.shares_after,
+                  t.shares, t.price, t.amount, t.commission, t.stamp_tax, t.transfer_fee,
+                  t.total_fee, t.cash_delta, t.shares_before, t.shares_after,
                   t.cost_price_before, t.cost_price_after, t.realized_profit, t.note
            FROM portfolio_trades t
            JOIN stocks s ON s.code = t.stock_code
@@ -1523,7 +1647,7 @@ def _portfolio_trades_payload(limit=100):
         item = dict(r)
         item["trade_date"] = str(r["trade_date"])
         item["currency"] = _currency_for_market(r.get("market"))
-        for field in ("shares", "price", "amount", "shares_before", "shares_after"):
+        for field in ("shares", "price", "amount", "commission", "stamp_tax", "transfer_fee", "total_fee", "cash_delta", "shares_before", "shares_after"):
             item[field] = float(r[field])
         for field in ("cost_price_before", "cost_price_after", "realized_profit"):
             item[field] = float(r[field]) if r.get(field) is not None else None
@@ -1606,6 +1730,7 @@ def _portfolio_current_state():
     if not rows:
         return {
             "positions": [],
+            "fee_config": _portfolio_fee_config_payload(),
             "summary": {
                 "total_market_value": 0,
                 "cash_amount": round(cash_amount, 2),
@@ -1701,6 +1826,7 @@ def _portfolio_current_state():
 
     return {
         "positions": positions,
+        "fee_config": _portfolio_fee_config_payload(),
         "summary": {
             "total_market_value": round(total_market_value, 2),
             "cash_amount": round(cash_amount, 2),
@@ -1756,6 +1882,39 @@ def _save_portfolio_snapshot():
 @app.route("/api/portfolio", methods=["GET"])
 def api_portfolio_get():
     return jsonify(_portfolio_current_state())
+
+
+@app.route("/api/portfolio/fee-config", methods=["GET"])
+def api_portfolio_fee_config():
+    return jsonify(_portfolio_fee_config_payload())
+
+
+@app.route("/api/portfolio/fee-config", methods=["PUT"])
+def api_portfolio_update_fee_config():
+    _ensure_portfolio_tables()
+    data = request.get_json(force=True)
+    values = {}
+    for key in ("commission_rate", "min_commission", "stamp_tax_rate", "transfer_fee_rate"):
+        try:
+            value = _decimal_value(data.get(key))
+        except Exception:
+            return jsonify({"error": "费率配置必须是数字"}), 400
+        if value < 0:
+            return jsonify({"error": "费率配置不能小于 0"}), 400
+        values[key] = value
+    execute_query(
+        """UPDATE portfolio_fee_config
+           SET commission_rate=%s, min_commission=%s, stamp_tax_rate=%s, transfer_fee_rate=%s
+           WHERE id=1""",
+        (
+            values["commission_rate"],
+            values["min_commission"],
+            values["stamp_tax_rate"],
+            values["transfer_fee_rate"],
+        ),
+        fetch=False,
+    )
+    return jsonify({"ok": True, **_portfolio_fee_config_payload()})
 
 
 @app.route("/api/portfolio/positions", methods=["POST"])
@@ -1854,7 +2013,11 @@ def api_portfolio_add_trade():
     old_cost = float(position_rows[0]["cost_price"]) if position_rows and position_rows[0].get("cost_price") is not None else None
 
     amount = shares * price
-    cash_delta = -amount if trade_type == "buy" else amount
+    amount_dec = _quantize(amount, "0.01")
+    fees = _calculate_portfolio_trade_fees(amount_dec, trade_type, stock.get("market"))
+    total_fee = fees["total_fee"]
+    cash_delta_dec = -(amount_dec + total_fee) if trade_type == "buy" else amount_dec - total_fee
+    cash_delta = float(cash_delta_dec)
     cash_amount = _portfolio_cash_amount()
     new_cash = cash_amount + cash_delta
     if new_cash < 0:
@@ -1865,7 +2028,8 @@ def api_portfolio_add_trade():
         if old_shares > 0 and old_cost is None:
             return jsonify({"error": "这只股票已有持仓但缺少历史成本，无法继续自动计算成本价"}), 400
         new_shares = old_shares + shares
-        new_cost = ((old_shares * old_cost) + amount) / new_shares if old_shares > 0 else price
+        buy_cost = float(amount_dec + total_fee)
+        new_cost = ((old_shares * old_cost) + buy_cost) / new_shares if old_shares > 0 else buy_cost / shares
         execute_query(
             """INSERT INTO portfolio_positions (stock_code, shares, cost_price)
                VALUES (%s, %s, %s)
@@ -1879,8 +2043,9 @@ def api_portfolio_add_trade():
         if shares > old_shares:
             return jsonify({"error": f"卖出股数不能超过当前持仓 {old_shares:g} 股"}), 400
         new_shares = old_shares - shares
-        realized_profit = (price - old_cost) * shares if old_cost is not None else None
-        new_cost = ((old_shares * old_cost) - amount) / new_shares if new_shares > 0 and old_cost is not None else None
+        sell_proceeds = float(amount_dec - total_fee)
+        realized_profit = sell_proceeds - (old_cost * shares) if old_cost is not None else None
+        new_cost = ((old_shares * old_cost) - sell_proceeds) / new_shares if new_shares > 0 and old_cost is not None else None
         if new_shares > 0:
             execute_query(
                 "UPDATE portfolio_positions SET shares=%s, cost_price=%s, updated_at=CURRENT_TIMESTAMP WHERE stock_code=%s",
@@ -1893,8 +2058,9 @@ def api_portfolio_add_trade():
     execute_query(
         """INSERT INTO portfolio_trades
            (trade_date, stock_code, trade_type, shares, price, amount,
+            commission, stamp_tax, transfer_fee, total_fee, cash_delta,
             shares_before, shares_after, cost_price_before, cost_price_after, realized_profit, note)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             trade_date,
             code,
@@ -1902,6 +2068,11 @@ def api_portfolio_add_trade():
             round(shares, 4),
             round(price, 4),
             round(amount, 2),
+            fees["commission"],
+            fees["stamp_tax"],
+            fees["transfer_fee"],
+            fees["total_fee"],
+            cash_delta_dec,
             round(old_shares, 4),
             round(new_shares, 4),
             round(old_cost, 4) if old_cost is not None else None,
@@ -1914,7 +2085,7 @@ def api_portfolio_add_trade():
     flow_note = note or f"{stock['name']}({code}) {'买入' if trade_type == 'buy' else '卖出'}"
     execute_query(
         "INSERT INTO portfolio_cash_flows (flow_date, amount, flow_source, note) VALUES (%s, %s, %s, %s)",
-        (trade_date, round(cash_delta, 2), "trade", flow_note[:255]),
+        (trade_date, cash_delta_dec, "trade", flow_note[:255]),
         fetch=False,
     )
     execute_query(

@@ -20,6 +20,7 @@
     <button class="btn btn-outline" onclick="location.href='/'">返回首页</button>
     <button class="btn btn-primary" onclick="saveSnapshot()">记录今日净值</button>
     <button class="btn btn-outline" onclick="openFlowModal()">资金流水</button>
+    <button class="btn btn-outline" onclick="openFeeConfigModal()">交易费率</button>
     <button class="btn btn-outline" onclick="openAllocationModal()">持仓比例</button>
     <span class="cloud-status-pill" id="cloudBackupStatus">云备份状态：检查中</span>
   </div>
@@ -158,6 +159,8 @@
             <th class="num">股数</th>
             <th class="num">成交价</th>
             <th class="num">成交金额</th>
+            <th class="num">税费</th>
+            <th class="num">现金变动</th>
             <th class="num">交易后股数</th>
             <th class="num">交易后成本价</th>
             <th class="num">已实现盈亏</th>
@@ -241,7 +244,7 @@
       <div class="form-row trade-form-row">
         <div class="field">
           <label>股票代码 / 名称</label>
-          <input id="tradeCodeInput" placeholder="例如 600519 或 茅台" oninput="updateTradeModalMode()">
+          <input id="tradeCodeInput" placeholder="例如 600519 或 茅台" oninput="updateTradeModalMode();updateTradeFeeEstimate()">
         </div>
         <div class="field">
           <label>日期</label>
@@ -249,18 +252,18 @@
         </div>
         <div class="field">
           <label>方向</label>
-          <select id="tradeType" onchange="updateTradeModalMode()">
+          <select id="tradeType" onchange="updateTradeModalMode();updateTradeFeeEstimate()">
             <option value="buy">买入</option>
             <option value="sell">卖出</option>
           </select>
         </div>
         <div class="field">
           <label>股数</label>
-          <input id="tradeSharesInput" type="number" min="0" step="1" placeholder="例如 100">
+          <input id="tradeSharesInput" type="number" min="0" step="1" placeholder="例如 100" oninput="updateTradeFeeEstimate()">
         </div>
         <div class="field">
           <label>成交价</label>
-          <input id="tradePriceInput" type="number" min="0" step="0.01" placeholder="每股成交价">
+          <input id="tradePriceInput" type="number" min="0" step="0.01" placeholder="每股成交价" oninput="updateTradeFeeEstimate()">
         </div>
         <div class="field trade-note-field">
           <label>备注</label>
@@ -268,10 +271,45 @@
         </div>
       </div>
       <div class="trade-hint" id="tradeHint"></div>
+      <div class="trade-hint" id="tradeFeeEstimate"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeTradeModal()">取消</button>
       <button class="btn btn-primary" onclick="saveTrade()">保存交易</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="feeConfigModalOverlay" onclick="if(event.target===this)closeFeeConfigModal()">
+  <div class="modal trade-modal">
+    <div class="modal-header">
+      <div class="modal-title">交易费率</div>
+      <button class="modal-close" onclick="closeFeeConfigModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row trade-form-row">
+        <div class="field">
+          <label>佣金率 %</label>
+          <input id="commissionRateInput" type="number" min="0" step="0.001">
+        </div>
+        <div class="field">
+          <label>最低佣金</label>
+          <input id="minCommissionInput" type="number" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>印花税率 %</label>
+          <input id="stampTaxRateInput" type="number" min="0" step="0.001">
+        </div>
+        <div class="field">
+          <label>过户费率 %</label>
+          <input id="transferFeeRateInput" type="number" min="0" step="0.0001">
+        </div>
+      </div>
+      <div class="trade-hint">当前配置只用于 A 股市场；印花税只在卖出时计算，佣金和过户费买卖都会计算。</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeFeeConfigModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveFeeConfig()">保存费率</button>
     </div>
   </div>
 </div>
@@ -294,6 +332,7 @@
 let navChart = null;
 let allocationChart = null;
 let latestPortfolioData = {positions: [], summary: {}};
+let latestFeeConfig = {commission_rate: 0.00025, min_commission: 5, stamp_tax_rate: 0.0005, transfer_fee_rate: 0.00001};
 let amountPrivacyMode = localStorage.getItem('portfolioAmountPrivacy') === 'hidden';
 let navHistoryRows = [];
 let navHistoryPage = 1;
@@ -317,6 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkCloudUpdateOnStartup();
   startCloudBackupStatusPolling();
   mountFlowPanel();
+  loadFeeConfig();
   loadPortfolio();
   loadFlows();
   loadTrades();
@@ -348,6 +388,57 @@ function openFlowModal() {
 
 function closeFlowModal() {
   document.getElementById('flowModalOverlay').classList.remove('active');
+}
+
+function openFeeConfigModal() {
+  document.getElementById('feeConfigModalOverlay').classList.add('active');
+  fillFeeConfigForm();
+}
+
+function closeFeeConfigModal() {
+  document.getElementById('feeConfigModalOverlay').classList.remove('active');
+}
+
+function fillFeeConfigForm() {
+  document.getElementById('commissionRateInput').value = (Number(latestFeeConfig.commission_rate || 0) * 100).toFixed(4);
+  document.getElementById('minCommissionInput').value = Number(latestFeeConfig.min_commission || 0).toFixed(2);
+  document.getElementById('stampTaxRateInput').value = (Number(latestFeeConfig.stamp_tax_rate || 0) * 100).toFixed(4);
+  document.getElementById('transferFeeRateInput').value = (Number(latestFeeConfig.transfer_fee_rate || 0) * 100).toFixed(4);
+}
+
+async function loadFeeConfig() {
+  try {
+    const res = await fetch('/api/portfolio/fee-config');
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '加载费率失败');
+    latestFeeConfig = data;
+  } catch (e) {
+    showToast(e.message || '加载费率失败', 'error');
+  }
+}
+
+async function saveFeeConfig() {
+  const payload = {
+    commission_rate: Number(document.getElementById('commissionRateInput').value || 0) / 100,
+    min_commission: Number(document.getElementById('minCommissionInput').value || 0),
+    stamp_tax_rate: Number(document.getElementById('stampTaxRateInput').value || 0) / 100,
+    transfer_fee_rate: Number(document.getElementById('transferFeeRateInput').value || 0) / 100
+  };
+  try {
+    const res = await fetch('/api/portfolio/fee-config', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存费率失败');
+    latestFeeConfig = data;
+    closeFeeConfigModal();
+    updateTradeFeeEstimate();
+    showToast('交易费率已保存', 'success');
+  } catch (e) {
+    showToast(e.message || '保存费率失败', 'error');
+  }
 }
 
 async function openAllocationModal() {
@@ -468,6 +559,50 @@ function price2(v) {
   return Number(v).toFixed(2);
 }
 
+function inferDomesticMarket(code, row = {}) {
+  const market = String(row.market || '').toUpperCase();
+  if (['SH', 'SZ', 'BJ'].includes(market)) return true;
+  const value = String(code || '').trim();
+  return /^(6|0|3|8)\d{5}$/.test(value);
+}
+
+function calculateTradeFeeEstimate(amount, type, isDomestic) {
+  if (!isDomestic || !amount || amount <= 0) {
+    return {commission: 0, stamp_tax: 0, transfer_fee: 0, total_fee: 0, cash_delta: type === 'buy' ? -amount : amount};
+  }
+  const commissionRaw = amount * Number(latestFeeConfig.commission_rate || 0);
+  const minCommission = Number(latestFeeConfig.min_commission || 0);
+  const commission = commissionRaw > 0 && commissionRaw < minCommission ? minCommission : commissionRaw;
+  const stampTax = type === 'sell' ? amount * Number(latestFeeConfig.stamp_tax_rate || 0) : 0;
+  const transferFee = amount * Number(latestFeeConfig.transfer_fee_rate || 0);
+  const totalFee = commission + stampTax + transferFee;
+  return {
+    commission,
+    stamp_tax: stampTax,
+    transfer_fee: transferFee,
+    total_fee: totalFee,
+    cash_delta: type === 'buy' ? -(amount + totalFee) : amount - totalFee
+  };
+}
+
+function updateTradeFeeEstimate() {
+  const el = document.getElementById('tradeFeeEstimate');
+  if (!el) return;
+  const type = document.getElementById('tradeType').value;
+  const code = document.getElementById('tradeCodeInput').value.trim();
+  const row = (latestPortfolioData.positions || []).find(p => String(p.code) === String(code)) || {};
+  const shares = Number(document.getElementById('tradeSharesInput').value || 0);
+  const price = Number(document.getElementById('tradePriceInput').value || 0);
+  const amount = shares * price;
+  if (!shares || !price) {
+    el.textContent = '';
+    return;
+  }
+  const fee = calculateTradeFeeEstimate(amount, type, inferDomesticMarket(code, row));
+  const cashText = type === 'buy' ? `需扣现金 ${money(Math.abs(fee.cash_delta))}` : `预计到账 ${money(fee.cash_delta)}`;
+  el.textContent = `成交金额 ${money(amount)}；税费 ${money(fee.total_fee)}（佣金 ${money(fee.commission)}，印花税 ${money(fee.stamp_tax)}，过户费 ${money(fee.transfer_fee)}）；${cashText}`;
+}
+
 function esc(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -478,6 +613,7 @@ async function loadPortfolio() {
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     latestPortfolioData = data;
+    if (data.fee_config) latestFeeConfig = data.fee_config;
     renderSummary(data.summary);
     renderPositions(data.positions || []);
   } catch (e) {
@@ -577,6 +713,7 @@ function openTradeModal(code, type = 'buy') {
       ].join(' · ')
     : '输入股票代码或名称，成交后系统自动创建持仓并计算成本价';
   updateTradeModalMode();
+  updateTradeFeeEstimate();
   setTimeout(() => (isKnownPosition ? document.getElementById('tradeSharesInput') : codeInput).focus(), 0);
 }
 
@@ -623,6 +760,7 @@ async function saveTrade() {
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || '保存交易失败');
     latestPortfolioData = data;
+    if (data.fee_config) latestFeeConfig = data.fee_config;
     document.getElementById('tradeCodeInput').value = '';
     document.getElementById('tradeSharesInput').value = '';
     document.getElementById('tradePriceInput').value = '';
@@ -688,6 +826,11 @@ function renderTrades(rows) {
       <td class="num">${plain(r.shares)}</td>
       <td class="num">${price2(r.price) || '--'} ${r.currency || ''}</td>
       <td class="num">${money(r.amount)} ${r.currency || ''}</td>
+      <td class="num">
+        ${money(r.total_fee)} ${r.currency || ''}
+        <div class="dividend-meta">佣 ${money(r.commission)} / 印 ${money(r.stamp_tax)} / 过 ${money(r.transfer_fee)}</div>
+      </td>
+      <td class="num ${Number(r.cash_delta) >= 0 ? 'flow-in' : 'flow-out'}">${signedPrivateMoney(r.cash_delta)} ${r.currency || ''}</td>
       <td class="num">${plain(r.shares_after)}</td>
       <td class="num">${r.cost_price_after == null ? '--' : plain(r.cost_price_after)} ${r.currency || ''}</td>
       <td class="num ${profitClass(r.realized_profit)}">${signedPrivateMoney(r.realized_profit)}</td>
