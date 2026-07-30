@@ -1864,21 +1864,7 @@ def api_portfolio_reset_dividend(code):
 
 @app.route("/api/portfolio/cash", methods=["PUT"])
 def api_portfolio_update_cash():
-    _ensure_portfolio_tables()
-    data = request.get_json(force=True)
-    value = data.get("amount")
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return jsonify({"error": "现金必须是数字"}), 400
-    if value < 0:
-        return jsonify({"error": "现金不能小于 0"}), 400
-    execute_query(
-        "UPDATE portfolio_cash SET amount=%s WHERE id=1",
-        (round(value, 2),),
-        fetch=False,
-    )
-    return jsonify({"ok": True, **_save_portfolio_snapshot()})
+    return jsonify({"error": "现金只能通过资金流水入金/出金变动"}), 400
 
 
 @app.route("/api/portfolio/flows", methods=["GET"])

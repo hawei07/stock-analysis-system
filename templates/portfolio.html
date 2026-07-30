@@ -84,11 +84,6 @@
           <input id="costPriceInput" type="number" min="0" step="0.0001" placeholder="每股成本">
         </div>
         <button class="btn btn-primary" onclick="savePosition()">保存持仓</button>
-        <div class="field">
-          <label>现金金额</label>
-          <input id="cashInput" type="number" min="0" step="0.01" placeholder="例如 50000">
-        </div>
-        <button class="btn btn-outline" onclick="saveCash()">保存现金</button>
       </div>
     </div>
   </div>
@@ -519,8 +514,6 @@ function renderSummary(summary) {
   profitEl.textContent = signedPrivateMoney(profit);
   profitEl.className = 'value ' + profitClass(profit);
   document.getElementById('portfolioProfitPct').textContent = profitPct == null ? '按录入成本价计算' : `${Number(profitPct).toFixed(2)}% · 成本 ${privateMoney(summary.total_cost_value)}`;
-  const cashInput = document.getElementById('cashInput');
-  if (cashInput) cashInput.value = cash ? cash.toFixed(2) : '';
   document.getElementById('expectedDividend').textContent = money(dividend);
   document.getElementById('portfolioYield').textContent = totalAsset > 0 ? (dividend / totalAsset * 100).toFixed(2) + '%' : '--';
   document.getElementById('positionCount').textContent = summary.count || 0;
@@ -707,27 +700,6 @@ async function deletePosition(code) {
     showToast('持仓已删除，并记录今日快照', 'success');
   } catch (e) {
     showToast(e.message || '删除失败', 'error');
-  }
-}
-
-async function saveCash() {
-  const input = document.getElementById('cashInput');
-  const amount = input ? input.value : '';
-  try {
-    const res = await fetch('/api/portfolio/cash', {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({amount})
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
-    latestPortfolioData = data;
-    renderSummary(data.summary);
-    renderPositions(data.positions || []);
-    await loadNav();
-    showToast('现金已保存，并记录今日快照', 'success');
-  } catch (e) {
-    showToast(e.message || '保存现金失败', 'error');
   }
 }
 
