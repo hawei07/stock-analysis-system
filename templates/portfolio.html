@@ -95,6 +95,42 @@
 
   <div class="panel">
     <div class="panel-header">
+      <div class="panel-title">买入 / 卖出</div>
+      <div class="form-row">
+        <div class="field">
+          <label>日期</label>
+          <input id="tradeDate" type="date">
+        </div>
+        <div class="field">
+          <label>方向</label>
+          <select id="tradeType">
+            <option value="buy">买入</option>
+            <option value="sell">卖出</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>股票代码 / 名称</label>
+          <input id="tradeCodeInput" placeholder="例如 600519 或 茅台">
+        </div>
+        <div class="field">
+          <label>股数</label>
+          <input id="tradeSharesInput" type="number" min="0" step="1" placeholder="例如 100">
+        </div>
+        <div class="field">
+          <label>成交价</label>
+          <input id="tradePriceInput" type="number" min="0" step="0.0001" placeholder="每股成交价">
+        </div>
+        <div class="field">
+          <label>备注</label>
+          <input id="tradeNoteInput" placeholder="可选">
+        </div>
+        <button class="btn btn-primary" onclick="saveTrade()">保存交易</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
       <div class="panel-title">资金流水</div>
     </div>
     <div class="table-wrap">
@@ -162,6 +198,34 @@
         <tbody id="positionsBody"></tbody>
       </table>
       <div class="empty" id="positionsEmpty" style="display:none">还没有持仓，先录入一只股票。</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">交易记录</div>
+      <button class="btn btn-outline btn-sm" onclick="loadTrades()">刷新交易</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>方向</th>
+            <th>代码</th>
+            <th>名称</th>
+            <th class="num">股数</th>
+            <th class="num">成交价</th>
+            <th class="num">成交金额</th>
+            <th class="num">交易后股数</th>
+            <th class="num">交易后成本价</th>
+            <th class="num">已实现盈亏</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
+      <div class="empty" id="tradesEmpty" style="display:none">还没有交易记录。</div>
     </div>
   </div>
 
@@ -263,9 +327,12 @@ document.addEventListener('DOMContentLoaded', () => {
   mountFlowPanel();
   loadPortfolio();
   loadFlows();
+  loadTrades();
   loadNav(true);
   const flowDate = document.getElementById('flowDate');
   if (flowDate && !flowDate.value) flowDate.value = new Date().toISOString().slice(0, 10);
+  const tradeDate = document.getElementById('tradeDate');
+  if (tradeDate && !tradeDate.value) tradeDate.value = new Date().toISOString().slice(0, 10);
 });
 
 function mountFlowPanel() {
@@ -526,6 +593,37 @@ async function savePosition() {
   }
 }
 
+async function saveTrade() {
+  const tradeDate = document.getElementById('tradeDate').value;
+  const tradeType = document.getElementById('tradeType').value;
+  const identifier = document.getElementById('tradeCodeInput').value.trim();
+  const shares = document.getElementById('tradeSharesInput').value;
+  const price = document.getElementById('tradePriceInput').value;
+  const note = document.getElementById('tradeNoteInput').value.trim();
+  try {
+    const code = await resolveStockCode(identifier);
+    const res = await fetch('/api/portfolio/trades', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({trade_date: tradeDate, trade_type: tradeType, code, shares, price, note})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '保存交易失败');
+    latestPortfolioData = data;
+    document.getElementById('tradeCodeInput').value = '';
+    document.getElementById('tradeSharesInput').value = '';
+    document.getElementById('tradePriceInput').value = '';
+    document.getElementById('tradeNoteInput').value = '';
+    renderSummary(data.summary);
+    renderPositions(data.positions || []);
+    renderTrades(data.trades || []);
+    await loadNav();
+    showToast((tradeType === 'buy' ? '买入' : '卖出') + '已保存，并更新持仓成本', 'success');
+  } catch (e) {
+    showToast(e.message || '保存交易失败', 'error');
+  }
+}
+
 async function resolveStockCode(identifier) {
   if (/^\d{5,6}$/.test(identifier)) return identifier;
   if (/^hk\d{1,5}$/i.test(identifier)) return identifier.replace(/^hk/i, '').padStart(5, '0');
@@ -583,6 +681,41 @@ async function loadFlows() {
   } catch (e) {
     showToast('加载资金流水失败', 'error');
   }
+}
+
+async function loadTrades() {
+  try {
+    const res = await fetch('/api/portfolio/trades');
+    const rows = await res.json();
+    renderTrades(Array.isArray(rows) ? rows : []);
+  } catch (e) {
+    showToast('加载交易记录失败', 'error');
+  }
+}
+
+function renderTrades(rows) {
+  const body = document.getElementById('tradesBody');
+  const empty = document.getElementById('tradesEmpty');
+  if (!body || !empty) return;
+  empty.style.display = rows.length ? 'none' : 'block';
+  body.innerHTML = rows.map(r => {
+    const isBuy = r.trade_type === 'buy';
+    const typeText = isBuy ? '买入' : '卖出';
+    const typeClass = isBuy ? 'trade-buy' : 'trade-sell';
+    return `<tr>
+      <td>${esc(r.trade_date)}</td>
+      <td><span class="${typeClass}">${typeText}</span></td>
+      <td><span class="code">${esc(r.stock_code)}</span></td>
+      <td><a class="name-link" href="/stock/${esc(r.stock_code)}">${esc(r.name)}</a></td>
+      <td class="num">${plain(r.shares)}</td>
+      <td class="num">${plain(r.price)} ${r.currency || ''}</td>
+      <td class="num">${money(r.amount)} ${r.currency || ''}</td>
+      <td class="num">${plain(r.shares_after)}</td>
+      <td class="num">${r.cost_price_after == null ? '--' : plain(r.cost_price_after)} ${r.currency || ''}</td>
+      <td class="num ${profitClass(r.realized_profit)}">${signedPrivateMoney(r.realized_profit)}</td>
+      <td>${esc(r.note || '')}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderFlows(rows) {

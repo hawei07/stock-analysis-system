@@ -1269,6 +1269,29 @@ def _ensure_portfolio_tables():
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
         fetch=False,
     )
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS portfolio_trades (
+            id INT NOT NULL AUTO_INCREMENT,
+            trade_date DATE NOT NULL,
+            stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+            trade_type VARCHAR(8) NOT NULL,
+            shares DECIMAL(18,4) NOT NULL,
+            price DECIMAL(18,4) NOT NULL,
+            amount DECIMAL(18,2) NOT NULL,
+            shares_before DECIMAL(18,4) NOT NULL DEFAULT 0,
+            shares_after DECIMAL(18,4) NOT NULL DEFAULT 0,
+            cost_price_before DECIMAL(18,4) NULL,
+            cost_price_after DECIMAL(18,4) NULL,
+            realized_profit DECIMAL(18,2) NULL,
+            note VARCHAR(255) NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_trade_stock_date (stock_code, trade_date),
+            CONSTRAINT fk_portfolio_trade_stock FOREIGN KEY (stock_code)
+                REFERENCES stocks (code) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
     try:
         rows = execute_query("SHOW COLUMNS FROM portfolio_positions LIKE 'cost_price'")
         if not rows:
@@ -1330,6 +1353,31 @@ def _portfolio_flows_payload():
         }
         for r in _portfolio_flow_rows()
     ]
+
+
+def _portfolio_trades_payload(limit=100):
+    _ensure_portfolio_tables()
+    rows = execute_query(
+        """SELECT t.id, t.trade_date, t.stock_code, s.name, s.market, t.trade_type,
+                  t.shares, t.price, t.amount, t.shares_before, t.shares_after,
+                  t.cost_price_before, t.cost_price_after, t.realized_profit, t.note
+           FROM portfolio_trades t
+           JOIN stocks s ON s.code = t.stock_code
+           ORDER BY t.trade_date DESC, t.id DESC
+           LIMIT %s""",
+        (limit,),
+    )
+    result = []
+    for r in rows:
+        item = dict(r)
+        item["trade_date"] = str(r["trade_date"])
+        item["currency"] = _currency_for_market(r.get("market"))
+        for field in ("shares", "price", "amount", "shares_before", "shares_after"):
+            item[field] = float(r[field])
+        for field in ("cost_price_before", "cost_price_after", "realized_profit"):
+            item[field] = float(r[field]) if r.get(field) is not None else None
+        result.append(item)
+    return result
 
 
 def _latest_dividend_per_share(codes):
@@ -1641,6 +1689,109 @@ def api_portfolio_delete_position(code):
     _ensure_portfolio_tables()
     execute_query("DELETE FROM portfolio_positions WHERE stock_code=%s", (code,), fetch=False)
     return jsonify({"ok": True, **_save_portfolio_snapshot()})
+
+
+@app.route("/api/portfolio/trades", methods=["GET"])
+def api_portfolio_trades():
+    return jsonify(_portfolio_trades_payload())
+
+
+@app.route("/api/portfolio/trades", methods=["POST"])
+def api_portfolio_add_trade():
+    _ensure_portfolio_tables()
+    data = request.get_json(force=True)
+    trade_date = str(data.get("trade_date") or datetime.now().date()).strip()
+    try:
+        datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "日期格式必须是 YYYY-MM-DD"}), 400
+
+    trade_type = str(data.get("trade_type") or "").strip().lower()
+    if trade_type not in ("buy", "sell"):
+        return jsonify({"error": "交易方向必须是买入或卖出"}), 400
+
+    stock = _resolve_portfolio_stock(str(data.get("code", data.get("identifier", ""))).strip())
+    if not stock:
+        return jsonify({"error": "未找到匹配的股票，请输入代码或更准确的名称"}), 404
+    code = stock["code"]
+
+    try:
+        shares = float(data.get("shares"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "交易股数必须是数字"}), 400
+    if shares <= 0:
+        return jsonify({"error": "交易股数必须大于 0"}), 400
+
+    try:
+        price = float(data.get("price"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "成交价必须是数字"}), 400
+    if price <= 0:
+        return jsonify({"error": "成交价必须大于 0"}), 400
+
+    note = str(data.get("note") or "").strip()[:255]
+    position_rows = execute_query(
+        "SELECT shares, cost_price FROM portfolio_positions WHERE stock_code=%s LIMIT 1",
+        (code,),
+    )
+    old_shares = float(position_rows[0]["shares"]) if position_rows else 0.0
+    old_cost = float(position_rows[0]["cost_price"]) if position_rows and position_rows[0].get("cost_price") is not None else None
+
+    amount = shares * price
+    realized_profit = None
+    if trade_type == "buy":
+        if old_shares > 0 and old_cost is None:
+            return jsonify({"error": "这只股票已有持仓但没有成本价，请先在持仓明细里补成本价"}), 400
+        new_shares = old_shares + shares
+        new_cost = ((old_shares * old_cost) + amount) / new_shares if old_shares > 0 else price
+        execute_query(
+            """INSERT INTO portfolio_positions (stock_code, shares, cost_price)
+               VALUES (%s, %s, %s)
+               ON DUPLICATE KEY UPDATE shares=VALUES(shares), cost_price=VALUES(cost_price), updated_at=CURRENT_TIMESTAMP""",
+            (code, round(new_shares, 4), round(new_cost, 4)),
+            fetch=False,
+        )
+    else:
+        if old_shares <= 0:
+            return jsonify({"error": "当前没有这只股票的持仓，无法卖出"}), 400
+        if shares > old_shares:
+            return jsonify({"error": f"卖出股数不能超过当前持仓 {old_shares:g} 股"}), 400
+        new_shares = old_shares - shares
+        new_cost = old_cost if new_shares > 0 else None
+        realized_profit = (price - old_cost) * shares if old_cost is not None else None
+        if new_shares > 0:
+            execute_query(
+                "UPDATE portfolio_positions SET shares=%s, cost_price=%s, updated_at=CURRENT_TIMESTAMP WHERE stock_code=%s",
+                (round(new_shares, 4), round(new_cost, 4) if new_cost is not None else None, code),
+                fetch=False,
+            )
+        else:
+            execute_query("DELETE FROM portfolio_positions WHERE stock_code=%s", (code,), fetch=False)
+
+    execute_query(
+        """INSERT INTO portfolio_trades
+           (trade_date, stock_code, trade_type, shares, price, amount,
+            shares_before, shares_after, cost_price_before, cost_price_after, realized_profit, note)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (
+            trade_date,
+            code,
+            trade_type,
+            round(shares, 4),
+            round(price, 4),
+            round(amount, 2),
+            round(old_shares, 4),
+            round(new_shares, 4),
+            round(old_cost, 4) if old_cost is not None else None,
+            round(new_cost, 4) if new_cost is not None else None,
+            round(realized_profit, 2) if realized_profit is not None else None,
+            note,
+        ),
+        fetch=False,
+    )
+    state = _save_portfolio_snapshot()
+    state["trades"] = _portfolio_trades_payload()
+    return jsonify({"ok": True, **state})
 
 
 @app.route("/api/portfolio/positions/<code>/dividend", methods=["PUT"])
