@@ -274,7 +274,7 @@
         </div>
         <div class="field">
           <label>成交价</label>
-          <input id="tradePriceInput" type="number" min="0" step="0.0001" placeholder="每股成交价">
+          <input id="tradePriceInput" type="number" min="0" step="0.01" placeholder="每股成交价">
         </div>
         <div class="field trade-note-field">
           <label>备注</label>
@@ -478,6 +478,11 @@ function plain(v) {
   return Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 4});
 }
 
+function price2(v) {
+  if (v == null || Number.isNaN(Number(v))) return '';
+  return Number(v).toFixed(2);
+}
+
 function esc(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -582,7 +587,7 @@ function openTradeModal(code, type = 'buy') {
   document.getElementById('tradeType').value = type;
   document.getElementById('tradeDate').value = new Date().toISOString().slice(0, 10);
   document.getElementById('tradeSharesInput').value = '';
-  document.getElementById('tradePriceInput').value = row.price == null ? '' : Number(row.price);
+  document.getElementById('tradePriceInput').value = row.price == null ? '' : price2(row.price);
   document.getElementById('tradeNoteInput').value = '';
   document.getElementById('tradeStockName').textContent = `${row.name || ''} ${code}`;
   document.getElementById('tradeStockMeta').textContent = [
@@ -738,7 +743,7 @@ function renderTrades(rows) {
       <td><span class="code">${esc(r.stock_code)}</span></td>
       <td><a class="name-link" href="/stock/${esc(r.stock_code)}">${esc(r.name)}</a></td>
       <td class="num">${plain(r.shares)}</td>
-      <td class="num">${plain(r.price)} ${r.currency || ''}</td>
+      <td class="num">${price2(r.price) || '--'} ${r.currency || ''}</td>
       <td class="num">${money(r.amount)} ${r.currency || ''}</td>
       <td class="num">${plain(r.shares_after)}</td>
       <td class="num">${r.cost_price_after == null ? '--' : plain(r.cost_price_after)} ${r.currency || ''}</td>
