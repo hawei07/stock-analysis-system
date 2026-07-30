@@ -43,7 +43,7 @@
     <div class="summary-card">
       <div class="label">持仓盈亏</div>
       <div class="value" id="portfolioProfit">--</div>
-      <div class="sub" id="portfolioProfitPct">按录入成本价计算</div>
+      <div class="sub" id="portfolioProfitPct">按交易自动计算</div>
     </div>
     <div class="summary-card">
       <div class="label">当年预期分红</div>
@@ -64,27 +64,6 @@
       <div class="label">持仓股票数</div>
       <div class="value" id="positionCount">--</div>
       <div class="sub">每次调整持仓都会覆盖今天的快照</div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
-      <div class="panel-title">录入持仓</div>
-      <div class="form-row">
-        <div class="field">
-          <label>股票代码 / 名称</label>
-          <input id="codeInput" placeholder="例如 600519 或 茅台">
-        </div>
-        <div class="field">
-          <label>股数</label>
-          <input id="sharesInput" type="number" min="0" step="1" placeholder="例如 100">
-        </div>
-        <div class="field">
-          <label>成本价</label>
-          <input id="costPriceInput" type="number" min="0" step="0.0001" placeholder="每股成本">
-        </div>
-        <button class="btn btn-primary" onclick="savePosition()">保存持仓</button>
-      </div>
     </div>
   </div>
 
@@ -134,7 +113,10 @@
   <div class="panel">
     <div class="panel-header">
       <div class="panel-title">持仓明细</div>
-      <button class="btn btn-outline btn-sm" onclick="loadPortfolio()">刷新价格</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="openTradeModal('', 'buy')">买入股票</button>
+        <button class="btn btn-outline btn-sm" onclick="loadPortfolio()">刷新价格</button>
+      </div>
     </div>
     <div class="table-wrap">
       <table>
@@ -156,7 +138,7 @@
         </thead>
         <tbody id="positionsBody"></tbody>
       </table>
-      <div class="empty" id="positionsEmpty" style="display:none">还没有持仓，先录入一只股票。</div>
+      <div class="empty" id="positionsEmpty" style="display:none">还没有持仓，先通过买入创建持仓。</div>
     </div>
   </div>
 
@@ -258,6 +240,10 @@
       </div>
       <div class="form-row trade-form-row">
         <div class="field">
+          <label>股票代码 / 名称</label>
+          <input id="tradeCodeInput" placeholder="例如 600519 或 茅台" oninput="updateTradeModalMode()">
+        </div>
+        <div class="field">
           <label>日期</label>
           <input id="tradeDate" type="date">
         </div>
@@ -281,7 +267,6 @@
           <input id="tradeNoteInput" placeholder="可选">
         </div>
       </div>
-      <input id="tradeCodeInput" type="hidden">
       <div class="trade-hint" id="tradeHint"></div>
     </div>
     <div class="modal-footer">
@@ -518,7 +503,7 @@ function renderSummary(summary) {
   const profitEl = document.getElementById('portfolioProfit');
   profitEl.textContent = signedPrivateMoney(profit);
   profitEl.className = 'value ' + profitClass(profit);
-  document.getElementById('portfolioProfitPct').textContent = profitPct == null ? '按录入成本价计算' : `${Number(profitPct).toFixed(2)}% · 成本 ${privateMoney(summary.total_cost_value)}`;
+  document.getElementById('portfolioProfitPct').textContent = profitPct == null ? '按交易自动计算' : `${Number(profitPct).toFixed(2)}% · 成本 ${privateMoney(summary.total_cost_value)}`;
   document.getElementById('expectedDividend').textContent = money(dividend);
   document.getElementById('portfolioYield').textContent = totalAsset > 0 ? (dividend / totalAsset * 100).toFixed(2) + '%' : '--';
   document.getElementById('positionCount').textContent = summary.count || 0;
@@ -565,39 +550,34 @@ function renderPositions(rows) {
       <td>
         <button class="btn btn-outline btn-sm trade-action-buy" onclick="openTradeModal('${esc(r.code)}', 'buy')">买入</button>
         <button class="btn btn-outline btn-sm trade-action-sell" onclick="openTradeModal('${esc(r.code)}', 'sell')">卖出</button>
-        <button class="btn btn-outline btn-sm" onclick="editPosition('${esc(r.code)}', ${Number(r.shares)}, ${r.cost_price == null ? 'null' : Number(r.cost_price)})">编辑</button>
-        <button class="btn btn-danger btn-sm" onclick="deletePosition('${esc(r.code)}')">删除</button>
       </td>
     </tr>
   `).join('');
 }
 
-function editPosition(code, shares, costPrice = null) {
-  document.getElementById('codeInput').value = code;
-  document.getElementById('sharesInput').value = shares;
-  document.getElementById('costPriceInput').value = costPrice == null ? '' : costPrice;
-  document.getElementById('costPriceInput').focus();
-}
-
 function openTradeModal(code, type = 'buy') {
   const positions = latestPortfolioData.positions || [];
   const row = positions.find(p => String(p.code) === String(code)) || {};
+  const isKnownPosition = Boolean(row.code);
+  const codeInput = document.getElementById('tradeCodeInput');
   document.getElementById('tradeModalOverlay').classList.add('active');
-  document.getElementById('tradeCodeInput').value = code;
+  codeInput.value = code || '';
+  codeInput.readOnly = isKnownPosition;
   document.getElementById('tradeType').value = type;
   document.getElementById('tradeDate').value = new Date().toISOString().slice(0, 10);
   document.getElementById('tradeSharesInput').value = '';
   document.getElementById('tradePriceInput').value = row.price == null ? '' : price2(row.price);
   document.getElementById('tradeNoteInput').value = '';
-  document.getElementById('tradeStockName').textContent = `${row.name || ''} ${code}`;
-  document.getElementById('tradeStockMeta').textContent = [
-    `当前持仓 ${plain(row.shares)} 股`,
-    row.cost_price == null ? '成本价 --' : `成本价 ${plain(row.cost_price)} ${row.cost_price_currency || ''}`,
-    row.price == null ? '最新价 --' : `最新价 ${money(row.price)} ${row.price_currency || ''}`
-  ].join(' · ');
+  document.getElementById('tradeStockName').textContent = isKnownPosition ? `${row.name || ''} ${code}` : '买入股票';
+  document.getElementById('tradeStockMeta').textContent = isKnownPosition
+    ? [
+        `当前持仓 ${plain(row.shares)} 股`,
+        row.cost_price == null ? '成本价 --' : `成本价 ${plain(row.cost_price)} ${row.cost_price_currency || ''}`,
+        row.price == null ? '最新价 --' : `最新价 ${money(row.price)} ${row.price_currency || ''}`
+      ].join(' · ')
+    : '输入股票代码或名称，成交后系统自动创建持仓并计算成本价';
   updateTradeModalMode();
-  const sharesInput = document.getElementById('tradeSharesInput');
-  setTimeout(() => sharesInput.focus(), 0);
+  setTimeout(() => (isKnownPosition ? document.getElementById('tradeSharesInput') : codeInput).focus(), 0);
 }
 
 function updateTradeModalMode() {
@@ -613,38 +593,14 @@ function updateTradeModalMode() {
     document.getElementById('tradeHint').textContent = `最多可卖出 ${plain(row.shares)} 股`;
   } else {
     sharesInput.removeAttribute('max');
-    document.getElementById('tradeHint').textContent = '买入会自动按成交价计算新的加权成本价';
+    document.getElementById('tradeHint').textContent = isSell
+      ? '卖出必须从当前持仓股票后方进入'
+      : '买入会自动按成交价计算新的加权成本价；再次买入时按加权平均成本计算';
   }
 }
 
 function closeTradeModal() {
   document.getElementById('tradeModalOverlay').classList.remove('active');
-}
-
-async function savePosition() {
-  const identifier = document.getElementById('codeInput').value.trim();
-  const shares = document.getElementById('sharesInput').value;
-  const costPrice = document.getElementById('costPriceInput').value;
-  try {
-    const code = await resolveStockCode(identifier);
-    const res = await fetch('/api/portfolio/positions', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({code, shares, cost_price: costPrice})
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
-    latestPortfolioData = data;
-    document.getElementById('codeInput').value = '';
-    document.getElementById('sharesInput').value = '';
-    document.getElementById('costPriceInput').value = '';
-    renderSummary(data.summary);
-    renderPositions(data.positions || []);
-    await loadNav();
-    showToast('持仓已保存，并记录今日快照', 'success');
-  } catch (e) {
-    showToast(e.message || '保存失败', 'error');
-  }
 }
 
 async function saveTrade() {
@@ -656,6 +612,9 @@ async function saveTrade() {
   const note = document.getElementById('tradeNoteInput').value.trim();
   try {
     const code = await resolveStockCode(identifier);
+    if (tradeType === 'sell' && !(latestPortfolioData.positions || []).some(p => String(p.code) === String(code))) {
+      throw new Error('卖出必须从当前持仓股票后方进入');
+    }
     const res = await fetch('/api/portfolio/trades', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -674,7 +633,7 @@ async function saveTrade() {
     renderTrades(data.trades || []);
     renderFlows(data.flows || []);
     await loadNav();
-    showToast((tradeType === 'buy' ? '买入' : '卖出') + '已保存，并更新持仓成本', 'success');
+    showToast((tradeType === 'buy' ? '买入' : '卖出') + '已保存，并自动更新持仓成本', 'success');
   } catch (e) {
     showToast(e.message || '保存交易失败', 'error');
   }
@@ -690,22 +649,6 @@ async function resolveStockCode(identifier) {
   }
   const exact = list.find(item => (item.name || '') === identifier || (item.code || '') === identifier);
   return (exact || list[0]).code;
-}
-
-async function deletePosition(code) {
-  if (!confirm('确定删除 ' + code + ' 的持仓吗？')) return;
-  try {
-    const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code), {method: 'DELETE'});
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '删除失败');
-    latestPortfolioData = data;
-    renderSummary(data.summary);
-    renderPositions(data.positions || []);
-    await loadNav();
-    showToast('持仓已删除，并记录今日快照', 'success');
-  } catch (e) {
-    showToast(e.message || '删除失败', 'error');
-  }
 }
 
 async function loadFlows() {

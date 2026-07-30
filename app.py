@@ -1640,40 +1640,7 @@ def api_portfolio_get():
 
 @app.route("/api/portfolio/positions", methods=["POST"])
 def api_portfolio_save_position():
-    _ensure_portfolio_tables()
-    data = request.get_json(force=True)
-    identifier = str(data.get("code", data.get("identifier", ""))).strip()
-    shares = data.get("shares")
-    cost_price = data.get("cost_price")
-    try:
-        shares = float(shares)
-    except (TypeError, ValueError):
-        return jsonify({"error": "股数必须是数字"}), 400
-    if shares <= 0:
-        return jsonify({"error": "股数必须大于 0"}), 400
-    if cost_price in (None, ""):
-        cost_price = None
-    else:
-        try:
-            cost_price = float(cost_price)
-        except (TypeError, ValueError):
-            return jsonify({"error": "成本价必须是数字"}), 400
-        if cost_price < 0:
-            return jsonify({"error": "成本价不能小于 0"}), 400
-    stock = _resolve_portfolio_stock(identifier)
-    if not stock:
-        return jsonify({"error": "未找到匹配的股票，请输入代码或更准确的名称"}), 404
-    code = stock["code"]
-    execute_query(
-        """INSERT INTO portfolio_positions (stock_code, shares, cost_price)
-           VALUES (%s, %s, %s)
-           ON DUPLICATE KEY UPDATE shares=VALUES(shares), cost_price=VALUES(cost_price), updated_at=CURRENT_TIMESTAMP""",
-        (code, shares, cost_price),
-        fetch=False,
-    )
-    state = _save_portfolio_snapshot()
-    state["resolved_stock"] = {"code": stock["code"], "name": stock["name"], "market": stock["market"]}
-    return jsonify({"ok": True, **state})
+    return jsonify({"error": "持仓只能通过买入/卖出交易变动，不能直接录入或修改"}), 400
 
 
 @app.route("/api/portfolio/positions/<code>", methods=["GET"])
@@ -1717,9 +1684,7 @@ def api_portfolio_position_get(code):
 
 @app.route("/api/portfolio/positions/<code>", methods=["DELETE"])
 def api_portfolio_delete_position(code):
-    _ensure_portfolio_tables()
-    execute_query("DELETE FROM portfolio_positions WHERE stock_code=%s", (code,), fetch=False)
-    return jsonify({"ok": True, **_save_portfolio_snapshot()})
+    return jsonify({"error": "持仓只能通过买入/卖出交易变动，不能直接删除"}), 400
 
 
 @app.route("/api/portfolio/trades", methods=["GET"])
@@ -1778,7 +1743,7 @@ def api_portfolio_add_trade():
     realized_profit = None
     if trade_type == "buy":
         if old_shares > 0 and old_cost is None:
-            return jsonify({"error": "这只股票已有持仓但没有成本价，请先在持仓明细里补成本价"}), 400
+            return jsonify({"error": "这只股票已有持仓但缺少历史成本，无法继续自动计算成本价"}), 400
         new_shares = old_shares + shares
         new_cost = ((old_shares * old_cost) + amount) / new_shares if old_shares > 0 else price
         execute_query(
