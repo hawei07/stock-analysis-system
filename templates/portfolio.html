@@ -95,42 +95,6 @@
 
   <div class="panel">
     <div class="panel-header">
-      <div class="panel-title">买入 / 卖出</div>
-      <div class="form-row">
-        <div class="field">
-          <label>日期</label>
-          <input id="tradeDate" type="date">
-        </div>
-        <div class="field">
-          <label>方向</label>
-          <select id="tradeType">
-            <option value="buy">买入</option>
-            <option value="sell">卖出</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>股票代码 / 名称</label>
-          <input id="tradeCodeInput" placeholder="例如 600519 或 茅台">
-        </div>
-        <div class="field">
-          <label>股数</label>
-          <input id="tradeSharesInput" type="number" min="0" step="1" placeholder="例如 100">
-        </div>
-        <div class="field">
-          <label>成交价</label>
-          <input id="tradePriceInput" type="number" min="0" step="0.0001" placeholder="每股成交价">
-        </div>
-        <div class="field">
-          <label>备注</label>
-          <input id="tradeNoteInput" placeholder="可选">
-        </div>
-        <button class="btn btn-primary" onclick="saveTrade()">保存交易</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
       <div class="panel-title">资金流水</div>
     </div>
     <div class="table-wrap">
@@ -281,6 +245,54 @@
       <button class="modal-close" onclick="closeFlowModal()">&times;</button>
     </div>
     <div class="modal-body" id="flowModalBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="tradeModalOverlay" onclick="if(event.target===this)closeTradeModal()">
+  <div class="modal trade-modal">
+    <div class="modal-header">
+      <div class="modal-title" id="tradeModalTitle">买入 / 卖出</div>
+      <button class="modal-close" onclick="closeTradeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="trade-stock-card">
+        <div>
+          <div class="trade-stock-name" id="tradeStockName">--</div>
+          <div class="trade-stock-meta" id="tradeStockMeta">--</div>
+        </div>
+      </div>
+      <div class="form-row trade-form-row">
+        <div class="field">
+          <label>日期</label>
+          <input id="tradeDate" type="date">
+        </div>
+        <div class="field">
+          <label>方向</label>
+          <select id="tradeType" onchange="updateTradeModalMode()">
+            <option value="buy">买入</option>
+            <option value="sell">卖出</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>股数</label>
+          <input id="tradeSharesInput" type="number" min="0" step="1" placeholder="例如 100">
+        </div>
+        <div class="field">
+          <label>成交价</label>
+          <input id="tradePriceInput" type="number" min="0" step="0.0001" placeholder="每股成交价">
+        </div>
+        <div class="field trade-note-field">
+          <label>备注</label>
+          <input id="tradeNoteInput" placeholder="可选">
+        </div>
+      </div>
+      <input id="tradeCodeInput" type="hidden">
+      <div class="trade-hint" id="tradeHint"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeTradeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveTrade()">保存交易</button>
+    </div>
   </div>
 </div>
 
@@ -553,6 +565,8 @@ function renderPositions(rows) {
       </td>
       <td class="num">${money(r.expected_dividend)}</td>
       <td>
+        <button class="btn btn-outline btn-sm trade-action-buy" onclick="openTradeModal('${esc(r.code)}', 'buy')">买入</button>
+        <button class="btn btn-outline btn-sm trade-action-sell" onclick="openTradeModal('${esc(r.code)}', 'sell')">卖出</button>
         <button class="btn btn-outline btn-sm" onclick="editPosition('${esc(r.code)}', ${Number(r.shares)}, ${r.cost_price == null ? 'null' : Number(r.cost_price)})">编辑</button>
         <button class="btn btn-danger btn-sm" onclick="deletePosition('${esc(r.code)}')">删除</button>
       </td>
@@ -565,6 +579,48 @@ function editPosition(code, shares, costPrice = null) {
   document.getElementById('sharesInput').value = shares;
   document.getElementById('costPriceInput').value = costPrice == null ? '' : costPrice;
   document.getElementById('costPriceInput').focus();
+}
+
+function openTradeModal(code, type = 'buy') {
+  const positions = latestPortfolioData.positions || [];
+  const row = positions.find(p => String(p.code) === String(code)) || {};
+  document.getElementById('tradeModalOverlay').classList.add('active');
+  document.getElementById('tradeCodeInput').value = code;
+  document.getElementById('tradeType').value = type;
+  document.getElementById('tradeDate').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('tradeSharesInput').value = '';
+  document.getElementById('tradePriceInput').value = row.price == null ? '' : Number(row.price);
+  document.getElementById('tradeNoteInput').value = '';
+  document.getElementById('tradeStockName').textContent = `${row.name || ''} ${code}`;
+  document.getElementById('tradeStockMeta').textContent = [
+    `当前持仓 ${plain(row.shares)} 股`,
+    row.cost_price == null ? '成本价 --' : `成本价 ${plain(row.cost_price)} ${row.cost_price_currency || ''}`,
+    row.price == null ? '最新价 --' : `最新价 ${money(row.price)} ${row.price_currency || ''}`
+  ].join(' · ');
+  updateTradeModalMode();
+  const sharesInput = document.getElementById('tradeSharesInput');
+  setTimeout(() => sharesInput.focus(), 0);
+}
+
+function updateTradeModalMode() {
+  const code = document.getElementById('tradeCodeInput').value;
+  const type = document.getElementById('tradeType').value;
+  const positions = latestPortfolioData.positions || [];
+  const row = positions.find(p => String(p.code) === String(code)) || {};
+  const sharesInput = document.getElementById('tradeSharesInput');
+  const isSell = type === 'sell';
+  document.getElementById('tradeModalTitle').textContent = isSell ? '卖出' : '买入';
+  if (isSell && row.shares != null) {
+    sharesInput.max = Number(row.shares);
+    document.getElementById('tradeHint').textContent = `最多可卖出 ${plain(row.shares)} 股`;
+  } else {
+    sharesInput.removeAttribute('max');
+    document.getElementById('tradeHint').textContent = '买入会自动按成交价计算新的加权成本价';
+  }
+}
+
+function closeTradeModal() {
+  document.getElementById('tradeModalOverlay').classList.remove('active');
 }
 
 async function savePosition() {
@@ -614,6 +670,7 @@ async function saveTrade() {
     document.getElementById('tradeSharesInput').value = '';
     document.getElementById('tradePriceInput').value = '';
     document.getElementById('tradeNoteInput').value = '';
+    closeTradeModal();
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     renderTrades(data.trades || []);

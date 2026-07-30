@@ -32,6 +32,8 @@ body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f2f5;c
 .flow-out{color:#389e0d;font-weight:600}
 .trade-buy{color:#cf1322;font-weight:700}
 .trade-sell{color:#389e0d;font-weight:700}
+.trade-action-buy{color:#cf1322!important;border-color:#ff7875!important}
+.trade-action-sell{color:#389e0d!important;border-color:#73d13d!important}
 .dividend-cell{display:flex;align-items:center;gap:6px;justify-content:flex-end}
 .dividend-input{width:88px;padding:5px 7px;border:1px solid #d9d9d9;border-radius:6px;font-size:12px;text-align:right}
 .dividend-meta{font-size:11px;color:#999;margin-top:4px;text-align:right}
@@ -70,12 +72,20 @@ tr:hover td{background:#fafbff}
 .modal-close{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:#999}
 .modal-close:hover{color:#333}
 .modal-body{padding:16px;overflow:auto}
+.modal-footer{padding:12px 18px;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:flex-end;gap:10px}
+.trade-modal{width:min(720px,96vw)}
+.trade-stock-card{background:#f7f9fc;border:1px solid #edf1f7;border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.trade-stock-name{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:4px}
+.trade-stock-meta,.trade-hint{font-size:12px;color:#888;line-height:1.6}
+.trade-form-row{align-items:flex-end}
+.trade-note-field input{width:220px}
 html[data-theme="dark"] body{background:var(--bg);color:var(--text)}
 html[data-theme="dark"] .summary-card,
 html[data-theme="dark"] .panel,
 html[data-theme="dark"] .modal{background:var(--surface)!important;border-color:var(--border)!important;box-shadow:var(--shadow)}
 html[data-theme="dark"] .panel-header,
-html[data-theme="dark"] .modal-header{border-color:var(--border)!important}
+html[data-theme="dark"] .modal-header,
+html[data-theme="dark"] .modal-footer{border-color:var(--border)!important}
 html[data-theme="dark"] th{background:var(--surface-muted)!important;color:var(--text-subtle)!important;border-color:var(--border)!important}
 html[data-theme="dark"] td{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border-soft)!important}
 html[data-theme="dark"] tr:hover td{background:var(--hover)!important}
@@ -94,6 +104,10 @@ html[data-theme="dark"] .profit-positive{color:#ff7875!important}
 html[data-theme="dark"] .profit-negative{color:#73d13d!important}
 html[data-theme="dark"] .trade-buy{color:#ff7875!important}
 html[data-theme="dark"] .trade-sell{color:#73d13d!important}
+html[data-theme="dark"] .trade-action-buy{color:#ff7875!important;border-color:#ff7875!important}
+html[data-theme="dark"] .trade-action-sell{color:#73d13d!important;border-color:#73d13d!important}
+html[data-theme="dark"] .trade-stock-card{background:var(--surface-soft)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .trade-stock-name{color:var(--text-strong)!important}
 html[data-theme="dark"] .summary-card .label,
 html[data-theme="dark"] .summary-card .sub,
 html[data-theme="dark"] .field label,
