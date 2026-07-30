@@ -1262,6 +1262,7 @@ def _ensure_portfolio_tables():
             id INT NOT NULL AUTO_INCREMENT,
             flow_date DATE NOT NULL,
             amount DECIMAL(18,2) NOT NULL,
+            flow_source VARCHAR(20) NOT NULL DEFAULT 'external',
             note VARCHAR(255) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -1269,6 +1270,28 @@ def _ensure_portfolio_tables():
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
         fetch=False,
     )
+    try:
+        rows = execute_query("SHOW COLUMNS FROM portfolio_cash_flows LIKE 'flow_source'")
+        if not rows:
+            execute_query(
+                "ALTER TABLE portfolio_cash_flows ADD COLUMN flow_source VARCHAR(20) NOT NULL DEFAULT 'external' AFTER amount",
+                fetch=False,
+            )
+    except Exception:
+        pass
+    try:
+        execute_query(
+            """UPDATE portfolio_cash_flows f
+               JOIN portfolio_trades t
+                 ON f.flow_date = t.trade_date
+                AND ABS(f.amount) = t.amount
+                AND ((t.trade_type='buy' AND f.amount < 0) OR (t.trade_type='sell' AND f.amount > 0))
+               SET f.flow_source='trade'
+               WHERE f.flow_source='external'""",
+            fetch=False,
+        )
+    except Exception:
+        pass
     execute_query(
         """CREATE TABLE IF NOT EXISTS portfolio_trades (
             id INT NOT NULL AUTO_INCREMENT,
@@ -1341,7 +1364,7 @@ def _portfolio_cash_amount():
 def _portfolio_flow_rows(limit=100):
     _ensure_portfolio_tables()
     return execute_query(
-        """SELECT id, flow_date, amount, note, created_at
+        """SELECT id, flow_date, amount, flow_source, note, created_at
            FROM portfolio_cash_flows
            ORDER BY flow_date DESC, id DESC
            LIMIT %s""",
@@ -1355,6 +1378,7 @@ def _portfolio_flows_payload():
             "id": r["id"],
             "flow_date": str(r["flow_date"]),
             "amount": round(float(r["amount"]), 2),
+            "flow_source": r.get("flow_source") or "external",
             "note": r.get("note") or "",
             "created_at": str(r["created_at"]) if r.get("created_at") else None,
         }
@@ -1804,8 +1828,8 @@ def api_portfolio_add_trade():
     )
     flow_note = note or f"{stock['name']}({code}) {'买入' if trade_type == 'buy' else '卖出'}"
     execute_query(
-        "INSERT INTO portfolio_cash_flows (flow_date, amount, note) VALUES (%s, %s, %s)",
-        (trade_date, round(cash_delta, 2), flow_note[:255]),
+        "INSERT INTO portfolio_cash_flows (flow_date, amount, flow_source, note) VALUES (%s, %s, %s, %s)",
+        (trade_date, round(cash_delta, 2), "trade", flow_note[:255]),
         fetch=False,
     )
     execute_query(
@@ -1893,8 +1917,8 @@ def api_portfolio_add_flow():
     if new_cash < 0:
         return jsonify({"error": "现金不足，无法记录这笔流出"}), 400
     execute_query(
-        "INSERT INTO portfolio_cash_flows (flow_date, amount, note) VALUES (%s, %s, %s)",
-        (flow_date, round(amount, 2), note),
+        "INSERT INTO portfolio_cash_flows (flow_date, amount, flow_source, note) VALUES (%s, %s, %s, %s)",
+        (flow_date, round(amount, 2), "external", note),
         fetch=False,
     )
     execute_query(
@@ -1910,9 +1934,11 @@ def api_portfolio_add_flow():
 @app.route("/api/portfolio/flows/<int:flow_id>", methods=["DELETE"])
 def api_portfolio_delete_flow(flow_id):
     _ensure_portfolio_tables()
-    rows = execute_query("SELECT amount FROM portfolio_cash_flows WHERE id=%s", (flow_id,))
+    rows = execute_query("SELECT amount, flow_source FROM portfolio_cash_flows WHERE id=%s", (flow_id,))
     if not rows:
         return jsonify({"error": "未找到这笔资金流水"}), 404
+    if rows[0].get("flow_source") == "trade":
+        return jsonify({"error": "交易产生的资金流水不能单独删除"}), 400
     amount = float(rows[0]["amount"])
     cash_amount = _portfolio_cash_amount()
     new_cash = cash_amount - amount
@@ -1958,6 +1984,7 @@ def api_portfolio_nav():
     flow_rows = execute_query(
         """SELECT flow_date, SUM(amount) AS net_flow
            FROM portfolio_cash_flows
+           WHERE flow_source='external'
            GROUP BY flow_date"""
     )
     flow_by_date = {str(r["flow_date"]): float(r["net_flow"] or 0) for r in flow_rows}

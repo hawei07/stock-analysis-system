@@ -754,17 +754,20 @@ function renderFlows(rows) {
   if (!body) return;
   const table = body.closest('table');
   if (table) {
-    table.querySelector('thead').innerHTML = '<tr><th>日期</th><th class="num">金额</th><th>备注</th><th>操作</th></tr>';
+    table.querySelector('thead').innerHTML = '<tr><th>日期</th><th>类型</th><th class="num">金额</th><th>备注</th><th>操作</th></tr>';
   }
   empty.style.display = rows.length ? 'none' : 'block';
   body.innerHTML = rows.map(r => {
     const cls = Number(r.amount) >= 0 ? 'flow-in' : 'flow-out';
     const sign = Number(r.amount) >= 0 ? '+' : '';
+    const isTrade = r.flow_source === 'trade';
+    const typeText = isTrade ? (Number(r.amount) >= 0 ? '卖出到账' : '买入扣款') : (Number(r.amount) >= 0 ? '入金' : '出金');
     return `<tr>
       <td>${esc(r.flow_date)}</td>
+      <td>${typeText}</td>
       <td class="num ${cls}">${sign}${money(r.amount)}</td>
       <td>${esc(r.note || '')}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteFlow(${r.id})">删除</button></td>
+      <td>${isTrade ? '--' : `<button class="btn btn-danger btn-sm" onclick="deleteFlow(${r.id})">删除</button>`}</td>
     </tr>`;
   }).join('');
 }
