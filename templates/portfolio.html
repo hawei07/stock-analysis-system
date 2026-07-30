@@ -674,6 +674,7 @@ async function saveTrade() {
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     renderTrades(data.trades || []);
+    renderFlows(data.flows || []);
     await loadNav();
     showToast((tradeType === 'buy' ? '买入' : '卖出') + '已保存，并更新持仓成本', 'success');
   } catch (e) {

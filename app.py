@@ -1745,6 +1745,12 @@ def api_portfolio_add_trade():
     old_cost = float(position_rows[0]["cost_price"]) if position_rows and position_rows[0].get("cost_price") is not None else None
 
     amount = shares * price
+    cash_delta = -amount if trade_type == "buy" else amount
+    cash_amount = _portfolio_cash_amount()
+    new_cash = cash_amount + cash_delta
+    if new_cash < 0:
+        return jsonify({"error": "现金不足，无法买入"}), 400
+
     realized_profit = None
     if trade_type == "buy":
         if old_shares > 0 and old_cost is None:
@@ -1796,8 +1802,20 @@ def api_portfolio_add_trade():
         ),
         fetch=False,
     )
+    flow_note = note or f"{stock['name']}({code}) {'买入' if trade_type == 'buy' else '卖出'}"
+    execute_query(
+        "INSERT INTO portfolio_cash_flows (flow_date, amount, note) VALUES (%s, %s, %s)",
+        (trade_date, round(cash_delta, 2), flow_note[:255]),
+        fetch=False,
+    )
+    execute_query(
+        "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+        (round(new_cash, 2),),
+        fetch=False,
+    )
     state = _save_portfolio_snapshot()
     state["trades"] = _portfolio_trades_payload()
+    state["flows"] = _portfolio_flows_payload()
     return jsonify({"ok": True, **state})
 
 
