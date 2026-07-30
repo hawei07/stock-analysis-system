@@ -1273,7 +1273,7 @@ def _ensure_portfolio_tables():
         """CREATE TABLE IF NOT EXISTS portfolio_trades (
             id INT NOT NULL AUTO_INCREMENT,
             trade_date DATE NOT NULL,
-            stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+            stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
             trade_type VARCHAR(8) NOT NULL,
             shares DECIMAL(18,4) NOT NULL,
             price DECIMAL(18,4) NOT NULL,
@@ -1286,12 +1286,19 @@ def _ensure_portfolio_tables():
             note VARCHAR(255) NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            KEY idx_trade_stock_date (stock_code, trade_date),
-            CONSTRAINT fk_portfolio_trade_stock FOREIGN KEY (stock_code)
-                REFERENCES stocks (code) ON DELETE CASCADE
+            KEY idx_trade_stock_date (stock_code, trade_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
         fetch=False,
     )
+    try:
+        rows = execute_query("SHOW FULL COLUMNS FROM portfolio_trades LIKE 'stock_code'")
+        if rows and rows[0].get("Collation") != "utf8mb4_unicode_ci":
+            execute_query(
+                "ALTER TABLE portfolio_trades MODIFY stock_code VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL",
+                fetch=False,
+            )
+    except Exception:
+        pass
     try:
         rows = execute_query("SHOW COLUMNS FROM portfolio_positions LIKE 'cost_price'")
         if not rows:
