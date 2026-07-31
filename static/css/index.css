@@ -146,6 +146,116 @@ tr:hover td{background:#fafbff}
 .segment-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
 .segment-chart-grid .chart-container:last-child{grid-column:1 / -1}
 .segment-chart-title{font-size:15px;font-weight:600;margin-bottom:12px;color:#1a1a2e}
+.fund-dashboard{display:flex;flex-direction:column;gap:16px}
+.fund-head{display:flex;align-items:center;justify-content:space-between;gap:16px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.fund-title{font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:4px}
+.fund-subtitle{font-size:12px;color:#8a94a6}
+.fund-score-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.fund-score-card{background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-top:3px solid #9aa4b2;min-height:150px}
+.fund-score-card.fund-good{border-top-color:#16a34a}
+.fund-score-card.fund-warn{border-top-color:#d97706}
+.fund-score-card.fund-bad{border-top-color:#dc2626}
+.fund-score-top{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:700;color:#1a1a2e}
+.fund-badge{display:inline-flex;align-items:center;justify-content:center;min-width:48px;height:22px;padding:0 8px;border-radius:999px;background:#eef2ff;color:#4a6cf7;font-size:12px;font-weight:700}
+.fund-good .fund-badge{background:#dcfce7;color:#15803d}
+.fund-warn .fund-badge{background:#fef3c7;color:#b45309}
+.fund-bad .fund-badge{background:#fee2e2;color:#b91c1c}
+.fund-score-main{display:flex;align-items:baseline;margin-top:14px}
+.fund-score{font-size:34px;line-height:1;font-weight:800;color:#1a1a2e}
+.fund-score-unit{font-size:12px;color:#8a94a6;margin-left:3px}
+.fund-score-sub{font-size:13px;font-weight:700;color:#4a5568;margin-top:10px;line-height:1.4}
+.fund-score-note{font-size:12px;color:#8a94a6;margin-top:5px;line-height:1.45}
+.fund-body-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+.fund-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.fund-group,.fund-signals{background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.fund-group h3,.fund-signals h3{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:12px}
+.fund-metric-list{display:flex;flex-direction:column;gap:8px}
+.fund-metric{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid #eef1f5;border-radius:6px;padding:10px 12px;background:#fafbfc}
+.fund-metric-name{font-size:13px;font-weight:700;color:#2d3748}
+.fund-metric-note{font-size:12px;color:#8a94a6;margin-top:3px;line-height:1.35}
+.fund-metric-value{font-size:16px;font-weight:800;color:#1a1a2e;text-align:right;white-space:nowrap}
+.fund-metric.fund-good{background:#f0fdf4;border-color:#bbf7d0}
+.fund-metric.fund-warn{background:#fffbeb;border-color:#fde68a}
+.fund-metric.fund-bad{background:#fef2f2;border-color:#fecaca}
+.fund-metric.fund-good .fund-metric-value{color:#15803d}
+.fund-metric.fund-warn .fund-metric-value{color:#b45309}
+.fund-metric.fund-bad .fund-metric-value{color:#b91c1c}
+.fund-signals{position:sticky;top:12px}
+.fund-signal{display:grid;grid-template-columns:10px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid #eef1f5}
+.fund-signal:last-child{border-bottom:0}
+.fund-signal-dot{width:9px;height:9px;border-radius:50%;background:#9aa4b2;margin-top:5px}
+.fund-signal.fund-good .fund-signal-dot{background:#16a34a}
+.fund-signal.fund-warn .fund-signal-dot{background:#d97706}
+.fund-signal.fund-bad .fund-signal-dot{background:#dc2626}
+.fund-signal-title{font-size:13px;font-weight:700;color:#1a1a2e;line-height:1.4}
+.fund-signal-detail{font-size:12px;color:#8a94a6;margin-top:3px;line-height:1.5}
+.compare-panel{display:flex;flex-direction:column;gap:14px}
+.compare-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.compare-stock-box,.compare-period-box,.compare-metric-box{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.compare-stock-box input{width:150px;padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;outline:none}
+.compare-period-box select,.compare-metric-box select{height:31px;padding:4px 10px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#333;font-size:13px}
+.compare-stock-chips,.compare-metric-chips{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.compare-metric-chips{min-height:30px}
+.compare-stock-chip,.compare-metric-chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:999px;background:#f0f5ff;color:#3152d4;border:1px solid #d6e4ff;font-size:12px;font-weight:700}
+.compare-stock-chip.primary{background:#eef2ff;color:#1f3fb5;border-color:#c7d2fe}
+.compare-stock-chip button,.compare-metric-chip button{width:18px;height:18px;border:0;border-radius:50%;background:rgba(74,108,247,.12);color:inherit;cursor:pointer;line-height:18px;font-size:14px}
+.compare-stock-chip button:hover,.compare-metric-chip button:hover{background:rgba(255,77,79,.14);color:#cf1322}
+.compare-metric-chip{cursor:grab}
+.compare-metric-chip:active{cursor:grabbing}
+.compare-metric-drag-handle{display:inline-flex;align-items:center;justify-content:center;color:#8a94a6;font-weight:900;letter-spacing:0;cursor:grab;user-select:none}
+.compare-metric-name .compare-metric-drag-handle{margin-right:6px;color:#a0aec0}
+.compare-dragging{opacity:.45}
+.compare-drag-over.compare-metric-chip{background:#e6f0ff;border-color:#4a6cf7}
+.compare-metric-row.compare-drag-over .compare-metric-col{box-shadow:inset 4px 0 0 #4a6cf7;background:#eef4ff!important}
+.compare-dashboard{display:block}
+.compare-table-wrap{background:#fff;border:1px solid #e8e8e8;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:auto;max-height:calc(100vh - 290px)}
+.compare-table{min-width:760px;border-collapse:separate;border-spacing:0}
+.compare-table th,.compare-table td{border-bottom:1px solid #eef1f5;border-right:1px solid #eef1f5;padding:12px 14px;vertical-align:middle;background:#fff}
+.compare-table thead th{position:sticky;top:0;z-index:8;background:#f7f9fc;text-align:left;color:#1a1a2e}
+.compare-table thead .compare-metric-head{left:0;z-index:10;min-width:190px}
+.compare-metric-col{position:sticky;left:0;z-index:4;width:190px;min-width:190px;background:#fafbfc!important;text-align:left}
+.compare-metric-name{font-size:13px;font-weight:800;color:#1a1a2e;line-height:1.35}
+.compare-metric-meta{font-size:12px;color:#8a94a6;margin-top:3px;line-height:1.35}
+.compare-stock-head-name{font-size:13px;font-weight:800;color:#1a1a2e;line-height:1.35}
+.compare-stock-head-code{font-size:12px;color:#8a94a6;margin-top:2px;font-family:'Courier New',monospace}
+.compare-cell-value{text-align:right;font-size:14px;font-weight:850;color:#1a1a2e;font-variant-numeric:tabular-nums;margin-bottom:7px}
+.compare-bar-track{height:12px;background:#eef1f5;border-radius:999px;overflow:hidden}
+.compare-bar{height:100%;border-radius:999px;background:#4a6cf7;transition:width .25s}
+.compare-bar.neg{background:#22a06b}
+.capital-panel{display:flex;flex-direction:column;gap:14px}
+.capital-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:15px 18px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.capital-title{font-size:18px;font-weight:800;color:#1a1a2e;margin-bottom:4px}
+.capital-subtitle{font-size:12px;color:#8a94a6}
+.capital-controls{display:flex;align-items:center;gap:8px}
+.capital-controls select{height:32px;padding:4px 10px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#333;font-size:13px}
+.capital-dashboard{display:flex;flex-direction:column;gap:14px}
+.capital-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+.capital-main{display:flex;flex-direction:column;gap:14px}
+.capital-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.capital-kpi{background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:13px 14px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.capital-kpi-name{font-size:12px;color:#8a94a6;margin-bottom:6px}
+.capital-kpi-value{font-size:20px;font-weight:850;color:#1a1a2e;line-height:1.15;font-variant-numeric:tabular-nums}
+.capital-kpi-note{font-size:12px;color:#8a94a6;margin-top:6px;line-height:1.35}
+.capital-chart-card,.capital-table-card,.capital-side section{background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.capital-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.capital-section-head h3,.capital-side h3{font-size:15px;font-weight:800;color:#1a1a2e;margin-bottom:4px}
+.capital-section-head span{font-size:12px;color:#8a94a6}
+.capital-chart{width:100%;height:430px}
+.capital-table-wrap{overflow:auto}
+.capital-table{min-width:1080px}
+.capital-table th,.capital-table td{text-align:right;white-space:nowrap}
+.capital-table th:first-child,.capital-table td:first-child{text-align:left}
+.capital-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:12px}
+.capital-signal{border-left:3px solid #9aa4b2;background:#fafbfc;border-radius:6px;padding:9px 10px;margin-top:8px}
+.capital-signal.capital-good{border-left-color:#16a34a;background:#f0fdf4}
+.capital-signal.capital-warn{border-left-color:#d97706;background:#fffbeb}
+.capital-signal.capital-bad{border-left-color:#dc2626;background:#fef2f2}
+.capital-signal-title{font-size:13px;font-weight:800;color:#1a1a2e;line-height:1.4}
+.capital-signal-detail{font-size:12px;color:#64748b;margin-top:3px;line-height:1.5}
+.capital-side-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eef1f5;font-size:13px;color:#4a5568}
+.capital-side-row:last-child{border-bottom:0}
+.capital-side-row b{color:#1a1a2e;font-variant-numeric:tabular-nums}
+.capital-side p{font-size:12px;color:#64748b;line-height:1.6;margin-top:7px}
 
 /* 弹窗 */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;align-items:center;justify-content:center}
@@ -237,6 +347,14 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 /* 指标图表图标 */
 .chart-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:4px;cursor:pointer;color:#bbb;transition:color .2s;vertical-align:middle;border-radius:4px}
 .chart-icon:hover{color:#4a6cf7;background:#f0f5ff}
+.fin-indicator-title{vertical-align:middle}
+.fin-source-badge{display:inline-flex;align-items:center;height:18px;margin-left:6px;padding:0 6px;border-radius:999px;background:#eef2ff;color:#4a6cf7;font-size:11px;font-weight:700;vertical-align:middle}
+.fin-source-自{background:#eef2ff;color:#3152d4}
+.fin-source-资{background:#ecfdf5;color:#15803d}
+.fin-source-利{background:#fff7ed;color:#c2410c}
+.fin-source-现{background:#f0f9ff;color:#0369a1}
+.fin-remove-indicator{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:4px;border:0;border-radius:4px;background:transparent;color:#bbb;cursor:pointer;font-size:16px;line-height:1;vertical-align:middle;transition:all .2s}
+.fin-remove-indicator:hover{background:#fff1f0;color:#ff4d4f}
 .bs-period-header{display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .bs-composition-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:transparent;color:#8a96aa;cursor:pointer;transition:all .2s;vertical-align:middle}
 .bs-composition-icon:hover{color:#4a6cf7;background:#f0f5ff}
@@ -319,6 +437,16 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .sticky-card:hover .sticky-actions{opacity:1}
 
 @media (max-width:768px){
+  .fund-score-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fund-body-grid{grid-template-columns:1fr}
+  .fund-groups{grid-template-columns:1fr}
+  .fund-signals{position:static}
+  .compare-toolbar{align-items:stretch;flex-direction:column}
+  .compare-table-wrap{max-height:calc(100vh - 260px)}
+  .capital-toolbar{align-items:flex-start;flex-direction:column}
+  .capital-grid{grid-template-columns:1fr}
+  .capital-side{position:static}
+  .capital-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .fin-table .sticky-col{min-width:140px}
   .fin-table th,.fin-table td{padding:4px 6px;font-size:11px}
 }
@@ -363,6 +491,20 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   .chat-panel{height:calc(100vh - 200px);min-height:350px}
   .chat-input-bar{padding:8px 12px}
   .detail-content{padding:12px 8px}
+  .fund-head{align-items:flex-start;flex-direction:column}
+  .fund-score-grid{grid-template-columns:1fr}
+  .fund-score-card{min-height:0}
+  .fund-metric{align-items:flex-start;flex-direction:column;gap:6px}
+  .fund-metric-value{text-align:left}
+  .compare-stock-box,.compare-period-box,.compare-metric-box{align-items:stretch}
+  .compare-stock-box input,.compare-metric-box select{width:100%}
+  .compare-table{min-width:680px}
+  .compare-table th,.compare-table td{padding:9px 10px}
+  .compare-metric-col,.compare-table thead .compare-metric-head{width:150px;min-width:150px}
+  .compare-cell-value{font-size:12px}
+  .capital-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .capital-chart{height:320px}
+  .capital-section-head{flex-direction:column;gap:3px}
   .modal-body .row{flex-direction:column;gap:0}
   .settings-grid{grid-template-columns:1fr!important}
   .toast{left:12px;right:12px;top:auto;bottom:12px;transform:translateY(10px)}
@@ -423,6 +565,13 @@ html[data-theme="dark"] .icon-btn{color:var(--text-muted)!important}
 html[data-theme="dark"] .icon-btn-delete:hover{background:#3a1c22!important;color:#ff9aa2!important}
 html[data-theme="dark"] .bs-composition-icon{color:var(--text-muted)!important}
 html[data-theme="dark"] .bs-composition-icon:hover{background:var(--primary-soft)!important;color:var(--primary)!important}
+html[data-theme="dark"] .fin-source-badge{background:var(--primary-soft)!important;color:var(--primary)!important}
+html[data-theme="dark"] .fin-source-自{background:#1e2a4a!important;color:#9aadff!important}
+html[data-theme="dark"] .fin-source-资{background:#12331f!important;color:#73d13d!important}
+html[data-theme="dark"] .fin-source-利{background:#3a2b13!important;color:#ffd666!important}
+html[data-theme="dark"] .fin-source-现{background:#143044!important;color:#8ed4ff!important}
+html[data-theme="dark"] .fin-remove-indicator{color:var(--text-muted)!important}
+html[data-theme="dark"] .fin-remove-indicator:hover{background:#3a1c22!important;color:#ff9aa2!important}
 html[data-theme="dark"] .bs-composition-section{border-color:var(--border)!important}
 html[data-theme="dark"] .bs-composition-table-wrap h4{color:var(--primary)!important}
 html[data-theme="dark"] .bs-composition-table th,
@@ -464,6 +613,68 @@ html[data-theme="dark"] .munger .chat-bubble{background:var(--surface-soft)!impo
 html[data-theme="dark"] .chat-delete{background:var(--surface)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .sticky-card{background:#2b2614!important;border-color:#51451f!important;color:var(--text)!important}
 html[data-theme="dark"] #grahamPreview{background:var(--surface-soft)!important;color:var(--text)!important}
+html[data-theme="dark"] .fund-head,
+html[data-theme="dark"] .fund-score-card,
+html[data-theme="dark"] .fund-group,
+html[data-theme="dark"] .fund-signals,
+html[data-theme="dark"] .compare-toolbar,
+html[data-theme="dark"] .compare-table-wrap,
+html[data-theme="dark"] .capital-toolbar,
+html[data-theme="dark"] .capital-kpi,
+html[data-theme="dark"] .capital-chart-card,
+html[data-theme="dark"] .capital-table-card,
+html[data-theme="dark"] .capital-side section{background:var(--surface)!important;border-color:var(--border)!important;box-shadow:var(--shadow)}
+html[data-theme="dark"] .fund-metric{background:var(--surface-soft)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .compare-table th,
+html[data-theme="dark"] .compare-table td{background:var(--surface)!important;border-color:var(--border-soft)!important;color:var(--text)!important}
+html[data-theme="dark"] .compare-table thead th,
+html[data-theme="dark"] .compare-metric-col{background:var(--surface-muted)!important}
+html[data-theme="dark"] .compare-metric-drag-handle{color:var(--text-muted)!important}
+html[data-theme="dark"] .compare-drag-over.compare-metric-chip{background:#1e2a4a!important;border-color:var(--primary)!important}
+html[data-theme="dark"] .compare-metric-row.compare-drag-over .compare-metric-col{box-shadow:inset 4px 0 0 var(--primary);background:#1e2a4a!important}
+html[data-theme="dark"] .fund-metric.fund-good{background:#12331f!important;border-color:#246b3a!important}
+html[data-theme="dark"] .fund-metric.fund-warn{background:#3a2b13!important;border-color:#8a6116!important}
+html[data-theme="dark"] .fund-metric.fund-bad{background:#3a1c22!important;border-color:#7f2b33!important}
+html[data-theme="dark"] .fund-title,
+html[data-theme="dark"] .fund-score-top,
+html[data-theme="dark"] .fund-score,
+html[data-theme="dark"] .fund-group h3,
+html[data-theme="dark"] .fund-signals h3,
+html[data-theme="dark"] .fund-metric-name,
+html[data-theme="dark"] .fund-metric-value,
+html[data-theme="dark"] .fund-signal-title,
+html[data-theme="dark"] .compare-stock-head-name,
+html[data-theme="dark"] .compare-metric-name,
+html[data-theme="dark"] .compare-cell-value,
+html[data-theme="dark"] .capital-title,
+html[data-theme="dark"] .capital-kpi-value,
+html[data-theme="dark"] .capital-section-head h3,
+html[data-theme="dark"] .capital-side h3,
+html[data-theme="dark"] .capital-signal-title,
+html[data-theme="dark"] .capital-side-row b{color:var(--text-strong)!important}
+html[data-theme="dark"] .fund-subtitle,
+html[data-theme="dark"] .fund-score-unit,
+html[data-theme="dark"] .fund-score-note,
+html[data-theme="dark"] .fund-metric-note,
+html[data-theme="dark"] .fund-signal-detail,
+html[data-theme="dark"] .compare-stock-head-code,
+html[data-theme="dark"] .compare-metric-meta,
+html[data-theme="dark"] .capital-subtitle,
+html[data-theme="dark"] .capital-kpi-name,
+html[data-theme="dark"] .capital-kpi-note,
+html[data-theme="dark"] .capital-section-head span,
+html[data-theme="dark"] .capital-signal-detail,
+html[data-theme="dark"] .capital-side p{color:var(--text-muted)!important}
+html[data-theme="dark"] .fund-score-sub{color:var(--text-subtle)!important}
+html[data-theme="dark"] .fund-signal{border-color:var(--border-soft)!important}
+html[data-theme="dark"] .compare-bar-track{background:var(--surface-muted)!important}
+html[data-theme="dark"] .compare-stock-chip,
+html[data-theme="dark"] .compare-metric-chip{background:var(--primary-soft)!important;color:var(--primary)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .capital-signal{background:var(--surface-soft)!important}
+html[data-theme="dark"] .capital-side-row{border-color:var(--border-soft)!important;color:var(--text-subtle)!important}
+html[data-theme="dark"] .fund-metric.fund-good .fund-metric-value{color:#73d13d!important}
+html[data-theme="dark"] .fund-metric.fund-warn .fund-metric-value{color:#ffd666!important}
+html[data-theme="dark"] .fund-metric.fund-bad .fund-metric-value{color:#ff7875!important}
 html[data-theme="dark"] .fin-table tbody tr.fin-row-highlight td{background:#3b3419!important;color:#fff4c2!important}
 html[data-theme="dark"] .fin-table tbody tr.fin-row-highlight .sticky-col{background:#4d421f!important;color:#fff4c2!important}
 html[data-theme="dark"] .fin-table td.fin-yoy-up,

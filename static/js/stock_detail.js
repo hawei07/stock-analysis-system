@@ -49,7 +49,10 @@ function getCurrentCode() {
 
 function refreshCurrentDetailTab(code) {
   const tab = typeof currentTab === 'string' ? currentTab : 'chart';
-  if (tab === 'chart') loadKline();
+  if (tab === 'dashboard') loadFundamentalDashboard(code);
+  else if (tab === 'compare') initCompareDashboard(code);
+  else if (tab === 'capital') initCapitalAllocation(code);
+  else if (tab === 'chart') loadKline();
   else if (tab === 'valuation') loadValuation(1095);
   else if (tab === 'dividends') loadDividends(code);
   else if (tab === 'financing') loadFinancing(code);
@@ -62,6 +65,625 @@ function refreshCurrentDetailTab(code) {
   else if (tab === 'irm') loadIrm(code);
   else if (tab === 'munger-chat') loadMungerChat();
   else if (tab === 'sticky') loadStickyNotes();
+}
+
+let capitalAllocationCode = '';
+let capitalAllocationChart = null;
+
+function initCapitalAllocation(code) {
+  code = code || getCurrentCode();
+  if (!code) return;
+  if (capitalAllocationCode !== code) {
+    capitalAllocationCode = code;
+    const yearEl = document.getElementById('capitalYear');
+    if (yearEl) yearEl.innerHTML = '';
+  }
+  loadCapitalAllocation();
+}
+
+async function loadCapitalAllocation() {
+  const code = getCurrentCode();
+  const wrap = document.getElementById('capitalAllocation');
+  if (!code || !wrap) return;
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+  const yearEl = document.getElementById('capitalYear');
+  const params = new URLSearchParams();
+  if (yearEl?.value) params.set('year', yearEl.value);
+  try {
+    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/capital-allocation?' + params.toString());
+    const data = await res.json();
+    if (code !== getCurrentCode()) return;
+    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
+    renderCapitalYearSelect(data.years || [], data.selected_year);
+    renderCapitalAllocation(data);
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">资本配置加载失败: ' + esc(e.message || '') + '</div>';
+  }
+}
+
+function renderCapitalYearSelect(years, selectedYear) {
+  const select = document.getElementById('capitalYear');
+  if (!select || !years.length) return;
+  const current = select.value || String(selectedYear || years[years.length - 1]);
+  const descYears = [...years].sort((a, b) => b - a);
+  select.innerHTML = descYears.map(y => `<option value="${esc(String(y))}">${esc(String(y))}</option>`).join('');
+  select.value = descYears.map(String).includes(current) ? current : String(selectedYear || descYears[0]);
+}
+
+function fmtCapitalMoney(value) {
+  if (value == null || Number.isNaN(Number(value))) return '-';
+  const num = Number(value);
+  return num.toLocaleString('zh-CN', {maximumFractionDigits: Math.abs(num) >= 100 ? 1 : 2}) + '亿';
+}
+
+function fmtCapitalPct(value) {
+  if (value == null || Number.isNaN(Number(value))) return '-';
+  return Number(value).toLocaleString('zh-CN', {maximumFractionDigits: 2}) + '%';
+}
+
+function renderCapitalAllocation(data) {
+  const wrap = document.getElementById('capitalAllocation');
+  if (!wrap) return;
+  if (data.message) {
+    wrap.innerHTML = '<div class="empty">' + esc(data.message) + '</div>';
+    return;
+  }
+  const selected = data.selected || {};
+  const rows = data.rows || [];
+  const signals = data.signals || [];
+  const notes = data.notes || [];
+  const cardHtml = [
+    {name: '经营现金流', value: fmtCapitalMoney(selected.operating_cashflow), note: '自身造血'},
+    {name: '融资流入', value: fmtCapitalMoney(selected.financing_sources), note: '借款/发债/股权融资'},
+    {name: '资本开支', value: fmtCapitalMoney(selected.capex), note: fmtCapitalPct(selected.capex_to_ocf) + ' / OCF'},
+    {name: '分红', value: fmtCapitalMoney(selected.dividend), note: '分红率 ' + fmtCapitalPct(selected.dividend_payout_ratio)},
+    {name: '偿还债务', value: fmtCapitalMoney(selected.debt_repayment), note: fmtCapitalPct(selected.debt_repay_to_ocf) + ' / OCF'},
+    {name: '自由现金流', value: fmtCapitalMoney(selected.free_cashflow), note: 'OCF - 资本开支'},
+    {name: '经营剩余', value: fmtCapitalMoney(selected.remaining_after_allocation), note: '不含外部融资'},
+    {name: '融资后剩余', value: fmtCapitalMoney(selected.financing_remaining_after_allocation), note: '含融资流入'},
+  ].map(card => `
+    <div class="capital-kpi">
+      <div class="capital-kpi-name">${esc(card.name)}</div>
+      <div class="capital-kpi-value">${esc(card.value)}</div>
+      <div class="capital-kpi-note">${esc(card.note)}</div>
+    </div>
+  `).join('');
+
+  const signalsHtml = signals.map(s => `
+    <div class="capital-signal capital-${esc(s.level || 'neutral')}">
+      <div class="capital-signal-title">${esc(s.text || '')}</div>
+      <div class="capital-signal-detail">${esc(s.detail || '')}</div>
+    </div>
+  `).join('');
+
+  const trendRows = rows.slice().reverse().map(r => `
+    <tr>
+      <td>${esc(String(r.year))}</td>
+      <td>${esc(fmtCapitalMoney(r.operating_cashflow))}</td>
+      <td>${esc(fmtCapitalMoney(r.financing_sources))}</td>
+      <td>${esc(fmtCapitalMoney(r.capex))}</td>
+      <td>${esc(fmtCapitalMoney(r.dividend))}</td>
+      <td>${esc(fmtCapitalMoney(r.debt_repayment))}</td>
+      <td>${esc(fmtCapitalMoney(r.remaining_after_allocation))}</td>
+      <td>${esc(fmtCapitalMoney(r.financing_remaining_after_allocation))}</td>
+      <td>${esc(fmtCapitalMoney(r.goodwill_change))}</td>
+      <td>${esc(fmtCapitalPct(r.total_shares_change_pct))}</td>
+    </tr>
+  `).join('');
+
+  wrap.innerHTML = `
+    <div class="capital-grid">
+      <div class="capital-main">
+        <div class="capital-kpi-grid">${cardHtml}</div>
+        <div class="capital-chart-card">
+          <div class="capital-section-head">
+            <h3>${esc(String(selected.year || '-'))} 年资金去向瀑布图</h3>
+            <span>经营现金流 + 融资流入 - 资本开支 - 分红 - 回购 - 偿债 = 融资后剩余</span>
+          </div>
+          <div id="capitalWaterfallChart" class="capital-chart"></div>
+        </div>
+        <div class="capital-table-card">
+          <div class="capital-section-head">
+            <h3>年度资本配置明细</h3>
+            <span>单位：亿元</span>
+          </div>
+          <div class="capital-table-wrap">
+            <table class="capital-table">
+              <thead><tr><th>年份</th><th>经营现金流</th><th>融资流入</th><th>资本开支</th><th>分红</th><th>偿债</th><th>经营剩余</th><th>融资后剩余</th><th>商誉变化</th><th>股本变化</th></tr></thead>
+              <tbody>${trendRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <aside class="capital-side">
+        <section>
+          <h3>资本配置观察</h3>
+          ${signalsHtml}
+        </section>
+        <section>
+          <h3>融资与结构变化</h3>
+          <div class="capital-side-row"><span>融资流入合计</span><b>${esc(fmtCapitalMoney(selected.financing_sources))}</b></div>
+          <div class="capital-side-row"><span>借款/发债流入</span><b>${esc(fmtCapitalMoney(selected.debt_borrow))}</b></div>
+          <div class="capital-side-row"><span>股权/其他筹资</span><b>${esc(fmtCapitalMoney((Number(selected.equity_financing || 0) + Number(selected.other_financing || 0))))}</b></div>
+          <div class="capital-side-row"><span>筹资现金流净额</span><b>${esc(fmtCapitalMoney(selected.finance_net))}</b></div>
+          <div class="capital-side-row"><span>商誉变化</span><b>${esc(fmtCapitalMoney(selected.goodwill_change))}</b></div>
+          <div class="capital-side-row"><span>总股本变化</span><b>${esc(fmtCapitalPct(selected.total_shares_change_pct))}</b></div>
+        </section>
+        <section>
+          <h3>口径说明</h3>
+          ${notes.map(n => `<p>${esc(n)}</p>`).join('')}
+        </section>
+      </aside>
+    </div>
+  `;
+  renderCapitalWaterfallChart(selected);
+}
+
+function renderCapitalWaterfallChart(row) {
+  const el = document.getElementById('capitalWaterfallChart');
+  if (!el || !window.echarts) return;
+  if (capitalAllocationChart) capitalAllocationChart.dispose();
+  capitalAllocationChart = echarts.init(el);
+  const ocf = Number(row.operating_cashflow || 0);
+  const debtIn = Number(row.debt_borrow || 0);
+  const financingSources = Number(row.financing_sources || 0);
+  let equityOtherIn = Number(row.equity_financing || 0) + Number(row.other_financing || 0);
+  if (financingSources > debtIn + equityOtherIn) equityOtherIn = financingSources - debtIn;
+  const capex = Number(row.capex || 0);
+  const dividend = Number(row.dividend || 0);
+  const buyback = Number(row.buyback || 0);
+  const debt = Number(row.debt_repayment || 0);
+  const remaining = Number(row.financing_remaining_after_allocation || 0);
+  const labels = ['经营现金流', '借款/发债', '股权/其他融资', '资本开支', '分红', '回购', '偿债', '融资后剩余'];
+  let running = 0;
+  const helper = [];
+  const values = [];
+  const colors = [];
+
+  function addStart(v, color) {
+    helper.push(0);
+    values.push(v);
+    colors.push(color);
+    running = v;
+  }
+  function addDeduct(v, color) {
+    const next = running - v;
+    helper.push(Math.min(running, next));
+    values.push(Math.abs(v));
+    colors.push(color);
+    running = next;
+  }
+  function addPositive(v, color) {
+    helper.push(Math.min(running, running + v));
+    values.push(Math.abs(v));
+    colors.push(color);
+    running += v;
+  }
+  function addFinal(v, color) {
+    helper.push(Math.min(0, v));
+    values.push(Math.abs(v));
+    colors.push(color);
+  }
+
+  addStart(ocf, '#4a6cf7');
+  addPositive(debtIn, '#0ea5e9');
+  addPositive(equityOtherIn, '#14b8a6');
+  addDeduct(capex, '#d97706');
+  addDeduct(dividend, '#9333ea');
+  addDeduct(buyback, '#64748b');
+  addDeduct(debt, '#dc2626');
+  addFinal(remaining, remaining >= 0 ? '#16a34a' : '#dc2626');
+
+  capitalAllocationChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {type: 'shadow'},
+      formatter: params => {
+        const idx = params[0].dataIndex;
+        const raw = [ocf, debtIn, equityOtherIn, -capex, -dividend, -buyback, -debt, remaining][idx];
+        return `${labels[idx]}<br/><b>${fmtCapitalMoney(raw)}</b>`;
+      }
+    },
+    grid: {left: 58, right: 24, top: 24, bottom: 48},
+    xAxis: {type: 'category', data: labels, axisLabel: {interval: 0}},
+    yAxis: {type: 'value', name: '亿元'},
+    series: [
+      {type: 'bar', stack: 'total', itemStyle: {color: 'transparent'}, emphasis: {itemStyle: {color: 'transparent'}}, data: helper},
+      {type: 'bar', stack: 'total', data: values.map((v, i) => ({value: v, itemStyle: {color: colors[i]}})), label: {show: true, position: 'top', formatter: p => fmtCapitalMoney([ocf, debtIn, equityOtherIn, -capex, -dividend, -buyback, -debt, remaining][p.dataIndex])}}
+    ]
+  });
+}
+
+let compareCodes = [];
+let compareSelectedMetrics = [];
+let compareMetricOptions = [];
+let compareDefaultMetrics = [];
+let comparePrimaryCode = '';
+let compareDraggingMetric = '';
+
+function initCompareDashboard(code) {
+  code = code || getCurrentCode();
+  if (!code) return;
+  if (comparePrimaryCode !== code) {
+    comparePrimaryCode = code;
+    compareCodes = [code];
+    compareSelectedMetrics = [];
+    const input = document.getElementById('compareAddInput');
+    if (input) input.value = '';
+  }
+  renderCompareStockChips();
+  loadCompareDashboard();
+}
+
+function onComparePeriodChange() {
+  const period = document.getElementById('comparePeriod')?.value || 'FY';
+  const viewEl = document.getElementById('compareView');
+  if (viewEl) {
+    viewEl.disabled = period === 'FY';
+    if (period === 'FY') viewEl.value = 'cumulative';
+  }
+  loadCompareDashboard();
+}
+
+async function addCompareStock() {
+  const input = document.getElementById('compareAddInput');
+  const raw = (input?.value || '').trim();
+  if (!raw) return;
+  if (compareCodes.length >= 3) {
+    showToast('最多只能对比 3 只股票', 'error');
+    return;
+  }
+  const code = await resolveStockCode(raw);
+  if (!code) {
+    showToast('未找到匹配股票', 'error');
+    return;
+  }
+  if (compareCodes.includes(code)) {
+    showToast('这只股票已经在对比中', 'error');
+    return;
+  }
+  compareCodes.push(code);
+  if (input) input.value = '';
+  renderCompareStockChips();
+  loadCompareDashboard();
+}
+
+function removeCompareStock(code) {
+  if (code === comparePrimaryCode) return;
+  compareCodes = compareCodes.filter(c => c !== code);
+  renderCompareStockChips();
+  loadCompareDashboard();
+}
+
+function renderCompareStockChips(stocks) {
+  const wrap = document.getElementById('compareStocks');
+  if (!wrap) return;
+  const stockMap = {};
+  (stocks || []).forEach(s => stockMap[s.code] = s);
+  wrap.innerHTML = compareCodes.map((code, idx) => {
+    const stock = stockMap[code] || {};
+    const label = stock.name ? `${stock.name} ${code}` : code;
+    const remove = idx === 0 ? '' : `<button type="button" onclick="removeCompareStock('${esc(code)}')" title="移除">×</button>`;
+    return `<span class="compare-stock-chip ${idx === 0 ? 'primary' : ''}">${esc(label)}${remove}</span>`;
+  }).join('');
+}
+
+function addCompareMetric() {
+  const select = document.getElementById('compareMetricSelect');
+  const key = select?.value;
+  if (!key || compareSelectedMetrics.includes(key)) return;
+  compareSelectedMetrics.push(key);
+  renderCompareMetricChips();
+  loadCompareDashboard();
+}
+
+function removeCompareMetric(key) {
+  compareSelectedMetrics = compareSelectedMetrics.filter(k => k !== key);
+  renderCompareMetricChips();
+  loadCompareDashboard();
+}
+
+function resetCompareMetrics() {
+  compareSelectedMetrics = [...compareDefaultMetrics];
+  renderCompareMetricChips();
+  loadCompareDashboard();
+}
+
+function moveCompareMetric(sourceKey, targetKey) {
+  if (!sourceKey || !targetKey || sourceKey === targetKey) return false;
+  const from = compareSelectedMetrics.indexOf(sourceKey);
+  const to = compareSelectedMetrics.indexOf(targetKey);
+  if (from === -1 || to === -1) return false;
+  const next = [...compareSelectedMetrics];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  compareSelectedMetrics = next;
+  return true;
+}
+
+function onCompareMetricDragStart(event, key) {
+  compareDraggingMetric = key;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', key);
+  }
+  event.currentTarget?.classList.add('compare-dragging');
+}
+
+function onCompareMetricDragOver(event) {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  event.currentTarget?.classList.add('compare-drag-over');
+}
+
+function onCompareMetricDragLeave(event) {
+  event.currentTarget?.classList.remove('compare-drag-over');
+}
+
+function onCompareMetricDrop(event, targetKey) {
+  event.preventDefault();
+  const sourceKey = compareDraggingMetric || event.dataTransfer?.getData('text/plain');
+  document.querySelectorAll('.compare-drag-over').forEach(el => el.classList.remove('compare-drag-over'));
+  if (!moveCompareMetric(sourceKey, targetKey)) return;
+  renderCompareMetricChips();
+  loadCompareDashboard();
+}
+
+function onCompareMetricDragEnd(event) {
+  event.currentTarget?.classList.remove('compare-dragging');
+  document.querySelectorAll('.compare-dragging,.compare-drag-over').forEach(el => el.classList.remove('compare-dragging', 'compare-drag-over'));
+  compareDraggingMetric = '';
+}
+
+function renderCompareMetricSelect() {
+  const select = document.getElementById('compareMetricSelect');
+  if (!select || !compareMetricOptions.length) return;
+  const groups = {};
+  compareMetricOptions.forEach(m => {
+    const g = m.group || '其他';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(m);
+  });
+  select.innerHTML = Object.keys(groups).map(group => `
+    <optgroup label="${esc(group)}">
+      ${groups[group].map(m => `<option value="${esc(m.key)}">${esc(m.name)}</option>`).join('')}
+    </optgroup>
+  `).join('');
+}
+
+function renderCompareMetricChips() {
+  const wrap = document.getElementById('compareMetricChips');
+  if (!wrap) return;
+  const meta = {};
+  compareMetricOptions.forEach(m => meta[m.key] = m);
+  wrap.innerHTML = compareSelectedMetrics.map(key => `
+    <span class="compare-metric-chip" draggable="true" data-metric-key="${esc(key)}"
+      ondragstart="onCompareMetricDragStart(event, '${esc(key)}')"
+      ondragover="onCompareMetricDragOver(event)"
+      ondragleave="onCompareMetricDragLeave(event)"
+      ondrop="onCompareMetricDrop(event, '${esc(key)}')"
+      ondragend="onCompareMetricDragEnd(event)">
+      <span class="compare-metric-drag-handle" title="拖动排序">⋮⋮</span>
+      ${esc(meta[key]?.name || key)}
+      <button type="button" onclick="removeCompareMetric('${esc(key)}')" title="移除">×</button>
+    </span>
+  `).join('');
+}
+
+async function loadCompareDashboard() {
+  const wrap = document.getElementById('compareDashboard');
+  const primary = getCurrentCode();
+  if (!wrap || !primary) return;
+  if (!compareCodes.length || compareCodes[0] !== primary) {
+    comparePrimaryCode = primary;
+    compareCodes = [primary];
+  }
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+  const yearEl = document.getElementById('compareYear');
+  const periodEl = document.getElementById('comparePeriod');
+  const viewEl = document.getElementById('compareView');
+  const params = new URLSearchParams({
+    codes: compareCodes.join(','),
+    period: periodEl?.value || 'FY',
+    view: viewEl?.value || 'cumulative'
+  });
+  if (yearEl?.value) params.set('year', yearEl.value);
+  if (compareSelectedMetrics.length) params.set('metrics', compareSelectedMetrics.join(','));
+  try {
+    const res = await fetch('/api/stock/' + encodeURIComponent(primary) + '/compare-dashboard?' + params.toString());
+    const data = await res.json();
+    if (primary !== getCurrentCode()) return;
+    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
+    compareMetricOptions = data.metric_options || compareMetricOptions;
+    compareDefaultMetrics = data.default_metrics || compareDefaultMetrics;
+    if (!compareSelectedMetrics.length) compareSelectedMetrics = [...compareDefaultMetrics];
+    renderCompareYearSelect(data.available_years || [], data.year);
+    renderCompareMetricSelect();
+    renderCompareMetricChips();
+    renderCompareStockChips(data.stocks || []);
+    renderCompareRows(data);
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">对比数据加载失败: ' + esc(e.message || '') + '</div>';
+  }
+}
+
+function renderCompareYearSelect(years, selectedYear) {
+  const select = document.getElementById('compareYear');
+  if (!select || !years.length) return;
+  const current = select.value || String(selectedYear || years[0]);
+  select.innerHTML = years.map(y => `<option value="${esc(String(y))}">${esc(String(y))}</option>`).join('');
+  select.value = years.map(String).includes(current) ? current : String(selectedYear || years[0]);
+}
+
+function formatCompareValue(value, unit) {
+  if (value == null || Number.isNaN(Number(value))) return '-';
+  const num = Number(value);
+  const digits = Math.abs(num) >= 100 ? 1 : 2;
+  return num.toLocaleString('zh-CN', {maximumFractionDigits: digits}) + (unit || '');
+}
+
+function renderCompareRows(data) {
+  const wrap = document.getElementById('compareDashboard');
+  if (!wrap) return;
+  const stocks = data.stocks || [];
+  const rows = data.rows || [];
+  if (!stocks.length || !rows.length) {
+    wrap.innerHTML = '<div class="empty">暂无可对比数据</div>';
+    return;
+  }
+
+  const headHtml = `
+    <thead>
+      <tr>
+        <th class="compare-metric-head">指标</th>
+        ${stocks.map(stock => `
+          <th>
+            <div class="compare-stock-head-name">${esc(stock.name || stock.code)}</div>
+            <div class="compare-stock-head-code">${esc(stock.code || '')}</div>
+          </th>
+        `).join('')}
+      </tr>
+    </thead>
+  `;
+
+  const bodyHtml = rows.map(row => {
+    const vals = row.values || [];
+    const nums = vals.map(v => Number(v.value)).filter(v => !Number.isNaN(v));
+    const maxAbs = Math.max(...nums.map(v => Math.abs(v)), 0);
+    const cells = stocks.map(stock => {
+      const item = vals.find(v => v.code === stock.code) || {};
+      const value = item.value;
+      const num = Number(value);
+      const width = value == null || Number.isNaN(num) || maxAbs <= 0 ? 0 : Math.max(4, Math.abs(num) / maxAbs * 100);
+      const cls = num < 0 ? 'neg' : 'pos';
+      return `
+        <td>
+          <div class="compare-cell-value">${esc(formatCompareValue(value, row.unit))}</div>
+          <div class="compare-bar-track">
+            <div class="compare-bar ${cls}" style="width:${width}%"></div>
+          </div>
+        </td>
+      `;
+    }).join('');
+    return `
+      <tr class="compare-metric-row" draggable="true" data-metric-key="${esc(row.key || '')}"
+        ondragstart="onCompareMetricDragStart(event, '${esc(row.key || '')}')"
+        ondragover="onCompareMetricDragOver(event)"
+        ondragleave="onCompareMetricDragLeave(event)"
+        ondrop="onCompareMetricDrop(event, '${esc(row.key || '')}')"
+        ondragend="onCompareMetricDragEnd(event)">
+        <th class="compare-metric-col">
+          <div class="compare-metric-name"><span class="compare-metric-drag-handle" title="拖动排序">⋮⋮</span>${esc(row.name)}</div>
+          <div class="compare-metric-meta">${esc(row.group || '')}${row.unit ? ' / ' + esc(row.unit) : ''}</div>
+        </th>
+        ${cells}
+      </tr>
+    `;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="compare-table-wrap">
+      <table class="compare-table">
+        ${headHtml}
+        <tbody>${bodyHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadFundamentalDashboard(code) {
+  code = code || getCurrentCode();
+  const wrap = document.getElementById('fundamentalDashboard');
+  if (!code || !wrap) return;
+  wrap.innerHTML = '<div class="empty">加载中...</div>';
+  try {
+    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/fundamental-dashboard');
+    const data = await res.json();
+    if (code !== getCurrentCode()) return;
+    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
+    renderFundamentalDashboard(data);
+  } catch (e) {
+    wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">基本面驾驶舱加载失败: ' + esc(e.message || '') + '</div>';
+  }
+}
+
+function formatFundValue(metric) {
+  if (!metric || metric.value == null) return '-';
+  const value = Number(metric.value);
+  if (Number.isNaN(value)) return '-';
+  const decimals = Math.abs(value) >= 100 ? 1 : 2;
+  return value.toLocaleString('zh-CN', {minimumFractionDigits: 0, maximumFractionDigits: decimals}) + (metric.unit || '');
+}
+
+function renderFundamentalDashboard(data) {
+  const wrap = document.getElementById('fundamentalDashboard');
+  if (!wrap) return;
+  if (data.message) {
+    wrap.innerHTML = '<div class="empty">' + esc(data.message) + '</div>';
+    return;
+  }
+  const summary = data.summary || [];
+  const groups = data.groups || [];
+  const signals = data.signals || [];
+  const summaryHtml = summary.map(item => `
+    <div class="fund-score-card fund-${esc(item.level || 'neutral')}">
+      <div class="fund-score-top">
+        <span>${esc(item.title)}</span>
+        <span class="fund-badge">${esc(item.text || '-')}</span>
+      </div>
+      <div class="fund-score-main">
+        <span class="fund-score">${item.score == null ? '-' : esc(String(item.score))}</span>
+        <span class="fund-score-unit">/100</span>
+      </div>
+      <div class="fund-score-sub">${esc(item.main || '')}</div>
+      <div class="fund-score-note">${esc(item.note || '')}</div>
+    </div>
+  `).join('');
+
+  const groupsHtml = groups.map(group => `
+    <section class="fund-group">
+      <h3>${esc(group.title)}</h3>
+      <div class="fund-metric-list">
+        ${(group.metrics || []).map(m => `
+          <div class="fund-metric fund-${esc(m.verdict || 'neutral')}">
+            <div>
+              <div class="fund-metric-name">${esc(m.name)}</div>
+              <div class="fund-metric-note">${esc(m.note || '')}</div>
+            </div>
+            <div class="fund-metric-value">${esc(formatFundValue(m))}</div>
+          </div>
+        `).join('')}
+      </div>
+    </section>
+  `).join('');
+
+  const signalsHtml = signals.map(s => `
+    <div class="fund-signal fund-${esc(s.level || 'neutral')}">
+      <div class="fund-signal-dot"></div>
+      <div>
+        <div class="fund-signal-title">${esc(s.text || '')}</div>
+        <div class="fund-signal-detail">${esc(s.detail || '')}</div>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.innerHTML = `
+    <div class="fund-head">
+      <div>
+        <div class="fund-title">基本面驾驶舱</div>
+        <div class="fund-subtitle">数据区间：${esc(data.year_range || '-')}，最新年报：${esc(String(data.latest_year || '-'))}</div>
+      </div>
+      <button class="btn btn-outline btn-sm" type="button" onclick="loadFundamentalDashboard(getCurrentCode())">刷新</button>
+    </div>
+    <div class="fund-score-grid">${summaryHtml}</div>
+    <div class="fund-body-grid">
+      <div class="fund-groups">${groupsHtml}</div>
+      <aside class="fund-signals">
+        <h3>风险信号</h3>
+        ${signalsHtml}
+      </aside>
+    </div>
+  `;
 }
 
 async function loadDetail(code) {

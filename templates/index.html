@@ -112,12 +112,15 @@
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
+    <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">基本面驾驶舱</button>
+    <button class="tab-btn" data-tab="compare" onclick="switchTab('compare')">对比</button>
+    <button class="tab-btn" data-tab="financials" onclick="switchTab('financials')">自定义财报</button>
     <button class="tab-btn" data-tab="dividends" onclick="switchTab('dividends')">分红</button>
     <button class="tab-btn" data-tab="segments" onclick="switchTab('segments')">营收构成</button>
     <button class="tab-btn" data-tab="balance" onclick="switchTab('balance')">资产负债表</button>
     <button class="tab-btn" data-tab="income" onclick="switchTab('income')">利润表</button>
     <button class="tab-btn" data-tab="cashflow" onclick="switchTab('cashflow')">现金流量表</button>
+    <button class="tab-btn" data-tab="capital" onclick="switchTab('capital')">资本配置</button>
     <button class="tab-btn" data-tab="financing" onclick="switchTab('financing')">融资</button>
     <button class="tab-btn" data-tab="shareholders" onclick="switchTab('shareholders')">股东</button>
     <button class="tab-btn" data-tab="valuation" onclick="switchTab('valuation')">估值</button>
@@ -224,7 +227,45 @@
         <div class="empty" id="financingEmpty" style="display:none">暂无融资明细</div>
       </div>
     </div>
-    <div class="tab-panel active" id="panel-financials">
+    <div class="tab-panel active" id="panel-dashboard">
+      <div id="fundamentalDashboard" class="fund-dashboard">
+        <div class="empty">加载中...</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-compare" style="display:none">
+      <div class="compare-panel">
+        <div class="compare-toolbar">
+          <div class="compare-stock-box">
+            <div id="compareStocks" class="compare-stock-chips"></div>
+            <input type="text" id="compareAddInput" placeholder="输入代码或名称" onkeypress="if(event.key==='Enter')addCompareStock()">
+            <button class="btn btn-primary btn-sm" onclick="addCompareStock()">添加股票</button>
+          </div>
+          <div class="compare-period-box">
+            <select id="compareYear" onchange="loadCompareDashboard()"></select>
+            <select id="comparePeriod" onchange="onComparePeriodChange()">
+              <option value="FY">年报</option>
+              <option value="Q1">一季报</option>
+              <option value="Q2">中报</option>
+              <option value="Q3">三季报</option>
+            </select>
+            <select id="compareView" onchange="loadCompareDashboard()">
+              <option value="cumulative">累计</option>
+              <option value="single">单季</option>
+            </select>
+          </div>
+          <div class="compare-metric-box">
+            <select id="compareMetricSelect"></select>
+            <button class="btn btn-outline btn-sm" onclick="addCompareMetric()">添加指标</button>
+            <button class="btn btn-outline btn-sm" onclick="resetCompareMetrics()">默认指标</button>
+          </div>
+        </div>
+        <div id="compareMetricChips" class="compare-metric-chips"></div>
+        <div id="compareDashboard" class="compare-dashboard">
+          <div class="empty">加载中...</div>
+        </div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-financials" style="display:none">
       <div class="toolbar-row">
         <label>年份范围：</label>
         <input type="number" id="finFromYear" value="2016" min="2000" max="2030" style="width:70px">
@@ -246,6 +287,9 @@
         </select>
         <button class="btn btn-primary btn-sm" onclick="loadFinancials()">查询</button>
         <input type="text" id="finCompare" placeholder="对比代码或名称" style="width:120px;margin-left:12px" onkeypress="if(event.key==='Enter')loadFinancials()" onchange="loadFinancials()">
+        <select id="finAddIndicator" style="width:180px"></select>
+        <button class="btn btn-outline btn-sm" onclick="addFinancialIndicator()">添加指标</button>
+        <button class="btn btn-outline btn-sm" onclick="resetFinancialIndicators()">恢复默认指标</button>
         <button class="btn btn-outline btn-sm sort-mode-toggle" id="btnToggleSort" onclick="toggleSortMode()" style="display:none">调整排序</button>
         <span id="finStatus" style="font-size:12px;color:#999;margin-left:8px"></span>
       </div>
@@ -373,6 +417,23 @@
       </div>
       <div class="fin-table-wrap" id="tableCashflowWrap">
         <div class="empty" id="cfEmpty">请点击"查询"加载现金流量表数据</div>
+      </div>
+    </div>
+    <div class="tab-panel" id="panel-capital" style="display:none">
+      <div class="capital-panel">
+        <div class="capital-toolbar">
+          <div class="capital-title-box">
+            <div class="capital-title">资本配置分析</div>
+            <div class="capital-subtitle">经营现金流如何流向再投资、分红、偿债、融资、并购和股本变化</div>
+          </div>
+          <div class="capital-controls">
+            <select id="capitalYear" onchange="loadCapitalAllocation()"></select>
+            <button class="btn btn-outline btn-sm" onclick="loadCapitalAllocation()">刷新</button>
+          </div>
+        </div>
+        <div id="capitalAllocation" class="capital-dashboard">
+          <div class="empty">加载中...</div>
+        </div>
       </div>
     </div>
     <div class="tab-panel" id="panel-shareholders" style="display:none">
@@ -577,7 +638,7 @@ let segmentBubbleChart = null;
 let segmentCache = null;
 let segmentLoadSeq = 0;
 
-let currentTab = 'financials';
+let currentTab = 'dashboard';
 
 function refreshChartsForTheme() {
   const detailActive = document.getElementById('view-detail')?.classList.contains('active');
@@ -587,11 +648,14 @@ function refreshChartsForTheme() {
     if (currentTab === 'dividends') loadDividends();
     if (currentTab === 'financing') loadFinancing(getCurrentCode());
     if (currentTab === 'segments') loadSegments();
+    if (currentTab === 'dashboard') loadFundamentalDashboard(getCurrentCode());
+    if (currentTab === 'compare') loadCompareDashboard();
+    if (currentTab === 'capital') loadCapitalAllocation();
     if (currentTab === 'financials' || currentTab === 'balance' || currentTab === 'income' || currentTab === 'cashflow') {
       if (window._chartModalInstance) window._chartModalInstance.resize();
     }
   }
-  [chartInstance, financingInstance, valInstance, pbInstance, dyInstance, segmentRevenueChart, segmentProfitChart, segmentBubbleChart, window._chartModalInstance].forEach(chart => {
+  [chartInstance, financingInstance, valInstance, pbInstance, dyInstance, segmentRevenueChart, segmentProfitChart, segmentBubbleChart, capitalAllocationChart, window._chartModalInstance].forEach(chart => {
     if (chart) chart.resize();
   });
 }
@@ -649,7 +713,13 @@ function switchTab(name) {
   document.querySelector('[data-tab="' + name + '"]').classList.add('active');
   document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
   document.getElementById('panel-' + name).style.display = 'block';
-  if (name === 'financials') {
+  if (name === 'dashboard') {
+    loadFundamentalDashboard(getCurrentCode());
+  } else if (name === 'compare') {
+    initCompareDashboard(getCurrentCode());
+  } else if (name === 'capital') {
+    initCapitalAllocation(getCurrentCode());
+  } else if (name === 'financials') {
     loadFinancials();
   } else if (name === 'chart') {
     loadKline();
