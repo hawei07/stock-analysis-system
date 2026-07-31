@@ -111,35 +111,10 @@ async function loadDetail(code) {
     mcEl.textContent = rt.market_cap != null ? rt.market_cap.toFixed(2) + ' 亿' : '--';
     mcEl.className = 'value';
     loadPortfolioPositionCard(stock.code);
-    loadResearchSummary(stock.code);
 
     refreshCurrentDetailTab(stock.code);
   } catch (e) {
     showToast('加载详情失败', 'error');
-  }
-}
-
-async function loadResearchSummary(code) {
-  if (!code) return;
-  const timeEl = document.getElementById('researchSummaryTime');
-  const hiEl = document.getElementById('researchSummaryHighlights');
-  const riskEl = document.getElementById('researchSummaryRisks');
-  if (!hiEl || !riskEl) return;
-  if (timeEl) timeEl.textContent = '读取中...';
-  hiEl.innerHTML = '<li>读取中...</li>';
-  riskEl.innerHTML = '';
-  try {
-    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/research-summary');
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '摘要生成失败');
-    if (code !== getCurrentCode()) return;
-    if (timeEl) timeEl.textContent = '更新于 ' + (data.updated_at || '');
-    hiEl.innerHTML = (data.highlights || []).map(item => `<li>${esc(item)}</li>`).join('');
-    riskEl.innerHTML = (data.risks || []).map(item => `<li>${esc(item)}</li>`).join('');
-  } catch (e) {
-    if (timeEl) timeEl.textContent = e.message || '摘要生成失败';
-    hiEl.innerHTML = '<li>摘要暂不可用。</li>';
-    riskEl.innerHTML = '';
   }
 }
 

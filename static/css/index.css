@@ -129,14 +129,6 @@ tr:hover td{background:#fafbff}
 .realtime-card .value.neg{color:#389e0d}
 .realtime-card .unit{font-size:12px;color:#999;margin-left:2px;font-weight:400}
 .portfolio-link-card .value{font-size:18px}
-.research-summary-card{background:#fff;border-bottom:1px solid #e8e8e8;padding:14px 32px}
-.research-summary-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
-.research-summary-title{font-size:15px;font-weight:700;color:#1a1a2e}
-.research-summary-time{font-size:12px;color:#999;margin-top:3px}
-.research-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.research-summary-subtitle{font-size:12px;color:#666;font-weight:700;margin-bottom:6px}
-.research-summary-card ul{margin:0;padding-left:18px;color:#333;font-size:13px;line-height:1.8}
-.research-summary-card li{padding-left:2px}
 
 .tabs{display:flex;gap:0;background:#fff;border-bottom:2px solid #e8e8e8;padding:0 32px}
 .tab-btn{padding:14px 24px;font-size:14px;font-weight:500;color:#666;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
@@ -458,16 +450,11 @@ html[data-theme="dark"] .chat-bubble strong{color:var(--text-strong)!important}
 html[data-theme="dark"] .label,
 html[data-theme="dark"] .sub,
 html[data-theme="dark"] .stock-meta,
-html[data-theme="dark"] .research-summary-time,
-html[data-theme="dark"] .research-summary-subtitle,
 html[data-theme="dark"] .sort-arrow,
 html[data-theme="dark"] .empty,
 html[data-theme="dark"] .chat-empty{color:var(--text-muted)!important}
 html[data-theme="dark"] .modal-overlay,
 html[data-theme="dark"] .chart-modal-overlay{background:var(--modal-mask)!important}
-html[data-theme="dark"] .research-summary-card{background:var(--surface)!important;border-color:var(--border)!important}
-html[data-theme="dark"] .research-summary-title{color:var(--text-strong)!important}
-html[data-theme="dark"] .research-summary-card ul{color:var(--text)!important}
 html[data-theme="dark"] .chart-modal-close:hover{background:var(--surface-muted)!important;color:var(--text-strong)!important}
 html[data-theme="dark"] .chart-modal-controls select,
 html[data-theme="dark"] .chart-modal-controls .period-btn{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}
