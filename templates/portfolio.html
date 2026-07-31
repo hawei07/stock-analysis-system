@@ -737,7 +737,7 @@ function renderSummary(summary) {
   profitEl.className = 'value ' + profitClass(profit);
   document.getElementById('portfolioProfitPct').textContent = profitPct == null ? '按交易自动计算' : `${Number(profitPct).toFixed(2)}% · 成本 ${privateMoney(summary.total_cost_value)}`;
   document.getElementById('expectedDividend').textContent = money(dividend);
-  document.getElementById('portfolioYield').textContent = totalAsset > 0 ? (dividend / totalAsset * 100).toFixed(2) + '%' : '--';
+  document.getElementById('portfolioYield').textContent = total > 0 ? (dividend / total * 100).toFixed(2) + '%' : '--';
   document.getElementById('positionCount').textContent = summary.count || 0;
 }
 
