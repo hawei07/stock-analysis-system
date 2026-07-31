@@ -72,31 +72,6 @@
 
   <div class="panel">
     <div class="panel-header">
-      <div class="panel-title">组合仪表盘</div>
-      <div class="portfolio-dashboard-note" id="portfolioDashboardNote">按实时市值汇总</div>
-    </div>
-    <div class="portfolio-dashboard-grid">
-      <div class="portfolio-dashboard-card">
-        <div class="dashboard-label">股票仓位</div>
-        <div class="dashboard-value" id="dashboardStockPct">--</div>
-      </div>
-      <div class="portfolio-dashboard-card">
-        <div class="dashboard-label">现金仓位</div>
-        <div class="dashboard-value" id="dashboardCashPct">--</div>
-      </div>
-      <div class="portfolio-dashboard-card">
-        <div class="dashboard-label">行业集中度</div>
-        <div class="dashboard-value" id="dashboardTopIndustryPct">--</div>
-      </div>
-      <div class="portfolio-dashboard-card dashboard-wide">
-        <div class="dashboard-label">行业分布</div>
-        <div id="dashboardIndustryList" class="dashboard-industry-list"></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-header">
       <div class="panel-title">资金流水</div>
     </div>
     <div class="table-wrap">
@@ -793,29 +768,6 @@ function renderSummary(summary) {
   document.getElementById('expectedDividend').textContent = money(dividend);
   document.getElementById('portfolioYield').textContent = total > 0 ? (dividend / total * 100).toFixed(2) + '%' : '--';
   document.getElementById('positionCount').textContent = summary.count || 0;
-  renderPortfolioDashboard(summary, totalAsset, total, cash);
-}
-
-function renderPortfolioDashboard(summary, totalAsset, totalMarketValue, cash) {
-  const stockPct = totalAsset > 0 ? totalMarketValue / totalAsset * 100 : null;
-  const cashPct = totalAsset > 0 ? cash / totalAsset * 100 : null;
-  const industries = summary.industry_allocations || [];
-  const topIndustry = industries[0];
-  const stockEl = document.getElementById('dashboardStockPct');
-  const cashEl = document.getElementById('dashboardCashPct');
-  const topEl = document.getElementById('dashboardTopIndustryPct');
-  const listEl = document.getElementById('dashboardIndustryList');
-  if (stockEl) stockEl.textContent = stockPct == null ? '--' : stockPct.toFixed(2) + '%';
-  if (cashEl) cashEl.textContent = cashPct == null ? '--' : cashPct.toFixed(2) + '%';
-  if (topEl) topEl.textContent = topIndustry ? `${topIndustry.industry} ${Number(topIndustry.allocation_pct).toFixed(2)}%` : '--';
-  if (!listEl) return;
-  listEl.innerHTML = industries.length ? industries.map(item => `
-    <div class="dashboard-industry-row">
-      <span>${esc(item.industry)}</span>
-      <div class="dashboard-industry-bar"><i style="width:${Math.min(100, Math.max(0, Number(item.allocation_pct || 0)))}%"></i></div>
-      <b>${Number(item.allocation_pct || 0).toFixed(2)}%</b>
-    </div>
-  `).join('') : '<div class="dividend-meta" style="text-align:left">暂无持仓行业数据</div>';
 }
 
 function sortedPositions(rows) {
