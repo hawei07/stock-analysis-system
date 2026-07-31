@@ -469,7 +469,11 @@ AUTO_CLOUD_BACKUP_ENDPOINTS = {
     "api_portfolio_update_cash": "portfolio-cash-update",
     "api_portfolio_update_fee_config": "portfolio-fee-config-update",
     "api_portfolio_add_trade": "portfolio-trade-add",
+    "api_portfolio_void_trade": "portfolio-trade-void",
     "api_portfolio_add_corporate_action": "portfolio-action-add",
+    "api_portfolio_void_corporate_action": "portfolio-action-void",
+    "api_portfolio_audit": "portfolio-audit",
+    "api_portfolio_rebuild": "portfolio-rebuild",
     "api_portfolio_add_flow": "portfolio-flow-add",
     "api_portfolio_delete_flow": "portfolio-flow-delete",
     "api_portfolio_snapshot": "portfolio-snapshot",
@@ -1261,6 +1265,15 @@ def _ensure_portfolio_tables():
         "INSERT IGNORE INTO portfolio_cash (id, amount) VALUES (1, 0)",
         fetch=False,
     )
+    try:
+        rows = execute_query("SHOW COLUMNS FROM portfolio_cash LIKE 'base_amount'")
+        if not rows:
+            execute_query(
+                "ALTER TABLE portfolio_cash ADD COLUMN base_amount DECIMAL(18,2) NULL AFTER amount",
+                fetch=False,
+            )
+    except Exception:
+        pass
     execute_query(
         """CREATE TABLE IF NOT EXISTS portfolio_cash_flows (
             id INT NOT NULL AUTO_INCREMENT,
@@ -1283,6 +1296,22 @@ def _ensure_portfolio_tables():
             )
     except Exception:
         pass
+    for column_name, column_def in (
+        ("source_type", "VARCHAR(20) NULL AFTER flow_source"),
+        ("source_id", "INT NULL AFTER source_type"),
+        ("is_void", "TINYINT NOT NULL DEFAULT 0 AFTER note"),
+        ("voided_at", "DATETIME NULL AFTER is_void"),
+        ("void_note", "VARCHAR(255) NULL AFTER voided_at"),
+    ):
+        try:
+            rows = execute_query(f"SHOW COLUMNS FROM portfolio_cash_flows LIKE '{column_name}'")
+            if not rows:
+                execute_query(
+                    f"ALTER TABLE portfolio_cash_flows ADD COLUMN {column_name} {column_def}",
+                    fetch=False,
+                )
+        except Exception:
+            pass
     try:
         execute_query(
             """UPDATE portfolio_cash_flows f
@@ -1362,6 +1391,9 @@ def _ensure_portfolio_tables():
         ("transfer_fee", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER stamp_tax"),
         ("total_fee", "DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER transfer_fee"),
         ("cash_delta", "DECIMAL(18,2) NULL AFTER total_fee"),
+        ("is_void", "TINYINT NOT NULL DEFAULT 0 AFTER note"),
+        ("voided_at", "DATETIME NULL AFTER is_void"),
+        ("void_note", "VARCHAR(255) NULL AFTER voided_at"),
     ):
         try:
             rows = execute_query(f"SHOW COLUMNS FROM portfolio_trades LIKE '{column_name}'")
@@ -1372,6 +1404,32 @@ def _ensure_portfolio_tables():
                 )
         except Exception:
             pass
+    for column_name, column_def in (
+        ("is_void", "TINYINT NOT NULL DEFAULT 0 AFTER note"),
+        ("voided_at", "DATETIME NULL AFTER is_void"),
+        ("void_note", "VARCHAR(255) NULL AFTER voided_at"),
+    ):
+        try:
+            rows = execute_query(f"SHOW COLUMNS FROM portfolio_corporate_actions LIKE '{column_name}'")
+            if not rows:
+                execute_query(
+                    f"ALTER TABLE portfolio_corporate_actions ADD COLUMN {column_name} {column_def}",
+                    fetch=False,
+                )
+        except Exception:
+            pass
+    try:
+        rows = execute_query("SELECT amount, base_amount FROM portfolio_cash WHERE id=1")
+        if rows and rows[0].get("base_amount") is None:
+            flow_rows = execute_query("SELECT COALESCE(SUM(amount), 0) AS total FROM portfolio_cash_flows WHERE is_void=0")
+            base_amount = _decimal_value(rows[0]["amount"]) - _decimal_value(flow_rows[0]["total"] if flow_rows else 0)
+            execute_query(
+                "UPDATE portfolio_cash SET base_amount=%s WHERE id=1",
+                (_quantize(base_amount, "0.01"),),
+                fetch=False,
+            )
+    except Exception:
+        pass
     try:
         execute_query(
             """UPDATE portfolio_trades
@@ -1446,6 +1504,18 @@ def _decimal_equal(left, right, scale="0.0001"):
     return _quantize(left, scale) == _quantize(right, scale)
 
 
+def _execute_insert_id(sql, params=None):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(sql, params or ())
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def _portfolio_fee_config():
     rows = execute_query(
         """SELECT commission_rate, min_commission, stamp_tax_rate, transfer_fee_rate
@@ -1518,12 +1588,14 @@ def _sync_portfolio_cost_basis_from_trades():
                   commission, stamp_tax, transfer_fee, total_fee, cash_delta,
                   shares_before, shares_after, cost_price_before, cost_price_after, realized_profit
            FROM portfolio_trades
+           WHERE is_void=0
            ORDER BY stock_code, trade_date, id"""
     )
     action_rows = execute_query(
         """SELECT id, action_date, stock_code, action_type, cash_amount, shares, price, amount, cash_delta,
                   shares_before, shares_after, cost_price_before, cost_price_after, note
            FROM portfolio_corporate_actions
+           WHERE is_void=0
            ORDER BY stock_code, action_date, id"""
     )
     if not trade_rows and not action_rows:
@@ -1691,10 +1763,23 @@ def _portfolio_cash_amount():
     return float(rows[0]["amount"]) if rows else 0.0
 
 
+def _portfolio_cash_base_amount():
+    _ensure_portfolio_tables()
+    rows = execute_query("SELECT base_amount FROM portfolio_cash WHERE id=1")
+    return _decimal_value(rows[0]["base_amount"]) if rows and rows[0].get("base_amount") is not None else Decimal("0")
+
+
+def _portfolio_rebuilt_cash_amount():
+    base_amount = _portfolio_cash_base_amount()
+    rows = execute_query("SELECT COALESCE(SUM(amount), 0) AS total FROM portfolio_cash_flows WHERE is_void=0")
+    return base_amount + _decimal_value(rows[0]["total"] if rows else 0)
+
+
 def _portfolio_flow_rows(limit=100):
     _ensure_portfolio_tables()
     return execute_query(
-        """SELECT id, flow_date, amount, flow_source, note, created_at
+        """SELECT id, flow_date, amount, flow_source, source_type, source_id, note,
+                  is_void, voided_at, void_note, created_at
            FROM portfolio_cash_flows
            ORDER BY flow_date DESC, id DESC
            LIMIT %s""",
@@ -1709,6 +1794,11 @@ def _portfolio_flows_payload():
             "flow_date": str(r["flow_date"]),
             "amount": round(float(r["amount"]), 2),
             "flow_source": r.get("flow_source") or "external",
+            "source_type": r.get("source_type"),
+            "source_id": r.get("source_id"),
+            "is_void": bool(r.get("is_void")),
+            "voided_at": str(r["voided_at"]) if r.get("voided_at") else None,
+            "void_note": r.get("void_note") or "",
             "note": r.get("note") or "",
             "created_at": str(r["created_at"]) if r.get("created_at") else None,
         }
@@ -1722,7 +1812,8 @@ def _portfolio_trades_payload(limit=1000):
         """SELECT t.id, t.trade_date, t.stock_code, s.name, s.market, t.trade_type,
                   t.shares, t.price, t.amount, t.commission, t.stamp_tax, t.transfer_fee,
                   t.total_fee, t.cash_delta, t.shares_before, t.shares_after,
-                  t.cost_price_before, t.cost_price_after, t.realized_profit, t.note
+                  t.cost_price_before, t.cost_price_after, t.realized_profit, t.note,
+                  t.is_void, t.voided_at, t.void_note
            FROM portfolio_trades t
            JOIN stocks s ON s.code = t.stock_code
            ORDER BY t.trade_date DESC, t.id DESC
@@ -1738,6 +1829,9 @@ def _portfolio_trades_payload(limit=1000):
             item[field] = float(r[field])
         for field in ("cost_price_before", "cost_price_after", "realized_profit"):
             item[field] = float(r[field]) if r.get(field) is not None else None
+        item["is_void"] = bool(r.get("is_void"))
+        item["voided_at"] = str(r["voided_at"]) if r.get("voided_at") else None
+        item["void_note"] = r.get("void_note") or ""
         result.append(item)
     return result
 
@@ -1747,7 +1841,8 @@ def _portfolio_actions_payload(limit=100):
     rows = execute_query(
         """SELECT a.id, a.action_date, a.stock_code, s.name, s.market, a.action_type,
                   a.cash_amount, a.shares, a.price, a.amount, a.cash_delta,
-                  a.shares_before, a.shares_after, a.cost_price_before, a.cost_price_after, a.note
+                  a.shares_before, a.shares_after, a.cost_price_before, a.cost_price_after, a.note,
+                  a.is_void, a.voided_at, a.void_note
            FROM portfolio_corporate_actions a
            JOIN stocks s ON s.code = a.stock_code
            ORDER BY a.action_date DESC, a.id DESC
@@ -1763,8 +1858,102 @@ def _portfolio_actions_payload(limit=100):
             item[field] = float(r[field]) if r.get(field) is not None else None
         for field in ("cost_price_before", "cost_price_after"):
             item[field] = float(r[field]) if r.get(field) is not None else None
+        item["is_void"] = bool(r.get("is_void"))
+        item["voided_at"] = str(r["voided_at"]) if r.get("voided_at") else None
+        item["void_note"] = r.get("void_note") or ""
         result.append(item)
     return result
+
+
+def _void_linked_cash_flow(source_type, source_id, flow_source, flow_date, amount, code, void_note):
+    rows = execute_query(
+        """SELECT id, amount
+           FROM portfolio_cash_flows
+           WHERE is_void=0 AND source_type=%s AND source_id=%s
+           LIMIT 1""",
+        (source_type, source_id),
+    )
+    if not rows:
+        rows = execute_query(
+            """SELECT id, amount
+               FROM portfolio_cash_flows
+               WHERE is_void=0 AND flow_source=%s AND flow_date=%s
+                 AND amount=%s AND (note LIKE %s OR note IS NULL OR note='')
+               ORDER BY id DESC
+               LIMIT 1""",
+            (flow_source, flow_date, amount, f"%{code}%"),
+        )
+    if not rows:
+        return Decimal("0")
+    row = rows[0]
+    execute_query(
+        "UPDATE portfolio_cash_flows SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note=%s WHERE id=%s",
+        (void_note, row["id"]),
+        fetch=False,
+    )
+    return _decimal_value(row["amount"])
+
+
+def _portfolio_audit_payload():
+    _ensure_portfolio_tables()
+    issues = []
+    current_cash = _decimal_value(_portfolio_cash_amount())
+    rebuilt_cash = _portfolio_rebuilt_cash_amount()
+    if not _decimal_equal(current_cash, rebuilt_cash, "0.01"):
+        issues.append({
+            "type": "cash",
+            "message": f"现金与流水推导不一致，相差 {float(_quantize(current_cash - rebuilt_cash, '0.01')):.2f}",
+            "current": float(_quantize(current_cash, "0.01")),
+            "expected": float(_quantize(rebuilt_cash, "0.01")),
+        })
+
+    rows = execute_query(
+        """SELECT stock_code, shares_after, cost_price_after
+           FROM (
+             SELECT stock_code, shares_after, cost_price_after,
+                    ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY d DESC, sort_id DESC) AS rn
+             FROM (
+               SELECT stock_code, shares_after, cost_price_after, trade_date AS d, id AS sort_id
+               FROM portfolio_trades WHERE is_void=0
+               UNION ALL
+               SELECT stock_code, shares_after, cost_price_after, action_date AS d, id AS sort_id
+               FROM portfolio_corporate_actions WHERE is_void=0
+             ) x
+           ) y
+           WHERE rn=1"""
+    )
+    for row in rows:
+        position_rows = execute_query(
+            "SELECT shares, cost_price FROM portfolio_positions WHERE stock_code=%s LIMIT 1",
+            (row["stock_code"],),
+        )
+        if not position_rows:
+            issues.append({"type": "position", "code": row["stock_code"], "message": "账本有记录但当前持仓缺失"})
+            continue
+        pos = position_rows[0]
+        if (
+            not _decimal_equal(pos.get("shares"), row.get("shares_after"))
+            or not _decimal_equal(pos.get("cost_price"), row.get("cost_price_after"))
+        ):
+            issues.append({
+                "type": "position",
+                "code": row["stock_code"],
+                "message": "当前持仓与账本回放结果不一致",
+                "current_shares": float(_quantize(pos.get("shares"))),
+                "expected_shares": float(_quantize(row.get("shares_after"))),
+                "current_cost": float(_quantize(pos.get("cost_price"))) if pos.get("cost_price") is not None else None,
+                "expected_cost": float(_quantize(row.get("cost_price_after"))) if row.get("cost_price_after") is not None else None,
+            })
+
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "cash": {
+            "current": float(_quantize(current_cash, "0.01")),
+            "expected": float(_quantize(rebuilt_cash, "0.01")),
+            "base_amount": float(_quantize(_portfolio_cash_base_amount(), "0.01")),
+        },
+    }
 
 
 def _latest_dividend_per_share(codes):
@@ -1853,23 +2042,32 @@ def _portfolio_current_state():
                 "unrealized_profit_pct": None,
                 "expected_dividend": 0,
                 "count": 0,
+                "industry_allocations": [],
             },
         }
 
     stock_refs = [{"code": r["stock_code"], "market": r["market"]} for r in rows]
-    prices = _fetch_realtime_prices(stock_refs)
+    quotes = _fetch_realtime_quotes(stock_refs)
+    prices = {
+        code: quote.get("price")
+        for code, quote in quotes.items()
+        if quote.get("price") is not None
+    }
     dividends = _latest_dividend_per_share([r["stock_code"] for r in rows])
     exchange_rates = {}
     total_market_value = 0.0
     total_cost_value = 0.0
     total_costed_market_value = 0.0
     expected_dividend = 0.0
+    total_day_change_value = 0.0
+    industry_values = {}
 
     for r in rows:
         code = r["stock_code"]
         shares = float(r["shares"])
         cost_price = float(r["cost_price"]) if r.get("cost_price") is not None else None
         price = prices.get(code)
+        quote = quotes.get(code, {})
         currency = _currency_for_market(r.get("market"))
         fx = exchange_rates.get(currency)
         if fx is None:
@@ -1880,6 +2078,8 @@ def _portfolio_current_state():
         custom_dividend = float(r["custom_dividend_per_share"]) if r.get("custom_dividend_per_share") is not None else None
         dividend_per_share = custom_dividend if custom_dividend is not None else div.get("dividend_per_share")
         original_market_value = shares * price if price is not None else None
+        original_day_change = shares * quote.get("day_change") if quote.get("day_change") is not None else None
+        day_change_value = original_day_change * fx_rate if original_day_change is not None and fx_rate is not None else None
         market_value = original_market_value * fx_rate if original_market_value is not None and fx_rate is not None else None
         original_cost_value = shares * cost_price if cost_price is not None else None
         cost_value = original_cost_value * fx_rate if original_cost_value is not None and fx_rate is not None else None
@@ -1889,6 +2089,10 @@ def _portfolio_current_state():
         dividend_amount = original_dividend_amount * fx_rate if original_dividend_amount is not None and fx_rate is not None else None
         if market_value is not None:
             total_market_value += market_value
+            industry = r.get("industry") or "未分类"
+            industry_values[industry] = industry_values.get(industry, 0.0) + market_value
+        if day_change_value is not None:
+            total_day_change_value += day_change_value
         if cost_value is not None:
             total_cost_value += cost_value
             if market_value is not None:
@@ -1905,6 +2109,9 @@ def _portfolio_current_state():
             "cost_price": round(cost_price, 4) if cost_price is not None else None,
             "cost_price_currency": currency,
             "price": round(price, 2) if price is not None else None,
+            "day_change": round(float(quote.get("day_change")), 2) if quote.get("day_change") is not None else None,
+            "day_change_pct": round(float(quote.get("day_change_pct")), 2) if quote.get("day_change_pct") is not None else None,
+            "day_change_value": round(day_change_value, 2) if day_change_value is not None else None,
             "price_currency": currency,
             "fx_rate_to_cny": round(fx_rate, 6) if fx_rate is not None else None,
             "fx_rate_date": fx.get("date") if fx else None,
@@ -1936,6 +2143,15 @@ def _portfolio_current_state():
         p["allocation_pct"] = round(value / total_asset_value * 100, 2) if value is not None and total_asset_value > 0 else None
     positions.sort(key=lambda p: p.get("allocation_pct") or 0, reverse=True)
 
+    industry_allocations = [
+        {
+            "industry": industry,
+            "market_value": round(value, 2),
+            "allocation_pct": round(value / total_market_value * 100, 2) if total_market_value > 0 else 0,
+        }
+        for industry, value in sorted(industry_values.items(), key=lambda item: item[1], reverse=True)
+    ]
+
     return {
         "positions": positions,
         "fee_config": _portfolio_fee_config_payload(),
@@ -1948,6 +2164,8 @@ def _portfolio_current_state():
             "unrealized_profit": round(total_costed_market_value - total_cost_value, 2) if total_cost_value > 0 else None,
             "unrealized_profit_pct": round((total_costed_market_value - total_cost_value) / total_cost_value * 100, 2) if total_cost_value > 0 else None,
             "expected_dividend": round(expected_dividend, 2),
+            "day_change_value": round(total_day_change_value, 2),
+            "day_change_pct": round(total_day_change_value / total_market_value * 100, 2) if total_market_value > 0 else None,
             "count": len(positions),
             "currency": "CNY",
             "exchange_rates": {
@@ -1961,6 +2179,7 @@ def _portfolio_current_state():
                 for currency, info in exchange_rates.items()
                 if currency != "CNY"
             },
+            "industry_allocations": industry_allocations[:8],
         },
     }
 
@@ -2088,6 +2307,29 @@ def api_portfolio_actions():
     return jsonify(_portfolio_actions_payload())
 
 
+@app.route("/api/portfolio/audit", methods=["GET"])
+def api_portfolio_audit():
+    return jsonify(_portfolio_audit_payload())
+
+
+@app.route("/api/portfolio/rebuild", methods=["POST"])
+def api_portfolio_rebuild():
+    _ensure_portfolio_tables()
+    _sync_portfolio_cost_basis_from_trades()
+    rebuilt_cash = _portfolio_rebuilt_cash_amount()
+    execute_query(
+        "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+        (_quantize(rebuilt_cash, "0.01"),),
+        fetch=False,
+    )
+    state = _save_portfolio_snapshot()
+    state["audit"] = _portfolio_audit_payload()
+    state["trades"] = _portfolio_trades_payload()
+    state["actions"] = _portfolio_actions_payload()
+    state["flows"] = _portfolio_flows_payload()
+    return jsonify({"ok": True, **state})
+
+
 @app.route("/api/portfolio/trades", methods=["POST"])
 def api_portfolio_add_trade():
     _ensure_portfolio_tables()
@@ -2172,7 +2414,7 @@ def api_portfolio_add_trade():
         else:
             execute_query("DELETE FROM portfolio_positions WHERE stock_code=%s", (code,), fetch=False)
 
-    execute_query(
+    trade_id = _execute_insert_id(
         """INSERT INTO portfolio_trades
            (trade_date, stock_code, trade_type, shares, price, amount,
             commission, stamp_tax, transfer_fee, total_fee, cash_delta,
@@ -2197,12 +2439,13 @@ def api_portfolio_add_trade():
             round(realized_profit, 2) if realized_profit is not None else None,
             note,
         ),
-        fetch=False,
     )
     flow_note = note or f"{stock['name']}({code}) {'买入' if trade_type == 'buy' else '卖出'}"
     execute_query(
-        "INSERT INTO portfolio_cash_flows (flow_date, amount, flow_source, note) VALUES (%s, %s, %s, %s)",
-        (trade_date, cash_delta_dec, "trade", flow_note[:255]),
+        """INSERT INTO portfolio_cash_flows
+           (flow_date, amount, flow_source, source_type, source_id, note)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        (trade_date, cash_delta_dec, "trade", "trade", trade_id, flow_note[:255]),
         fetch=False,
     )
     execute_query(
@@ -2211,6 +2454,53 @@ def api_portfolio_add_trade():
         fetch=False,
     )
     state = _save_portfolio_snapshot()
+    state["trades"] = _portfolio_trades_payload()
+    state["actions"] = _portfolio_actions_payload()
+    state["flows"] = _portfolio_flows_payload()
+    return jsonify({"ok": True, **state})
+
+
+@app.route("/api/portfolio/trades/<int:trade_id>/void", methods=["POST"])
+def api_portfolio_void_trade(trade_id):
+    _ensure_portfolio_tables()
+    data = request.get_json(silent=True) or {}
+    void_note = str(data.get("void_note") or "作废交易").strip()[:255]
+    rows = execute_query(
+        """SELECT id, trade_date, stock_code, cash_delta, is_void
+           FROM portfolio_trades
+           WHERE id=%s
+           LIMIT 1""",
+        (trade_id,),
+    )
+    if not rows:
+        return jsonify({"error": "未找到这笔交易"}), 404
+    row = rows[0]
+    if row.get("is_void"):
+        return jsonify({"error": "这笔交易已作废"}), 400
+    execute_query(
+        "UPDATE portfolio_trades SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note=%s WHERE id=%s",
+        (void_note, trade_id),
+        fetch=False,
+    )
+    voided_flow_amount = _void_linked_cash_flow(
+        "trade",
+        trade_id,
+        "trade",
+        row["trade_date"],
+        row["cash_delta"],
+        row["stock_code"],
+        void_note,
+    )
+    if voided_flow_amount != 0:
+        current_cash = _decimal_value(_portfolio_cash_amount())
+        execute_query(
+            "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+            (_quantize(current_cash - voided_flow_amount, "0.01"),),
+            fetch=False,
+        )
+    _sync_portfolio_cost_basis_from_trades()
+    state = _save_portfolio_snapshot()
+    state["audit"] = _portfolio_audit_payload()
     state["trades"] = _portfolio_trades_payload()
     state["actions"] = _portfolio_actions_payload()
     state["flows"] = _portfolio_flows_payload()
@@ -2301,7 +2591,7 @@ def api_portfolio_add_corporate_action():
         new_shares = old_shares + action_shares
         new_cost = ((old_shares * old_cost) + amount) / new_shares
 
-    execute_query(
+    action_id = _execute_insert_id(
         """INSERT INTO portfolio_corporate_actions
            (action_date, stock_code, action_type, cash_amount, shares, price, amount, cash_delta,
             shares_before, shares_after, cost_price_before, cost_price_after, note)
@@ -2321,7 +2611,6 @@ def api_portfolio_add_corporate_action():
             _quantize(new_cost) if new_cost is not None else None,
             note,
         ),
-        fetch=False,
     )
     if new_shares > 0:
         execute_query(
@@ -2342,12 +2631,61 @@ def api_portfolio_add_corporate_action():
         flow_label = {"cash_dividend": "分红到账", "rights_issue": "配股扣款"}.get(action_type, "权益现金")
         flow_note = note or f"{stock['name']}({code}) {flow_label}"
         execute_query(
-            "INSERT INTO portfolio_cash_flows (flow_date, amount, flow_source, note) VALUES (%s, %s, %s, %s)",
-            (action_date, _quantize(cash_delta, "0.01"), "action", flow_note[:255]),
+            """INSERT INTO portfolio_cash_flows
+               (flow_date, amount, flow_source, source_type, source_id, note)
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (action_date, _quantize(cash_delta, "0.01"), "action", "action", action_id, flow_note[:255]),
             fetch=False,
         )
 
     state = _save_portfolio_snapshot()
+    state["trades"] = _portfolio_trades_payload()
+    state["actions"] = _portfolio_actions_payload()
+    state["flows"] = _portfolio_flows_payload()
+    return jsonify({"ok": True, **state})
+
+
+@app.route("/api/portfolio/actions/<int:action_id>/void", methods=["POST"])
+def api_portfolio_void_corporate_action(action_id):
+    _ensure_portfolio_tables()
+    data = request.get_json(silent=True) or {}
+    void_note = str(data.get("void_note") or "作废权益事件").strip()[:255]
+    rows = execute_query(
+        """SELECT id, action_date, stock_code, cash_delta, is_void
+           FROM portfolio_corporate_actions
+           WHERE id=%s
+           LIMIT 1""",
+        (action_id,),
+    )
+    if not rows:
+        return jsonify({"error": "未找到这笔权益记录"}), 404
+    row = rows[0]
+    if row.get("is_void"):
+        return jsonify({"error": "这笔权益记录已作废"}), 400
+    execute_query(
+        "UPDATE portfolio_corporate_actions SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note=%s WHERE id=%s",
+        (void_note, action_id),
+        fetch=False,
+    )
+    voided_flow_amount = _void_linked_cash_flow(
+        "action",
+        action_id,
+        "action",
+        row["action_date"],
+        row["cash_delta"],
+        row["stock_code"],
+        void_note,
+    )
+    if voided_flow_amount != 0:
+        current_cash = _decimal_value(_portfolio_cash_amount())
+        execute_query(
+            "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+            (_quantize(current_cash - voided_flow_amount, "0.01"),),
+            fetch=False,
+        )
+    _sync_portfolio_cost_basis_from_trades()
+    state = _save_portfolio_snapshot()
+    state["audit"] = _portfolio_audit_payload()
     state["trades"] = _portfolio_trades_payload()
     state["actions"] = _portfolio_actions_payload()
     state["flows"] = _portfolio_flows_payload()
@@ -2445,17 +2783,23 @@ def api_portfolio_add_flow():
 @app.route("/api/portfolio/flows/<int:flow_id>", methods=["DELETE"])
 def api_portfolio_delete_flow(flow_id):
     _ensure_portfolio_tables()
-    rows = execute_query("SELECT amount, flow_source FROM portfolio_cash_flows WHERE id=%s", (flow_id,))
+    rows = execute_query("SELECT amount, flow_source, is_void FROM portfolio_cash_flows WHERE id=%s", (flow_id,))
     if not rows:
         return jsonify({"error": "未找到这笔资金流水"}), 404
-    if rows[0].get("flow_source") == "trade":
-        return jsonify({"error": "交易产生的资金流水不能单独删除"}), 400
+    if rows[0].get("is_void"):
+        return jsonify({"error": "这笔资金流水已作废"}), 400
+    if rows[0].get("flow_source") in ("trade", "action"):
+        return jsonify({"error": "交易或权益产生的资金流水不能单独作废，请作废原始记录"}), 400
     amount = float(rows[0]["amount"])
     cash_amount = _portfolio_cash_amount()
     new_cash = cash_amount - amount
     if new_cash < 0:
-        return jsonify({"error": "删除后现金会小于 0，无法删除"}), 400
-    execute_query("DELETE FROM portfolio_cash_flows WHERE id=%s", (flow_id,), fetch=False)
+        return jsonify({"error": "作废后现金会小于 0，无法作废"}), 400
+    execute_query(
+        "UPDATE portfolio_cash_flows SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note='作废资金流水' WHERE id=%s",
+        (flow_id,),
+        fetch=False,
+    )
     execute_query(
         "UPDATE portfolio_cash SET amount=%s WHERE id=1",
         (round(new_cash, 2),),
@@ -2495,7 +2839,7 @@ def api_portfolio_nav():
     flow_rows = execute_query(
         """SELECT flow_date, SUM(amount) AS net_flow
            FROM portfolio_cash_flows
-           WHERE flow_source='external'
+           WHERE flow_source='external' AND is_void=0
            GROUP BY flow_date"""
     )
     flow_by_date = {str(r["flow_date"]): float(r["net_flow"] or 0) for r in flow_rows}
@@ -2815,6 +3159,7 @@ def api_stocks():
     market = request.args.get("market", None)
     status = request.args.get("status", None)
     keyword = request.args.get("keyword", None)
+    light = request.args.get("light") == "1"
     sort_by = request.args.get("sort_by", "").strip()
     sort_dir = request.args.get("sort_dir", "asc").lower()
     sort_fields = {"code", "name", "day_change_pct", "price", "pe_ttm", "pb_ex_goodwill", "dividend_yield", "ytd_return", "reasonable_valuation", "reasonable_price", "reasonable_discount"}
@@ -2859,7 +3204,8 @@ def api_stocks():
         status=status or None,
         keyword=keyword or None,
     )
-    result["data"] = _enrich_stock_list_metrics(result.get("data") or [])
+    if not light:
+        result["data"] = _enrich_stock_list_metrics(result.get("data") or [])
     result["sort_by"] = ""
     result["sort_dir"] = ""
     return jsonify(result)
@@ -3024,6 +3370,75 @@ def api_stock_detail(code):
 
         return jsonify(stock)
     return jsonify({"error": "未找到该股票"}), 404
+
+
+@app.route("/api/stock/<code>/research-summary")
+def api_stock_research_summary(code):
+    stock = Stock.get_by_code(code)
+    if not stock:
+        return jsonify({"error": "未找到该股票"}), 404
+    rows = execute_query(
+        """SELECT fiscal_year, report_period, total_revenue, parent_profit, deducted_profit
+           FROM custom_financials
+           WHERE stock_code=%s AND report_period='FY'
+           ORDER BY fiscal_year DESC
+           LIMIT 2""",
+        (code,),
+    )
+    latest = rows[0] if rows else {}
+    prev = rows[1] if len(rows) > 1 else {}
+    dividends = _latest_dividend_per_share([code]).get(code, {})
+    graham = _graham_payload(code)
+    quote = (_fetch_realtime_quotes([{"code": code, "market": stock.get("market")}]) or {}).get(code, {})
+
+    def pct_change(cur, old):
+        if cur in (None, "") or old in (None, "", 0, Decimal("0")):
+            return None
+        old_dec = _decimal_value(old)
+        if old_dec == 0:
+            return None
+        return float(_quantize((_decimal_value(cur) / old_dec - 1) * 100, "0.01"))
+
+    revenue_yoy = pct_change(latest.get("total_revenue"), prev.get("total_revenue"))
+    profit_yoy = pct_change(latest.get("parent_profit"), prev.get("parent_profit"))
+    price = quote.get("price")
+    reasonable_price = graham.get("fair_price")
+    discount = (price / reasonable_price - 1) * 100 if price and reasonable_price else None
+
+    highlights = []
+    if latest:
+        highlights.append(f"{latest.get('fiscal_year')} 年营收 {float(latest.get('total_revenue') or 0):.2f} 亿元，归母净利润 {float(latest.get('parent_profit') or 0):.2f} 亿元。")
+    if revenue_yoy is not None or profit_yoy is not None:
+        parts = []
+        if revenue_yoy is not None:
+            parts.append(f"营收同比 {revenue_yoy:+.2f}%")
+        if profit_yoy is not None:
+            parts.append(f"归母净利润同比 {profit_yoy:+.2f}%")
+        highlights.append("；".join(parts) + "。")
+    if dividends.get("dividend_per_share") is not None:
+        highlights.append(f"最近每股分红 {float(dividends.get('dividend_per_share')):.4f} 元，年份 {dividends.get('fiscal_year') or '-'}。")
+    if discount is not None:
+        highlights.append(f"当前价相对格雷厄姆合理价约 {discount:+.2f}%。")
+    if not highlights:
+        highlights.append("本地财务数据还不够完整，建议先做一次增量更新。")
+
+    risks = []
+    if profit_yoy is not None and profit_yoy < 0:
+        risks.append("利润同比下滑，需要结合利润表拆解原因。")
+    if revenue_yoy is not None and revenue_yoy < 0:
+        risks.append("收入同比下滑，关注需求或价格变化。")
+    if discount is not None and discount > 20:
+        risks.append("价格高于合理价较多，安全边际偏薄。")
+    if not risks:
+        risks.append("暂未从本地数据识别出明显红旗，仍需结合估值、现金流和行业变化复核。")
+
+    return jsonify({
+        "code": code,
+        "name": stock.get("name"),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "highlights": highlights,
+        "risks": risks,
+    })
 
 
 @app.route("/api/stock-search")

@@ -44,6 +44,11 @@
       <div class="sub" id="portfolioProfitPct">按交易自动计算</div>
     </div>
     <div class="summary-card">
+      <div class="label">今日变化</div>
+      <div class="value" id="portfolioDayChange">--</div>
+      <div class="sub" id="portfolioDayChangePct">按实时涨跌估算</div>
+    </div>
+    <div class="summary-card">
       <div class="label">当年预期分红</div>
       <div class="value" id="expectedDividend">--</div>
       <div class="sub">按最新每股分红 x 当前股数估算</div>
@@ -62,6 +67,31 @@
       <div class="label">持仓股票数</div>
       <div class="value" id="positionCount">--</div>
       <div class="sub">每次调整持仓都会覆盖今天的快照</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">组合仪表盘</div>
+      <div class="portfolio-dashboard-note" id="portfolioDashboardNote">按实时市值汇总</div>
+    </div>
+    <div class="portfolio-dashboard-grid">
+      <div class="portfolio-dashboard-card">
+        <div class="dashboard-label">股票仓位</div>
+        <div class="dashboard-value" id="dashboardStockPct">--</div>
+      </div>
+      <div class="portfolio-dashboard-card">
+        <div class="dashboard-label">现金仓位</div>
+        <div class="dashboard-value" id="dashboardCashPct">--</div>
+      </div>
+      <div class="portfolio-dashboard-card">
+        <div class="dashboard-label">行业集中度</div>
+        <div class="dashboard-value" id="dashboardTopIndustryPct">--</div>
+      </div>
+      <div class="portfolio-dashboard-card dashboard-wide">
+        <div class="dashboard-label">行业分布</div>
+        <div id="dashboardIndustryList" class="dashboard-industry-list"></div>
+      </div>
     </div>
   </div>
 
@@ -113,6 +143,7 @@
       <div class="panel-title">持仓明细</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" onclick="openAllocationModal()">持仓比例</button>
+        <button class="btn btn-outline btn-sm" onclick="runPortfolioAudit()">账本检查</button>
         <button class="btn btn-primary btn-sm" onclick="openTradeModal('', 'buy')">买入股票</button>
         <button class="btn btn-outline btn-sm" onclick="loadPortfolio()">刷新价格</button>
       </div>
@@ -123,14 +154,15 @@
           <tr>
             <th>代码</th>
             <th>名称</th>
-            <th class="num">股数</th>
-            <th class="num">成本价</th>
-            <th class="num">最新价</th>
-            <th class="num">市值</th>
-            <th class="num">持仓盈亏</th>
-            <th class="num">占比</th>
+            <th class="num sortable-th" onclick="setPositionSort('shares')">股数 <span data-sort-icon="shares"></span></th>
+            <th class="num sortable-th" onclick="setPositionSort('cost_price')">成本价 <span data-sort-icon="cost_price"></span></th>
+            <th class="num sortable-th" onclick="setPositionSort('price')">最新价 <span data-sort-icon="price"></span></th>
+            <th class="num sortable-th" onclick="setPositionSort('day_change_value')">今日变化 <span data-sort-icon="day_change_value"></span></th>
+            <th class="num sortable-th" onclick="setPositionSort('market_value')">市值 <span data-sort-icon="market_value"></span></th>
+            <th class="num sortable-th" onclick="setPositionSort('unrealized_profit')">持仓盈亏 <span data-sort-icon="unrealized_profit"></span></th>
+            <th class="num sortable-th" onclick="setPositionSort('allocation_pct')">占比 <span data-sort-icon="allocation_pct"></span></th>
             <th class="num">每股分红</th>
-            <th class="num">预期分红</th>
+            <th class="num sortable-th" onclick="setPositionSort('expected_dividend')">预期分红 <span data-sort-icon="expected_dividend"></span></th>
             <th>操作</th>
           </tr>
         </thead>
@@ -167,6 +199,7 @@
               <th class="num">交易后成本价</th>
               <th class="num">已实现盈亏</th>
               <th>备注</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody id="tradesBody"></tbody>
@@ -200,6 +233,7 @@
             <th class="num">权益后股数</th>
             <th class="num">权益后成本价</th>
             <th>备注</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody id="actionsBody"></tbody>
@@ -430,6 +464,8 @@ let tradesPage = 1;
 let tradesCollapsed = true;
 let tradesLoaded = false;
 const TRADES_PAGE_SIZE = 5;
+let positionSortKey = localStorage.getItem('portfolioPositionSortKey') || 'market_value';
+let positionSortDir = localStorage.getItem('portfolioPositionSortDir') || 'desc';
 let navHistoryRows = [];
 let navHistoryPage = 1;
 const NAV_HISTORY_PAGE_SIZE = 20;
@@ -738,21 +774,92 @@ function renderSummary(summary) {
   profitEl.textContent = signedPrivateMoney(profit);
   profitEl.className = 'value ' + profitClass(profit);
   document.getElementById('portfolioProfitPct').textContent = profitPct == null ? '按交易自动计算' : `${Number(profitPct).toFixed(2)}% · 成本 ${privateMoney(summary.total_cost_value)}`;
+  const dayChange = summary.day_change_value;
+  const dayChangeEl = document.getElementById('portfolioDayChange');
+  if (dayChangeEl) {
+    dayChangeEl.textContent = signedPrivateMoney(dayChange);
+    dayChangeEl.className = 'value ' + profitClass(dayChange);
+  }
+  const dayChangePctEl = document.getElementById('portfolioDayChangePct');
+  if (dayChangePctEl) {
+    dayChangePctEl.textContent = summary.day_change_pct == null ? '按实时涨跌估算' : `${Number(summary.day_change_pct).toFixed(2)}%`;
+  }
   document.getElementById('expectedDividend').textContent = money(dividend);
   document.getElementById('portfolioYield').textContent = total > 0 ? (dividend / total * 100).toFixed(2) + '%' : '--';
   document.getElementById('positionCount').textContent = summary.count || 0;
+  renderPortfolioDashboard(summary, totalAsset, total, cash);
+}
+
+function renderPortfolioDashboard(summary, totalAsset, totalMarketValue, cash) {
+  const stockPct = totalAsset > 0 ? totalMarketValue / totalAsset * 100 : null;
+  const cashPct = totalAsset > 0 ? cash / totalAsset * 100 : null;
+  const industries = summary.industry_allocations || [];
+  const topIndustry = industries[0];
+  const stockEl = document.getElementById('dashboardStockPct');
+  const cashEl = document.getElementById('dashboardCashPct');
+  const topEl = document.getElementById('dashboardTopIndustryPct');
+  const listEl = document.getElementById('dashboardIndustryList');
+  if (stockEl) stockEl.textContent = stockPct == null ? '--' : stockPct.toFixed(2) + '%';
+  if (cashEl) cashEl.textContent = cashPct == null ? '--' : cashPct.toFixed(2) + '%';
+  if (topEl) topEl.textContent = topIndustry ? `${topIndustry.industry} ${Number(topIndustry.allocation_pct).toFixed(2)}%` : '--';
+  if (!listEl) return;
+  listEl.innerHTML = industries.length ? industries.map(item => `
+    <div class="dashboard-industry-row">
+      <span>${esc(item.industry)}</span>
+      <div class="dashboard-industry-bar"><i style="width:${Math.min(100, Math.max(0, Number(item.allocation_pct || 0)))}%"></i></div>
+      <b>${Number(item.allocation_pct || 0).toFixed(2)}%</b>
+    </div>
+  `).join('') : '<div class="dividend-meta" style="text-align:left">暂无持仓行业数据</div>';
+}
+
+function sortedPositions(rows) {
+  const result = [...(Array.isArray(rows) ? rows : [])];
+  const dir = positionSortDir === 'asc' ? 1 : -1;
+  result.sort((a, b) => {
+    const av = Number(a?.[positionSortKey]);
+    const bv = Number(b?.[positionSortKey]);
+    const an = Number.isFinite(av) ? av : (positionSortDir === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+    const bn = Number.isFinite(bv) ? bv : (positionSortDir === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+    if (an === bn) return String(a.code || '').localeCompare(String(b.code || ''));
+    return (an - bn) * dir;
+  });
+  return result;
+}
+
+function refreshPositionSortIcons() {
+  document.querySelectorAll('[data-sort-icon]').forEach(el => {
+    const key = el.getAttribute('data-sort-icon');
+    el.textContent = key === positionSortKey ? (positionSortDir === 'asc' ? '↑' : '↓') : '';
+  });
+}
+
+function setPositionSort(key) {
+  if (positionSortKey === key) {
+    positionSortDir = positionSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    positionSortKey = key;
+    positionSortDir = 'desc';
+  }
+  localStorage.setItem('portfolioPositionSortKey', positionSortKey);
+  localStorage.setItem('portfolioPositionSortDir', positionSortDir);
+  renderPositions(latestPortfolioData.positions || []);
 }
 
 function renderPositions(rows) {
   const body = document.getElementById('positionsBody');
   document.getElementById('positionsEmpty').style.display = rows.length ? 'none' : 'block';
-  body.innerHTML = rows.map(r => `
+  refreshPositionSortIcons();
+  body.innerHTML = sortedPositions(rows).map(r => `
     <tr>
       <td><span class="code">${esc(r.code)}</span></td>
       <td><a class="name-link" href="/stock/${esc(r.code)}">${esc(r.name)}</a></td>
       <td class="num">${plain(r.shares)}</td>
       <td class="num">${r.cost_price == null ? '--' : plain(r.cost_price)} ${r.cost_price_currency || ''}</td>
       <td class="num">${money(r.price)} ${r.price_currency || ''}</td>
+      <td class="num ${profitClass(r.day_change_value)}">
+        ${signedPrivateMoney(r.day_change_value)}
+        <div class="dividend-meta">${r.day_change_pct == null ? '--' : (Number(r.day_change_pct) > 0 ? '+' : '') + Number(r.day_change_pct).toFixed(2) + '%'}</div>
+      </td>
       <td class="num">
         ${money(r.market_value)} CNY
         ${r.original_market_value_currency && r.original_market_value_currency !== 'CNY'
@@ -1021,9 +1128,10 @@ function renderTrades(rows) {
     const isBuy = r.trade_type === 'buy';
     const typeText = isBuy ? '买入' : '卖出';
     const typeClass = isBuy ? 'trade-buy' : 'trade-sell';
-    return `<tr>
+    const voidBadge = r.is_void ? '<span class="void-badge">已作废</span>' : '';
+    return `<tr class="${r.is_void ? 'void-row' : ''}">
       <td>${esc(r.trade_date)}</td>
-      <td><span class="${typeClass}">${typeText}</span></td>
+      <td><span class="${typeClass}">${typeText}</span>${voidBadge}</td>
       <td><span class="code">${esc(r.stock_code)}</span></td>
       <td><a class="name-link" href="/stock/${esc(r.stock_code)}">${esc(r.name)}</a></td>
       <td class="num">${plain(r.shares)}</td>
@@ -1037,7 +1145,8 @@ function renderTrades(rows) {
       <td class="num">${plain(r.shares_after)}</td>
       <td class="num">${r.cost_price_after == null ? '--' : plain(r.cost_price_after)} ${r.currency || ''}</td>
       <td class="num ${profitClass(r.realized_profit)}">${signedPrivateMoney(r.realized_profit)}</td>
-      <td>${esc(r.note || '')}</td>
+      <td>${esc(r.note || '')}${r.void_note ? `<div class="dividend-meta">作废原因：${esc(r.void_note)}</div>` : ''}</td>
+      <td>${r.is_void ? '--' : `<button class="btn btn-danger btn-sm" onclick="voidTrade(${r.id})">作废</button>`}</td>
     </tr>`;
   }).join('');
   totalEl.textContent = '共 ' + tradeRows.length + ' 条';
@@ -1076,9 +1185,10 @@ function renderActions(rows) {
   empty.style.display = rows.length ? 'none' : 'block';
   body.innerHTML = rows.map(r => {
     const cashDelta = Number(r.cash_delta || 0);
-    return `<tr>
+    const voidBadge = r.is_void ? '<span class="void-badge">已作废</span>' : '';
+    return `<tr class="${r.is_void ? 'void-row' : ''}">
       <td>${esc(r.action_date)}</td>
-      <td>${typeMap[r.action_type] || esc(r.action_type)}</td>
+      <td>${typeMap[r.action_type] || esc(r.action_type)}${voidBadge}</td>
       <td><span class="code">${esc(r.stock_code)}</span></td>
       <td><a class="name-link" href="/stock/${esc(r.stock_code)}">${esc(r.name)}</a></td>
       <td class="num">${money(r.cash_amount)} ${r.currency || ''}</td>
@@ -1087,7 +1197,8 @@ function renderActions(rows) {
       <td class="num ${cashDelta >= 0 ? 'flow-in' : 'flow-out'}">${signedPrivateMoney(cashDelta)} ${r.currency || ''}</td>
       <td class="num">${plain(r.shares_after)}</td>
       <td class="num">${r.cost_price_after == null ? '--' : plain(r.cost_price_after)} ${r.currency || ''}</td>
-      <td>${esc(r.note || '')}</td>
+      <td>${esc(r.note || '')}${r.void_note ? `<div class="dividend-meta">作废原因：${esc(r.void_note)}</div>` : ''}</td>
+      <td>${r.is_void ? '--' : `<button class="btn btn-danger btn-sm" onclick="voidAction(${r.id})">作废</button>`}</td>
     </tr>`;
   }).join('');
 }
@@ -1111,12 +1222,13 @@ function renderFlows(rows) {
       : isAction
         ? (Number(r.amount) >= 0 ? '分红到账' : '配股扣款')
         : (Number(r.amount) >= 0 ? '入金' : '出金');
-    return `<tr>
+    const voidBadge = r.is_void ? '<span class="void-badge">已作废</span>' : '';
+    return `<tr class="${r.is_void ? 'void-row' : ''}">
       <td>${esc(r.flow_date)}</td>
-      <td>${typeText}</td>
+      <td>${typeText}${voidBadge}</td>
       <td class="num ${cls}">${sign}${money(r.amount)}</td>
-      <td>${esc(r.note || '')}</td>
-      <td>${isTrade || isAction ? '--' : `<button class="btn btn-danger btn-sm" onclick="deleteFlow(${r.id})">删除</button>`}</td>
+      <td>${esc(r.note || '')}${r.void_note ? `<div class="dividend-meta">作废原因：${esc(r.void_note)}</div>` : ''}</td>
+      <td>${r.is_void || isTrade || isAction ? '--' : `<button class="btn btn-danger btn-sm" onclick="deleteFlow(${r.id})">作废</button>`}</td>
     </tr>`;
   }).join('');
 }
@@ -1149,19 +1261,99 @@ async function saveFlow() {
 }
 
 async function deleteFlow(id) {
-  if (!confirm('确定删除这笔资金流水吗？')) return;
+  if (!confirm('确定作废这笔资金流水吗？作废后会同步回滚现金。')) return;
   try {
     const res = await fetch('/api/portfolio/flows/' + id, {method: 'DELETE'});
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '删除失败');
+    if (!res.ok || data.error) throw new Error(data.error || '作废失败');
     latestPortfolioData = data;
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     renderFlows(data.flows || []);
     await loadNav();
-    showToast('资金流水已删除，并更新今日快照', 'success');
+    showToast('资金流水已作废，并更新今日快照', 'success');
   } catch (e) {
-    showToast(e.message || '删除资金流水失败', 'error');
+    showToast(e.message || '作废资金流水失败', 'error');
+  }
+}
+
+function applyPortfolioState(data) {
+  latestPortfolioData = data;
+  if (data.fee_config) latestFeeConfig = data.fee_config;
+  renderSummary(data.summary || {});
+  renderPositions(data.positions || []);
+  if (data.trades) renderTrades(data.trades || []);
+  if (data.actions) renderActions(data.actions || []);
+  if (data.flows) renderFlows(data.flows || []);
+}
+
+async function voidTrade(id) {
+  const note = prompt('作废原因', '录入错误') || '作废交易';
+  if (!confirm('确定作废这笔交易吗？相关现金流水会一起作废，持仓成本会按账本重算。')) return;
+  try {
+    const res = await fetch('/api/portfolio/trades/' + id + '/void', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({void_note: note})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '作废交易失败');
+    applyPortfolioState(data);
+    await loadNav();
+    showToast('交易已作废，账本已重算', 'success');
+  } catch (e) {
+    showToast(e.message || '作废交易失败', 'error');
+  }
+}
+
+async function voidAction(id) {
+  const note = prompt('作废原因', '录入错误') || '作废权益事件';
+  if (!confirm('确定作废这笔权益记录吗？相关现金流水会一起作废，持仓成本会按账本重算。')) return;
+  try {
+    const res = await fetch('/api/portfolio/actions/' + id + '/void', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({void_note: note})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '作废权益记录失败');
+    applyPortfolioState(data);
+    await loadNav();
+    showToast('权益记录已作废，账本已重算', 'success');
+  } catch (e) {
+    showToast(e.message || '作废权益记录失败', 'error');
+  }
+}
+
+async function runPortfolioAudit() {
+  try {
+    const res = await fetch('/api/portfolio/audit');
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '账本检查失败');
+    if (data.ok) {
+      showToast('账本一致：现金、流水、持仓都对得上', 'success');
+      return;
+    }
+    const detail = (data.issues || []).slice(0, 6).map(item => item.message || item.code || item.type).join('\n');
+    if (confirm(`发现 ${data.issues.length} 个账本不一致项：\n${detail}\n\n是否一键重算现金和持仓？`)) {
+      await rebuildPortfolioLedger();
+    }
+  } catch (e) {
+    showToast(e.message || '账本检查失败', 'error');
+  }
+}
+
+async function rebuildPortfolioLedger() {
+  try {
+    const res = await fetch('/api/portfolio/rebuild', {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '账本重算失败');
+    applyPortfolioState(data);
+    await loadNav();
+    const ok = data.audit?.ok;
+    showToast(ok ? '账本已重算，当前一致' : '账本已重算，但仍有需要人工检查的记录', ok ? 'success' : 'error');
+  } catch (e) {
+    showToast(e.message || '账本重算失败', 'error');
   }
 }
 
@@ -1252,10 +1444,12 @@ function renderNav(rows) {
         const totalAsset = Number(row.total_asset_value || row.total_market_value || 0);
         const stockValue = Number(row.stock_market_value || row.total_market_value || 0);
         const cashValue = Math.max(totalAsset - stockValue, 0);
+        const netFlow = Number(row.net_flow || 0);
         const positionPct = totalAsset > 0 ? stockValue / totalAsset * 100 : null;
         const nav = row.nav_index == null ? '--' : Number(row.nav_index).toFixed(4);
         return `<strong>${esc(String(row.date || params[0]?.axisValue || ''))}</strong><br/>
           净值指数: ${nav}<br/>
+          当日出入金: ${signedPrivateMoney(netFlow)}<br/>
           股票仓位: ${money(stockValue)}${positionPct == null ? '' : ' (' + positionPct.toFixed(2) + '%)'}<br/>
           现金/空仓: ${money(cashValue)}${positionPct == null ? '' : ' (' + (100 - positionPct).toFixed(2) + '%)'}<br/>
           总资产: ${money(totalAsset)}`;

@@ -6,6 +6,7 @@ function debounceSearch() {
 async function loadStocks() {
   const keyword = document.getElementById('keyword').value.trim();
   const params = new URLSearchParams({ page: currentPage, page_size: listPageSize });
+  if (!currentSortBy && !keyword) params.append('light', '1');
   if (keyword) params.append('keyword', keyword);
   if (currentSortBy && !reorderMode) {
     params.append('sort_by', currentSortBy);
@@ -20,6 +21,7 @@ async function loadStocks() {
     renderPagination(data);
     updateListControls();
     document.getElementById('emptyHint').style.display = data.total === 0 ? 'block' : 'none';
+    refreshVisibleStockPrices(true);
     scheduleStockPriceAutoRefresh();
     refreshVisibleStockYtd();
   } catch (e) {
@@ -112,8 +114,8 @@ function updateStockRealtimeCells(items) {
   }
 }
 
-async function refreshVisibleStockPrices() {
-  if (stockPriceAutoRefreshBusy || !isStockListTradingTime()) return;
+async function refreshVisibleStockPrices(force = false) {
+  if (stockPriceAutoRefreshBusy || (!force && !isStockListTradingTime())) return;
   if (!document.getElementById('view-list')?.classList.contains('active')) return;
   const rows = Array.from(document.querySelectorAll('#stockTableBody tr[data-code]'));
   const codes = rows.map(row => row.dataset.code).filter(Boolean);

@@ -111,10 +111,35 @@ async function loadDetail(code) {
     mcEl.textContent = rt.market_cap != null ? rt.market_cap.toFixed(2) + ' 亿' : '--';
     mcEl.className = 'value';
     loadPortfolioPositionCard(stock.code, rt.price);
+    loadResearchSummary(stock.code);
 
     refreshCurrentDetailTab(stock.code);
   } catch (e) {
     showToast('加载详情失败', 'error');
+  }
+}
+
+async function loadResearchSummary(code) {
+  if (!code) return;
+  const timeEl = document.getElementById('researchSummaryTime');
+  const hiEl = document.getElementById('researchSummaryHighlights');
+  const riskEl = document.getElementById('researchSummaryRisks');
+  if (!hiEl || !riskEl) return;
+  if (timeEl) timeEl.textContent = '读取中...';
+  hiEl.innerHTML = '<li>读取中...</li>';
+  riskEl.innerHTML = '';
+  try {
+    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/research-summary');
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '摘要生成失败');
+    if (code !== getCurrentCode()) return;
+    if (timeEl) timeEl.textContent = '更新于 ' + (data.updated_at || '');
+    hiEl.innerHTML = (data.highlights || []).map(item => `<li>${esc(item)}</li>`).join('');
+    riskEl.innerHTML = (data.risks || []).map(item => `<li>${esc(item)}</li>`).join('');
+  } catch (e) {
+    if (timeEl) timeEl.textContent = e.message || '摘要生成失败';
+    hiEl.innerHTML = '<li>摘要暂不可用。</li>';
+    riskEl.innerHTML = '';
   }
 }
 
@@ -135,11 +160,16 @@ async function loadPortfolioPositionCard(code, price) {
     }
     const shares = Number(data.shares || 0);
     const marketValue = price != null ? shares * Number(price) : null;
+    const costPrice = data.cost_price != null ? Number(data.cost_price) : null;
+    const profit = marketValue != null && costPrice != null ? marketValue - shares * costPrice : null;
+    const profitPct = profit != null && shares * costPrice > 0 ? profit / (shares * costPrice) * 100 : null;
     const dividendPerShare = data.dividend_per_share != null ? Number(data.dividend_per_share) : null;
     const expectedDividend = dividendPerShare != null ? shares * dividendPerShare : null;
     sharesEl.textContent = shares.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 股';
     const parts = [];
     if (marketValue != null) parts.push('市值 ' + marketValue.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
+    if (costPrice != null) parts.push('成本价 ' + costPrice.toFixed(4));
+    if (profit != null) parts.push('盈亏 ' + (profit >= 0 ? '+' : '') + profit.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元' + (profitPct == null ? '' : ' (' + (profitPct >= 0 ? '+' : '') + profitPct.toFixed(2) + '%)'));
     if (expectedDividend != null) parts.push('预计分红 ' + expectedDividend.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
     valueEl.textContent = parts.length ? parts.join(' · ') : '已加入持仓';
   } catch (e) {
@@ -149,6 +179,7 @@ async function loadPortfolioPositionCard(code, price) {
 }
 
 let divYearsPopulated = false;
+let latestDividendRows = [];
 
 async function loadDividends(code) {
   if (!code) return;
@@ -203,6 +234,44 @@ function resetDivYears() {
   if (fromOpts.length > 1) fromSelect.value = fromOpts[1].value;
   if (toOpts.length > 1) toSelect.value = toOpts[toOpts.length - 1].value;
   loadDividends(getCurrentCode());
+}
+
+async function syncLatestDividendToPortfolio() {
+  const code = getCurrentCode();
+  const rows = (latestDividendRows || []).filter(r => Number(r.dividend_per_share || 0) > 0);
+  if (!code || !rows.length) {
+    showToast('没有可登记的分红数据', 'error');
+    return;
+  }
+  const latest = rows.slice().sort((a, b) => Number(b.fiscal_year || 0) - Number(a.fiscal_year || 0))[0];
+  try {
+    const posRes = await fetch('/api/portfolio/positions/' + encodeURIComponent(code));
+    const pos = await posRes.json();
+    if (!posRes.ok || pos.error) throw new Error(pos.error || '读取持仓失败');
+    if (!pos.held) throw new Error('这只股票当前未持仓，无法登记持仓分红');
+    const shares = Number(pos.shares || 0);
+    const dps = Number(latest.dividend_per_share || 0);
+    const cashAmount = shares * dps;
+    if (!shares || !dps || !cashAmount) throw new Error('持仓股数或每股分红为空');
+    if (!confirm(`按 ${latest.fiscal_year} 年每股分红 ${dps.toFixed(4)} 元登记？\n当前持仓 ${shares} 股，预计到账 ${cashAmount.toFixed(2)} 元。`)) return;
+    const res = await fetch('/api/portfolio/actions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        action_date: new Date().toISOString().slice(0, 10),
+        action_type: 'cash_dividend',
+        code,
+        cash_amount: cashAmount.toFixed(2),
+        note: `${latest.fiscal_year} 年分红登记`
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || '登记分红失败');
+    showToast('分红已登记到我的持仓，并摊薄成本价', 'success');
+    loadPortfolioPositionCard(code, null);
+  } catch (e) {
+    showToast(e.message || '登记分红失败', 'error');
+  }
 }
 
 function renderDividendsChart(data) {
@@ -484,6 +553,7 @@ async function loadShareholders(code, options = {}) {
     const res = await fetch(url);
     const data = await res.json();
     if (code !== getCurrentCode()) return;
+    latestDividendRows = Array.isArray(data) ? data : [];
     if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     shareholderCache = data.periods || [];
     shareholderCacheCode = code;
