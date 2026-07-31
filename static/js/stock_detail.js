@@ -110,7 +110,7 @@ async function loadDetail(code) {
     const mcEl = document.getElementById('rtMarketCap');
     mcEl.textContent = rt.market_cap != null ? rt.market_cap.toFixed(2) + ' 亿' : '--';
     mcEl.className = 'value';
-    loadPortfolioPositionCard(stock.code, rt.price);
+    loadPortfolioPositionCard(stock.code);
     loadResearchSummary(stock.code);
 
     refreshCurrentDetailTab(stock.code);
@@ -143,38 +143,22 @@ async function loadResearchSummary(code) {
   }
 }
 
-async function loadPortfolioPositionCard(code, price) {
+async function loadPortfolioPositionCard(code) {
   const sharesEl = document.getElementById('portfolioShares');
-  const valueEl = document.getElementById('portfolioValue');
-  if (!sharesEl || !valueEl) return;
+  if (!sharesEl) return;
   sharesEl.textContent = '--';
-  valueEl.textContent = '读取中...';
   try {
     const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code));
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || '读取持仓失败');
     if (!data.held) {
       sharesEl.textContent = '未持仓';
-      valueEl.textContent = '可在“我的持仓”添加';
       return;
     }
     const shares = Number(data.shares || 0);
-    const marketValue = price != null ? shares * Number(price) : null;
-    const costPrice = data.cost_price != null ? Number(data.cost_price) : null;
-    const profit = marketValue != null && costPrice != null ? marketValue - shares * costPrice : null;
-    const profitPct = profit != null && shares * costPrice > 0 ? profit / (shares * costPrice) * 100 : null;
-    const dividendPerShare = data.dividend_per_share != null ? Number(data.dividend_per_share) : null;
-    const expectedDividend = dividendPerShare != null ? shares * dividendPerShare : null;
     sharesEl.textContent = shares.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 股';
-    const parts = [];
-    if (marketValue != null) parts.push('市值 ' + marketValue.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
-    if (costPrice != null) parts.push('成本价 ' + costPrice.toFixed(4));
-    if (profit != null) parts.push('盈亏 ' + (profit >= 0 ? '+' : '') + profit.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元' + (profitPct == null ? '' : ' (' + (profitPct >= 0 ? '+' : '') + profitPct.toFixed(2) + '%)'));
-    if (expectedDividend != null) parts.push('预计分红 ' + expectedDividend.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 元');
-    valueEl.textContent = parts.length ? parts.join(' · ') : '已加入持仓';
   } catch (e) {
     sharesEl.textContent = '--';
-    valueEl.textContent = e.message || '读取失败';
   }
 }
 
