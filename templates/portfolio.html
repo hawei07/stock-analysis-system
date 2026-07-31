@@ -21,7 +21,6 @@
     <button class="btn btn-primary" onclick="saveSnapshot()">记录今日净值</button>
     <button class="btn btn-outline" onclick="openFlowModal()">资金流水</button>
     <button class="btn btn-outline" onclick="openFeeConfigModal()">交易费率</button>
-    <button class="btn btn-outline" onclick="openAllocationModal()">持仓比例</button>
     <span class="cloud-status-pill" id="cloudBackupStatus">云备份状态：检查中</span>
   </div>
 </div>
@@ -115,6 +114,7 @@
     <div class="panel-header">
       <div class="panel-title">持仓明细</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="openAllocationModal()">持仓比例</button>
         <button class="btn btn-primary btn-sm" onclick="openTradeModal('', 'buy')">买入股票</button>
         <button class="btn btn-outline btn-sm" onclick="loadPortfolio()">刷新价格</button>
       </div>
