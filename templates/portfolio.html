@@ -1435,11 +1435,16 @@ function renderNav(rows) {
     }, true);
     return;
   }
-  const stockValues = rows.map(r => Number(r.stock_market_value || r.total_market_value || 0));
-  const cashValues = rows.map(r => {
+  const totalAssetValues = rows.map(r => Number(r.total_asset_value || r.total_market_value || 0));
+  const principalValues = rows.map(r => {
+    const totalAsset = Number(r.total_asset_value || r.total_market_value || 0);
+    const cumulativeReturn = Number(r.cumulative_return || 0);
+    return totalAsset - cumulativeReturn;
+  });
+  const positionPctValues = rows.map(r => {
     const totalAsset = Number(r.total_asset_value || r.total_market_value || 0);
     const stockValue = Number(r.stock_market_value || r.total_market_value || 0);
-    return Math.max(totalAsset - stockValue, 0);
+    return totalAsset > 0 ? +(stockValue / totalAsset * 100).toFixed(2) : null;
   });
   navChart.setOption({
     tooltip: {
@@ -1451,31 +1456,36 @@ function renderNav(rows) {
         const stockValue = Number(row.stock_market_value || row.total_market_value || 0);
         const cashValue = Math.max(totalAsset - stockValue, 0);
         const netFlow = Number(row.net_flow || 0);
+        const principal = totalAsset - Number(row.cumulative_return || 0);
         const positionPct = totalAsset > 0 ? stockValue / totalAsset * 100 : null;
         const nav = row.nav_index == null ? '--' : Number(row.nav_index).toFixed(4);
         return `<strong>${esc(String(row.date || params[0]?.axisValue || ''))}</strong><br/>
-          净值指数: ${nav}<br/>
+          净值: ${nav}<br/>
+          总资产: ${money(totalAsset)}<br/>
+          累计本金: ${money(principal)}<br/>
+          仓位: ${positionPct == null ? '--' : positionPct.toFixed(2) + '%'}<br/>
           当日出入金: ${signedPrivateMoney(netFlow)}<br/>
           当日收益: ${signedPrivateMoney(row.daily_return)}<br/>
           累计收益: ${signedPrivateMoney(row.cumulative_return)}<br/>
           累计入金: ${money(row.cumulative_in)}<br/>
           累计出金: ${money(row.cumulative_out)}<br/>
           股票仓位: ${money(stockValue)}${positionPct == null ? '' : ' (' + positionPct.toFixed(2) + '%)'}<br/>
-          现金/空仓: ${money(cashValue)}${positionPct == null ? '' : ' (' + (100 - positionPct).toFixed(2) + '%)'}<br/>
-          总资产: ${money(totalAsset)}`;
+          现金/空仓: ${money(cashValue)}${positionPct == null ? '' : ' (' + (100 - positionPct).toFixed(2) + '%)'}`;
       }
     },
-    legend: {top: 8, data: ['净值指数', '股票仓位', '现金/空仓']},
-    grid: {left: 56, right: 56, top: 56, bottom: 42},
+    legend: {top: 8, data: ['净值', '总资产', '累计本金', '仓位']},
+    grid: {left: 56, right: 88, top: 56, bottom: 42},
     xAxis: {type: 'category', data: rows.map(r => r.date)},
     yAxis: [
-      {type: 'value', name: '净值指数', min: value => Math.max(0, value.min * .98)},
-      {type: 'value', name: '总资产', axisLabel: {formatter: v => Math.round(v / 10000) + '万'}}
+      {type: 'value', name: '净值', min: value => Math.max(0, value.min * .98)},
+      {type: 'value', name: '金额', axisLabel: {formatter: v => Math.round(v / 10000) + '万'}},
+      {type: 'value', name: '仓位', min: 0, max: 100, position: 'right', offset: 48, axisLabel: {formatter: '{value}%'}}
     ],
     series: [
-      {name: '净值指数', type: 'line', smooth: true, symbolSize: 7, data: rows.map(r => r.nav_index), connectNulls: true},
-      {name: '股票仓位', type: 'bar', stack: 'asset', yAxisIndex: 1, data: stockValues, itemStyle: {color: '#5b8ff9'}},
-      {name: '现金/空仓', type: 'bar', stack: 'asset', yAxisIndex: 1, data: cashValues, itemStyle: {color: '#c8d6e8'}}
+      {name: '净值', type: 'line', smooth: true, symbolSize: 7, data: rows.map(r => r.nav_index), connectNulls: true, itemStyle: {color: '#4a6cf7'}},
+      {name: '总资产', type: 'line', smooth: true, symbolSize: 5, yAxisIndex: 1, data: totalAssetValues, connectNulls: true, itemStyle: {color: '#13a8a8'}},
+      {name: '累计本金', type: 'line', smooth: true, symbolSize: 5, yAxisIndex: 1, data: principalValues, connectNulls: true, itemStyle: {color: '#faad14'}},
+      {name: '仓位', type: 'bar', yAxisIndex: 2, data: positionPctValues, itemStyle: {color: '#91caff'}}
     ]
   }, true);
   navChart.setOption({
@@ -1486,14 +1496,15 @@ function renderNav(rows) {
       },
       {
         splitLine: {show: false}
+      },
+      {
+        splitLine: {show: false}
       }
     ],
     series: [
       {},
-      {
-        barMaxWidth: 64,
-        itemStyle: {borderRadius: [0, 0, 4, 4]}
-      },
+      {},
+      {},
       {
         barMaxWidth: 64,
         itemStyle: {borderRadius: [4, 4, 0, 0]}
