@@ -19,7 +19,6 @@
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">深色</button>
     <button class="btn btn-outline" onclick="location.href='/'">返回首页</button>
     <button class="btn btn-primary" onclick="saveSnapshot()">记录今日净值</button>
-    <button class="btn btn-outline" onclick="openFlowModal()">资金流水</button>
     <button class="btn btn-outline" onclick="openFeeConfigModal()">交易费率</button>
     <span class="cloud-status-pill" id="cloudBackupStatus">云备份状态：检查中</span>
   </div>
@@ -146,6 +145,7 @@
     <div class="panel-header">
       <div class="panel-title">交易记录</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="openFlowModal()">资金流水</button>
         <button class="btn btn-outline btn-sm" id="tradesRefreshBtn" onclick="loadTrades()" style="display:none">刷新交易</button>
         <button class="btn btn-outline btn-sm" id="tradesToggleBtn" onclick="toggleTradesPanel()">展开</button>
       </div>
