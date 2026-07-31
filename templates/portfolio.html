@@ -146,34 +146,39 @@
   <div class="panel">
     <div class="panel-header">
       <div class="panel-title">交易记录</div>
-      <button class="btn btn-outline btn-sm" onclick="loadTrades()">刷新交易</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" id="tradesRefreshBtn" onclick="loadTrades()" style="display:none">刷新交易</button>
+        <button class="btn btn-outline btn-sm" id="tradesToggleBtn" onclick="toggleTradesPanel()">展开</button>
+      </div>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>方向</th>
-            <th>代码</th>
-            <th>名称</th>
-            <th class="num">股数</th>
-            <th class="num">成交价</th>
-            <th class="num">成交金额</th>
-            <th class="num">税费</th>
-            <th class="num">现金变动</th>
-            <th class="num">交易后股数</th>
-            <th class="num">交易后成本价</th>
-            <th class="num">已实现盈亏</th>
-            <th>备注</th>
-          </tr>
-        </thead>
-        <tbody id="tradesBody"></tbody>
-      </table>
-      <div class="empty" id="tradesEmpty" style="display:none">还没有交易记录。</div>
-    </div>
-    <div class="nav-history-footer">
-      <div class="nav-history-total" id="tradesTotal">共 0 条</div>
-      <div class="nav-history-pagination" id="tradesPagination"></div>
+    <div id="tradesContent" style="display:none">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>方向</th>
+              <th>代码</th>
+              <th>名称</th>
+              <th class="num">股数</th>
+              <th class="num">成交价</th>
+              <th class="num">成交金额</th>
+              <th class="num">税费</th>
+              <th class="num">现金变动</th>
+              <th class="num">交易后股数</th>
+              <th class="num">交易后成本价</th>
+              <th class="num">已实现盈亏</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+        <div class="empty" id="tradesEmpty" style="display:none">还没有交易记录。</div>
+      </div>
+      <div class="nav-history-footer">
+        <div class="nav-history-total" id="tradesTotal">共 0 条</div>
+        <div class="nav-history-pagination" id="tradesPagination"></div>
+      </div>
     </div>
   </div>
 
@@ -421,6 +426,8 @@ let latestFeeConfig = {commission_rate: 0.00025, min_commission: 5, stamp_tax_ra
 let amountPrivacyMode = localStorage.getItem('portfolioAmountPrivacy') === 'hidden';
 let tradeRows = [];
 let tradesPage = 1;
+let tradesCollapsed = true;
+let tradesLoaded = false;
 const TRADES_PAGE_SIZE = 5;
 let navHistoryRows = [];
 let navHistoryPage = 1;
@@ -447,7 +454,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadFeeConfig();
   loadPortfolio();
   loadFlows();
-  loadTrades();
   loadActions();
   loadNav(true);
   const flowDate = document.getElementById('flowDate');
@@ -973,9 +979,23 @@ async function loadTrades() {
     const res = await fetch('/api/portfolio/trades');
     const rows = await res.json();
     tradesPage = 1;
+    tradesLoaded = true;
     renderTrades(Array.isArray(rows) ? rows : []);
   } catch (e) {
     showToast('加载交易记录失败', 'error');
+  }
+}
+
+async function toggleTradesPanel() {
+  tradesCollapsed = !tradesCollapsed;
+  const content = document.getElementById('tradesContent');
+  const toggleBtn = document.getElementById('tradesToggleBtn');
+  const refreshBtn = document.getElementById('tradesRefreshBtn');
+  if (content) content.style.display = tradesCollapsed ? 'none' : 'block';
+  if (toggleBtn) toggleBtn.textContent = tradesCollapsed ? '展开' : '收起';
+  if (refreshBtn) refreshBtn.style.display = tradesCollapsed ? 'none' : '';
+  if (!tradesCollapsed && !tradesLoaded) {
+    await loadTrades();
   }
 }
 
@@ -995,6 +1015,7 @@ function renderTrades(rows) {
   const totalEl = document.getElementById('tradesTotal');
   const pagination = document.getElementById('tradesPagination');
   if (!body || !empty || !totalEl || !pagination) return;
+  tradesLoaded = true;
   tradeRows = Array.isArray(rows) ? rows : [];
   const totalPages = Math.max(1, Math.ceil(tradeRows.length / TRADES_PAGE_SIZE));
   if (tradesPage > totalPages) tradesPage = totalPages;
