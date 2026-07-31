@@ -128,7 +128,6 @@
             <th class="num">股数</th>
             <th class="num">成本价</th>
             <th class="num">最新价</th>
-            <th class="num">持仓成本</th>
             <th class="num">市值</th>
             <th class="num">持仓盈亏</th>
             <th class="num">占比</th>
@@ -752,12 +751,6 @@ function renderPositions(rows) {
       <td class="num">${plain(r.shares)}</td>
       <td class="num">${r.cost_price == null ? '--' : plain(r.cost_price)} ${r.cost_price_currency || ''}</td>
       <td class="num">${money(r.price)} ${r.price_currency || ''}</td>
-      <td class="num">
-        ${money(r.cost_value)} CNY
-        ${r.original_cost_value_currency && r.original_cost_value_currency !== 'CNY'
-          ? `<div class="dividend-meta">${money(r.original_cost_value)} ${r.original_cost_value_currency} × ${r.fx_rate_to_cny == null ? '--' : Number(r.fx_rate_to_cny).toFixed(4)}</div>`
-          : ''}
-      </td>
       <td class="num">
         ${money(r.market_value)} CNY
         ${r.original_market_value_currency && r.original_market_value_currency !== 'CNY'
