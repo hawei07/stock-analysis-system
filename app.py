@@ -2837,23 +2837,42 @@ def api_portfolio_nav():
         rows = [r for r in rows if str(r["snapshot_date"]) != today]
         rows.append(live_row)
     flow_rows = execute_query(
-        """SELECT flow_date, SUM(amount) AS net_flow
+        """SELECT flow_date,
+                  SUM(amount) AS net_flow,
+                  SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS flow_in,
+                  SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END) AS flow_out
            FROM portfolio_cash_flows
            WHERE flow_source='external' AND is_void=0
            GROUP BY flow_date"""
     )
-    flow_by_date = {str(r["flow_date"]): float(r["net_flow"] or 0) for r in flow_rows}
+    flow_by_date = {
+        str(r["flow_date"]): {
+            "net": float(r["net_flow"] or 0),
+            "in": float(r["flow_in"] or 0),
+            "out": float(r["flow_out"] or 0),
+        }
+        for r in flow_rows
+    }
     nav_index = None
     prev_value = None
+    cumulative_in = 0.0
+    cumulative_out = 0.0
+    cumulative_return = 0.0
     result = []
     for r in rows:
         date_str = str(r["snapshot_date"])
         value = float(r.get("total_asset_value") or r["total_market_value"])
-        net_flow = flow_by_date.get(date_str, 0.0)
+        flow = flow_by_date.get(date_str, {"net": 0.0, "in": 0.0, "out": 0.0})
+        net_flow = flow["net"]
+        cumulative_in += flow["in"]
+        cumulative_out += flow["out"]
+        daily_return = 0.0
         if nav_index is None:
             nav_index = 1.0 if value > 0 else None
         elif prev_value and prev_value > 0:
             adjusted_value = max(0.0, value - net_flow)
+            daily_return = value - prev_value - net_flow
+            cumulative_return += daily_return
             nav_index = nav_index * (adjusted_value / prev_value)
         result.append({
             "date": date_str,
@@ -2862,6 +2881,12 @@ def api_portfolio_nav():
             "cash_amount": round(float(r.get("cash_amount") or 0), 2),
             "total_asset_value": round(value, 2),
             "net_flow": round(net_flow, 2),
+            "flow_in": round(flow["in"], 2),
+            "flow_out": round(flow["out"], 2),
+            "cumulative_in": round(cumulative_in, 2),
+            "cumulative_out": round(cumulative_out, 2),
+            "daily_return": round(daily_return, 2),
+            "cumulative_return": round(cumulative_return, 2),
             "expected_dividend": round(float(r["expected_dividend"]), 2),
             "nav_index": round(nav_index, 4) if nav_index is not None else None,
         })

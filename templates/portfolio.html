@@ -275,8 +275,14 @@
           <tr>
             <th>日期</th>
             <th class="num">净值</th>
-            <th class="num">总市值</th>
+            <th class="num">总资产</th>
+            <th class="num">持仓市值</th>
+            <th class="num">现金</th>
             <th class="num">仓位</th>
+            <th class="num">当日收益</th>
+            <th class="num">累计收益</th>
+            <th class="num">累计入金</th>
+            <th class="num">累计出金</th>
           </tr>
         </thead>
         <tbody id="navHistoryBody"></tbody>
@@ -1450,6 +1456,10 @@ function renderNav(rows) {
         return `<strong>${esc(String(row.date || params[0]?.axisValue || ''))}</strong><br/>
           净值指数: ${nav}<br/>
           当日出入金: ${signedPrivateMoney(netFlow)}<br/>
+          当日收益: ${signedPrivateMoney(row.daily_return)}<br/>
+          累计收益: ${signedPrivateMoney(row.cumulative_return)}<br/>
+          累计入金: ${money(row.cumulative_in)}<br/>
+          累计出金: ${money(row.cumulative_out)}<br/>
           股票仓位: ${money(stockValue)}${positionPct == null ? '' : ' (' + positionPct.toFixed(2) + '%)'}<br/>
           现金/空仓: ${money(cashValue)}${positionPct == null ? '' : ' (' + (100 - positionPct).toFixed(2) + '%)'}<br/>
           总资产: ${money(totalAsset)}`;
@@ -1530,11 +1540,18 @@ function renderNavHistoryTable() {
   body.innerHTML = pageRows.map(row => {
     const positionPct = navPositionPct(row);
     const totalValue = row.total_asset_value != null ? row.total_asset_value : row.total_market_value;
+    const stockValue = row.stock_market_value != null ? row.stock_market_value : row.total_market_value;
     return `<tr>
       <td>${esc(String(row.date || ''))}</td>
       <td class="num">${row.nav_index == null ? '--' : Number(row.nav_index).toFixed(4)}</td>
       <td class="num">${money(totalValue)}</td>
+      <td class="num">${money(stockValue)}</td>
+      <td class="num">${money(row.cash_amount)}</td>
       <td class="num">${positionPct == null ? '--' : positionPct.toFixed(2) + '%'}</td>
+      <td class="num ${profitClass(row.daily_return)}">${signedPrivateMoney(row.daily_return)}</td>
+      <td class="num ${profitClass(row.cumulative_return)}">${signedPrivateMoney(row.cumulative_return)}</td>
+      <td class="num flow-in">${money(row.cumulative_in)}</td>
+      <td class="num flow-out">${money(row.cumulative_out)}</td>
     </tr>`;
   }).join('');
 
@@ -1593,16 +1610,23 @@ function exportNavHistoryExcel() {
   const bodyRows = rows.map(row => {
     const positionPct = navPositionPct(row);
     const totalValue = row.total_asset_value != null ? row.total_asset_value : row.total_market_value;
+    const stockValue = row.stock_market_value != null ? row.stock_market_value : row.total_market_value;
     return `<tr>
       <td>${excelCell(row.date)}</td>
       <td>${row.nav_index == null ? '' : Number(row.nav_index).toFixed(4)}</td>
       <td>${totalValue == null ? '' : Number(totalValue).toFixed(2)}</td>
+      <td>${stockValue == null ? '' : Number(stockValue).toFixed(2)}</td>
+      <td>${row.cash_amount == null ? '' : Number(row.cash_amount).toFixed(2)}</td>
       <td>${positionPct == null ? '' : positionPct.toFixed(2) + '%'}</td>
+      <td>${row.daily_return == null ? '' : Number(row.daily_return).toFixed(2)}</td>
+      <td>${row.cumulative_return == null ? '' : Number(row.cumulative_return).toFixed(2)}</td>
+      <td>${row.cumulative_in == null ? '' : Number(row.cumulative_in).toFixed(2)}</td>
+      <td>${row.cumulative_out == null ? '' : Number(row.cumulative_out).toFixed(2)}</td>
     </tr>`;
   }).join('');
   const html = `<!doctype html><html><head><meta charset="UTF-8"></head><body>
     <table border="1">
-      <thead><tr><th>日期</th><th>净值</th><th>总市值</th><th>仓位</th></tr></thead>
+      <thead><tr><th>日期</th><th>净值</th><th>总资产</th><th>持仓市值</th><th>现金</th><th>仓位</th><th>当日收益</th><th>累计收益</th><th>累计入金</th><th>累计出金</th></tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;
