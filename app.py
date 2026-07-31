@@ -751,9 +751,55 @@ def _lookup_hk_stock_info(code):
         name = fields[1].strip() if len(fields) > 1 else ""
         if not name:
             return None
-        return {"code": code, "name": name, "market": "HK"}
+        return {"code": code, "name": name, "market": "HK", "industry": _fetch_stock_industry(code, "HK")}
     except Exception:
         return None
+
+
+def _eastmoney_secid(code, market=None):
+    market = (market or "").upper()
+    if market == "HK" or re.fullmatch(r"\d{5}", str(code or "")):
+        return f"116.{_normalize_stock_code(code)}"
+    if market == "SH" or str(code).startswith(("6", "5", "9")):
+        return f"1.{code}"
+    return f"0.{code}"
+
+
+def _fetch_stock_industry(code, market=None):
+    try:
+        resp = requests.get(
+            "https://push2.eastmoney.com/api/qt/stock/get",
+            params={"secid": _eastmoney_secid(code, market), "fields": "f57,f58,f127"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=8,
+        )
+        data = resp.json().get("data") or {}
+        industry = str(data.get("f127") or "").strip()
+        return industry or None
+    except Exception:
+        return None
+
+
+def _fill_missing_stock_industries(stock_rows):
+    changed = {}
+    for row in stock_rows or []:
+        code = row.get("stock_code") or row.get("code")
+        if not code or row.get("industry"):
+            continue
+        industry = _fetch_stock_industry(code, row.get("market"))
+        if not industry:
+            continue
+        changed[code] = industry
+        row["industry"] = industry
+        try:
+            execute_query(
+                "UPDATE stocks SET industry=%s WHERE code=%s AND (industry IS NULL OR industry='')",
+                (industry, code),
+                fetch=False,
+            )
+        except Exception:
+            pass
+    return changed
 
 
 def _ensure_stock_order_column():
@@ -2027,6 +2073,7 @@ def _portfolio_current_state():
            JOIN stocks s ON s.code = p.stock_code
            ORDER BY p.updated_at DESC, p.id DESC"""
     )
+    _fill_missing_stock_industries(rows)
     positions = []
     if not rows:
         return {
@@ -3520,14 +3567,16 @@ def api_stock_info(code):
 
     name = None
     market = None
+    industry = None
     for sec_market, our_market in markets_to_try:
         try:
-            url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={sec_market}.{code}&fields=f57,f58,f300"
+            url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={sec_market}.{code}&fields=f57,f58,f127,f300"
             resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
             data = resp.json()
             if data.get("data") and data["data"].get("f58"):
                 name = data["data"]["f58"]
                 market = our_market
+                industry = data["data"].get("f127")
                 break
         except Exception:
             continue
@@ -3535,7 +3584,7 @@ def api_stock_info(code):
     if not name:
         return jsonify({"error": f"未找到股票代码 {code} 的信息"}), 404
 
-    return jsonify({"code": code, "name": name, "market": market})
+    return jsonify({"code": code, "name": name, "market": market, "industry": industry})
 
 
 @app.route("/api/stock", methods=["POST"])
@@ -3579,12 +3628,13 @@ def api_add_stock():
     if market and market not in ("SH", "SZ", "BJ", "HK"):
         return jsonify({"error": "市场必须是 SH/SZ/BJ/HK"}), 400
 
+    industry = data.get("industry") or _fetch_stock_industry(code, market or "SH")
     try:
         Stock.add(
             code=code,
             name=name,
             market=market or "SH",
-            industry=data.get("industry"),
+            industry=industry,
             list_date=data.get("list_date"),
             status=data.get("status", "正常"),
         )
