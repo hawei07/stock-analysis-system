@@ -179,7 +179,6 @@ async function loadPortfolioPositionCard(code, price) {
 }
 
 let divYearsPopulated = false;
-let latestDividendRows = [];
 
 async function loadDividends(code) {
   if (!code) return;
@@ -234,44 +233,6 @@ function resetDivYears() {
   if (fromOpts.length > 1) fromSelect.value = fromOpts[1].value;
   if (toOpts.length > 1) toSelect.value = toOpts[toOpts.length - 1].value;
   loadDividends(getCurrentCode());
-}
-
-async function syncLatestDividendToPortfolio() {
-  const code = getCurrentCode();
-  const rows = (latestDividendRows || []).filter(r => Number(r.dividend_per_share || 0) > 0);
-  if (!code || !rows.length) {
-    showToast('没有可登记的分红数据', 'error');
-    return;
-  }
-  const latest = rows.slice().sort((a, b) => Number(b.fiscal_year || 0) - Number(a.fiscal_year || 0))[0];
-  try {
-    const posRes = await fetch('/api/portfolio/positions/' + encodeURIComponent(code));
-    const pos = await posRes.json();
-    if (!posRes.ok || pos.error) throw new Error(pos.error || '读取持仓失败');
-    if (!pos.held) throw new Error('这只股票当前未持仓，无法登记持仓分红');
-    const shares = Number(pos.shares || 0);
-    const dps = Number(latest.dividend_per_share || 0);
-    const cashAmount = shares * dps;
-    if (!shares || !dps || !cashAmount) throw new Error('持仓股数或每股分红为空');
-    if (!confirm(`按 ${latest.fiscal_year} 年每股分红 ${dps.toFixed(4)} 元登记？\n当前持仓 ${shares} 股，预计到账 ${cashAmount.toFixed(2)} 元。`)) return;
-    const res = await fetch('/api/portfolio/actions', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        action_date: new Date().toISOString().slice(0, 10),
-        action_type: 'cash_dividend',
-        code,
-        cash_amount: cashAmount.toFixed(2),
-        note: `${latest.fiscal_year} 年分红登记`
-      })
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '登记分红失败');
-    showToast('分红已登记到我的持仓，并摊薄成本价', 'success');
-    loadPortfolioPositionCard(code, null);
-  } catch (e) {
-    showToast(e.message || '登记分红失败', 'error');
-  }
 }
 
 function renderDividendsChart(data) {
@@ -553,7 +514,6 @@ async function loadShareholders(code, options = {}) {
     const res = await fetch(url);
     const data = await res.json();
     if (code !== getCurrentCode()) return;
-    latestDividendRows = Array.isArray(data) ? data : [];
     if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     shareholderCache = data.periods || [];
     shareholderCacheCode = code;
