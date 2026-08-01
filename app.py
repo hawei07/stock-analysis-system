@@ -63,6 +63,22 @@ from services.cloud_backup_service import (
     backup_file_groups,
     validate_sql_backup_file,
 )
+from services.financial_metrics import (
+    avg as financial_avg,
+    cagr as financial_cagr,
+    enrich_financial_summary_item,
+    pct_change,
+    round_or_none as financial_round_or_none,
+    to_float,
+)
+from services.financial_periods import (
+    annual_report_rows,
+    cagr_start_row,
+    filter_usable_report_rows,
+    latest_report_row,
+    period_label,
+    same_period_last_year,
+)
 from routes.portfolio import register_portfolio_routes
 from routes.corporate_actions import register_corporate_action_routes
 from routes.notes_chat import register_notes_chat_routes
@@ -2333,34 +2349,8 @@ register_portfolio_routes(app, {
 def api_stock_fundamental_dashboard(code):
     """股票详情页基本面驾驶舱。"""
 
-    def to_float(value):
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
     def round_or_none(value, ndigits=2):
-        return round(value, ndigits) if value is not None else None
-
-    def avg(values):
-        values = [v for v in values if v is not None]
-        return sum(values) / len(values) if values else None
-
-    def pct_change(cur, prev):
-        if cur is None or prev in (None, 0):
-            return None
-        return (cur - prev) / abs(prev) * 100
-
-    def cagr(old, new, years):
-        if old is None or new is None or years <= 0 or old <= 0 or new <= 0:
-            return None
-        return ((new / old) ** (1 / years) - 1) * 100
-
-    def period_label(year, period):
-        labels = {"Q1": "一季报", "Q2": "中报", "Q3": "三季报", "FY": "年报"}
-        return f"{year} {labels.get(period, period or '')}".strip()
+        return financial_round_or_none(value, ndigits)
 
     def clamp_score(score):
         return max(0, min(100, round(score)))
@@ -2485,81 +2475,13 @@ def api_stock_fundamental_dashboard(code):
                 "interest_bearing_debt_ratio",
             ]:
                 item[key] = to_float(r.get(key))
-            revenue = item["total_revenue"]
-            parent_profit = item["parent_profit"]
-            operate_profit = item["operate_profit"]
-            operate_cashflow = item["operate_cashflow"]
-            def income_value(field):
-                return to_float(r.get(f"inc_{field}")) or 0
+            data.append(enrich_financial_summary_item(item, r))
 
-            def positive_income_value(field):
-                return max(income_value(field), 0)
+        usable_data = filter_usable_report_rows(data)
+        latest_period_data = latest_report_row(usable_data)
+        yoy_base = same_period_last_year(usable_data, latest_period_data)
 
-            income_revenue = income_value("total_revenue") or income_value("operating_revenue")
-            income_has_core_fields = any(
-                r.get(f"inc_{field}") is not None
-                for field in (
-                    "total_revenue", "operating_revenue", "cost_of_revenue",
-                    "selling_expense", "admin_expense", "finance_expense", "rd_expense",
-                )
-            )
-            if income_has_core_fields:
-                finance_expense = income_value("finance_expense")
-                finance_interest_income = positive_income_value("finance_interest_income")
-                finance_expense_before_interest_income = (
-                    max(finance_expense + finance_interest_income, 0)
-                    if finance_interest_income > 0 else max(finance_expense, 0)
-                )
-                period_expense = (
-                    positive_income_value("selling_expense")
-                    + positive_income_value("admin_expense")
-                    + positive_income_value("rd_expense")
-                    + finance_expense_before_interest_income
-                )
-                gross_profit = max(
-                    income_revenue
-                    - positive_income_value("cost_of_revenue")
-                    - positive_income_value("interest_expense")
-                    - positive_income_value("fee_commission_expense"),
-                    0,
-                )
-                operate_profit = gross_profit - period_expense - positive_income_value("tax_surcharge")
-                item["operate_profit"] = operate_profit
-                item["core_profit_rate"] = operate_profit / income_revenue * 100 if income_revenue else None
-            else:
-                item["core_profit_rate"] = operate_profit / revenue * 100 if revenue else None
-            item["net_profit_rate"] = parent_profit / revenue * 100 if revenue else None
-            item["cashflow_to_profit"] = (
-                operate_cashflow / parent_profit * 100
-                if parent_profit and parent_profit > 0 and operate_cashflow is not None else None
-            )
-            data.append(item)
-
-        current_year = datetime.now().year
-        # 财报源偶尔会把当年季报同步写成 FY 行。当年年报不可能在当年发布，
-        # 所以驾驶舱里忽略这类 FY，避免 2026 Q1 被当成 2026 年报。
-        usable_data = [
-            r for r in data
-            if not (r.get("report_period") == "FY" and r["fiscal_year"] >= current_year)
-        ]
-        if not usable_data:
-            usable_data = data
-
-        period_order = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}
-        latest_period_data = max(
-            usable_data,
-            key=lambda r: (r["fiscal_year"], period_order.get(r.get("report_period"), 0)),
-        )
-        same_period_map = {
-            (r["fiscal_year"], r.get("report_period")): r
-            for r in usable_data
-        }
-        yoy_base = same_period_map.get((
-            latest_period_data["fiscal_year"] - 1,
-            latest_period_data.get("report_period"),
-        ))
-
-        annual_data = [r for r in usable_data if r.get("report_period") == "FY"]
+        annual_data = annual_report_rows(usable_data)
         if not annual_data:
             return jsonify({
                 "stock": {"code": stock["code"], "name": stock["name"], "industry": stock.get("industry")},
@@ -2572,15 +2494,11 @@ def api_stock_fundamental_dashboard(code):
         latest = annual_data[-1]
         recent = annual_data[-5:]
         all_earliest = annual_data[0]
-        if cagr_years:
-            cagr_candidates = [r for r in annual_data if r["fiscal_year"] >= latest["fiscal_year"] - cagr_years]
-            cagr_earliest = cagr_candidates[0] if cagr_candidates else all_earliest
-        else:
-            cagr_earliest = all_earliest
+        cagr_earliest = cagr_start_row(annual_data, latest, cagr_years)
         year_span = latest["fiscal_year"] - cagr_earliest["fiscal_year"]
 
-        revenue_cagr = cagr(cagr_earliest["total_revenue"], latest["total_revenue"], year_span)
-        profit_cagr = cagr(cagr_earliest["parent_profit"], latest["parent_profit"], year_span)
+        revenue_cagr = financial_cagr(cagr_earliest["total_revenue"], latest["total_revenue"], year_span)
+        profit_cagr = financial_cagr(cagr_earliest["parent_profit"], latest["parent_profit"], year_span)
         revenue_yoy = pct_change(
             latest_period_data["total_revenue"],
             yoy_base["total_revenue"] if yoy_base else None,
@@ -2594,9 +2512,9 @@ def api_stock_fundamental_dashboard(code):
         yoy_note = f"{latest_period_note} vs {yoy_base_note}"
         cagr_note = f"{cagr_earliest['fiscal_year']}-{latest['fiscal_year']}"
         cagr_scope_text = f"近{cagr_years}年" if cagr_years else "上市以来"
-        roe_avg_5y = avg([r["roe"] for r in recent])
-        roic_avg_5y = avg([r["roic"] for r in recent])
-        cf_profit_avg_5y = avg([r["cashflow_to_profit"] for r in recent])
+        roe_avg_5y = financial_avg([r["roe"] for r in recent])
+        roic_avg_5y = financial_avg([r["roic"] for r in recent])
+        cf_profit_avg_5y = financial_avg([r["cashflow_to_profit"] for r in recent])
         positive_profit_years = sum(1 for r in recent if (r["parent_profit"] or 0) > 0)
         positive_ocf_years = sum(1 for r in recent if (r["operate_cashflow"] or 0) > 0)
 
