@@ -1,6 +1,6 @@
 """stock - Web 服务"""
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request
 import sys
 import re
 import time
@@ -78,6 +78,7 @@ from routes.market_charts import register_market_chart_routes
 from routes.shareholders import register_shareholder_routes
 from routes.irm import register_irm_routes
 from routes.dividend_update import register_dividend_update_routes
+from routes.pages import register_page_routes
 
 app = Flask(__name__)
 
@@ -692,13 +693,7 @@ def _cleanup_images(note):
                 pass
 
 
-# ==================== 页面路由 ====================
-
-@app.route("/")
-@app.route("/stock/<code>")
-def index(code=None):
-    return render_template("index.html")
-
+register_page_routes(app)
 
 
 # ==================== API 路由 ====================
