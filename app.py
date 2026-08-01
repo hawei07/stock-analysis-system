@@ -3136,21 +3136,31 @@ def api_stock_fundamental_dashboard(code):
             )
             data.append(item)
 
+        current_year = datetime.now().year
+        # 财报源偶尔会把当年季报同步写成 FY 行。当年年报不可能在当年发布，
+        # 所以驾驶舱里忽略这类 FY，避免 2026 Q1 被当成 2026 年报。
+        usable_data = [
+            r for r in data
+            if not (r.get("report_period") == "FY" and r["fiscal_year"] >= current_year)
+        ]
+        if not usable_data:
+            usable_data = data
+
         period_order = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}
         latest_period_data = max(
-            data,
+            usable_data,
             key=lambda r: (r["fiscal_year"], period_order.get(r.get("report_period"), 0)),
         )
         same_period_map = {
             (r["fiscal_year"], r.get("report_period")): r
-            for r in data
+            for r in usable_data
         }
         yoy_base = same_period_map.get((
             latest_period_data["fiscal_year"] - 1,
             latest_period_data.get("report_period"),
         ))
 
-        annual_data = [r for r in data if r.get("report_period") == "FY"]
+        annual_data = [r for r in usable_data if r.get("report_period") == "FY"]
         if not annual_data:
             return jsonify({
                 "stock": {"code": stock["code"], "name": stock["name"], "industry": stock.get("industry")},
