@@ -1303,6 +1303,8 @@ def _stock_realtime_list_metrics(codes):
             "code": code,
             "price": round(price, 2) if price is not None else None,
             "day_change_pct": round(day_change_pct, 2) if day_change_pct is not None else None,
+            "reasonable_valuation": fair_valuation,
+            "reasonable_price": fair_price,
             "reasonable_discount": reasonable_discount,
             "pb_ex_goodwill": pb_ex_goodwill,
         })

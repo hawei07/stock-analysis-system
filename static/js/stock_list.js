@@ -39,10 +39,10 @@ function renderTable(stocks) {
       <td><span class="drag-handle">::</span><a class="name-link" onclick="navigateTo('/stock/${esc(s.code)}');return false" href="/stock/${esc(s.code)}">${esc(s.name)}</a></td>
       <td data-col="day_change_pct">${fmtPct(s.day_change_pct, true)}</td>
       <td data-col="price">${formatPrice(s.price)}</td>
-      <td>${fmtNum(s.reasonable_price)}</td>
+      <td data-col="reasonable_price">${fmtNum(s.reasonable_price)}</td>
       <td data-col="reasonable_discount">${formatDiscountPct(s.reasonable_discount)}</td>
       <td>${s.pe_ttm != null ? Number(s.pe_ttm).toFixed(2) : '-'}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="openGrahamModal('${esc(s.code)}')" title="编辑格雷厄姆估值参数">${fmtNum(s.reasonable_valuation)}</button></td>
+      <td><button class="btn btn-outline btn-sm" data-col="reasonable_valuation" onclick="openGrahamModal('${esc(s.code)}')" title="编辑格雷厄姆估值参数">${fmtNum(s.reasonable_valuation)}</button></td>
       <td data-col="pb_ex_goodwill">${s.pb_ex_goodwill != null ? Number(s.pb_ex_goodwill).toFixed(2) : '-'}</td>
       <td>${s.dividend_yield != null ? Number(s.dividend_yield).toFixed(2) + '%' : '-'}</td>
       <td data-col="ytd_return">${fmtPct(s.ytd_return)}</td>
@@ -105,10 +105,14 @@ function updateStockRealtimeCells(items) {
     if (!row) continue;
     const dayChangeCell = row.querySelector('[data-col="day_change_pct"]');
     const priceCell = row.querySelector('[data-col="price"]');
+    const reasonablePriceCell = row.querySelector('[data-col="reasonable_price"]');
+    const reasonableValuationCell = row.querySelector('[data-col="reasonable_valuation"]');
     const discountCell = row.querySelector('[data-col="reasonable_discount"]');
     const pbCell = row.querySelector('[data-col="pb_ex_goodwill"]');
     if (dayChangeCell) dayChangeCell.innerHTML = formatRealtimePct(item.day_change_pct, true);
     if (priceCell) priceCell.innerHTML = formatPrice(item.price);
+    if (reasonablePriceCell) reasonablePriceCell.textContent = item.reasonable_price != null ? Number(item.reasonable_price).toFixed(2) : '-';
+    if (reasonableValuationCell) reasonableValuationCell.textContent = item.reasonable_valuation != null ? Number(item.reasonable_valuation).toFixed(2) : '-';
     if (discountCell) discountCell.innerHTML = formatDiscountPct(item.reasonable_discount);
     if (pbCell) pbCell.textContent = item.pb_ex_goodwill != null ? Number(item.pb_ex_goodwill).toFixed(2) : '-';
   }
