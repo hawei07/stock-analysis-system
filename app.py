@@ -1,6 +1,6 @@
 """stock - Web 服务"""
 
-from flask import Flask, jsonify, request, render_template, send_from_directory
+from flask import Flask, jsonify, request, render_template
 import sys
 import re
 import time
@@ -65,6 +65,7 @@ from services.cloud_backup_service import (
 )
 from routes.portfolio import register_portfolio_routes
 from routes.corporate_actions import register_corporate_action_routes
+from routes.notes_chat import register_notes_chat_routes
 from routes.stock_basic import register_stock_basic_routes
 from routes.stocks import register_stock_routes
 from routes.system import register_system_routes
@@ -6247,88 +6248,17 @@ def api_update_cashflow():
     return jsonify({"success": True, "records_updated": updated, "stocks_processed": len(stocks), "mode": mode, "errors": errors[:5] if errors else []})
 
 
-@app.route("/api/stock/<code>/munger-chat", methods=["GET", "POST", "DELETE"])
-def api_munger_chat(code):
-    """对话芒格 API"""
-    if request.method == "GET":
-        return jsonify(get_chat_history(code))
-    elif request.method == "DELETE":
-        msg_id = request.args.get("msg_id", type=int)
-        if msg_id:
-            ok = delete_chat_msg(msg_id)
-            return jsonify({"ok": ok})
-        else:
-            n = clear_chat_history(code)
-            return jsonify({"ok": True, "deleted": n})
-    elif request.method == "POST":
-        data = request.get_json(force=True)
-        message = data.get("message", "").strip()
-        if not message:
-            return jsonify({"error": "empty message"}), 400
-        result = chat_send(code, message)
-        return jsonify(result)
-
-
-# ==================== 便利贴 API ====================
-
-@app.route("/api/sticky-notes", methods=["GET", "POST"])
-def api_sticky_notes():
-    if request.method == "GET":
-        stock_code = request.args.get("stock_code", "")
-        notes = _load_notes()
-        if stock_code:
-            notes = [n for n in notes if n.get('stock_code') == stock_code or not n.get('stock_code')]
-        # 按 id 倒序
-        notes.sort(key=lambda n: n.get('id', 0), reverse=True)
-        return jsonify(notes)
-    elif request.method == "POST":
-        data = request.get_json(force=True)
-        notes = _load_notes()
-        new_id = max([n.get('id', 0) for n in notes], default=0) + 1
-        content = _extract_images(data.get('content', ''), new_id)
-        now = datetime.now().isoformat()
-        note = {
-            'id': new_id,
-            'title': data.get('title', ''),
-            'content': content,
-            'stock_code': data.get('stock_code', '') or '',
-            'created_at': now,
-            'updated_at': now
-        }
-        notes.append(note)
-        _save_notes(notes)
-        return jsonify({"ok": True, "id": new_id})
-
-
-@app.route("/api/sticky-notes/<int:note_id>", methods=["PUT", "DELETE"])
-def api_sticky_note(note_id):
-    if request.method == "PUT":
-        data = request.get_json(force=True)
-        notes = _load_notes()
-        for n in notes:
-            if n.get('id') == note_id:
-                _cleanup_images(n)
-                n['title'] = data.get('title', '')
-                n['content'] = _extract_images(data.get('content', ''), note_id)
-                n['stock_code'] = data.get('stock_code', '') or ''
-                n['updated_at'] = datetime.now().isoformat()
-                _save_notes(notes)
-                return jsonify({"ok": True})
-        return jsonify({"error": "not found"}), 404
-    elif request.method == "DELETE":
-        notes = _load_notes()
-        for n in notes:
-            if n.get('id') == note_id:
-                _cleanup_images(n)
-                notes.remove(n)
-                _save_notes(notes)
-                return jsonify({"ok": True})
-        return jsonify({"error": "not found"}), 404
-
-
-@app.route('/data/images/<path:filename>')
-def serve_sticky_image(filename):
-    return send_from_directory(IMAGES_DIR, filename)
+register_notes_chat_routes(app, {
+    "get_chat_history": get_chat_history,
+    "chat_send": chat_send,
+    "clear_chat_history": clear_chat_history,
+    "delete_chat_msg": delete_chat_msg,
+    "load_notes": _load_notes,
+    "save_notes": _save_notes,
+    "extract_images": _extract_images,
+    "cleanup_images": _cleanup_images,
+    "images_dir": IMAGES_DIR,
+})
 
 
 if __name__ == "__main__":
