@@ -457,13 +457,42 @@ def register_dashboard_routes(app, deps):
 
         metric_defs = {m["key"]: m for m in COMPARE_METRICS}
         codes = parse_codes()
-        year = request.args.get("year", type=int)
-        if not year:
-            latest = execute_query("SELECT MAX(fiscal_year) AS y FROM custom_financials WHERE stock_code=%s", (code,))
-            year = int(latest[0]["y"]) if latest and latest[0].get("y") else datetime.now().year
+        requested_year = request.args.get("year", type=int)
+        year = requested_year
         period = request.args.get("period", "FY")
         if period not in ("FY", "Q1", "Q2", "Q3"):
             period = "FY"
+        requested_period = period
+
+        if not year:
+            latest = execute_query(
+                """SELECT fiscal_year, report_period
+                   FROM custom_financials
+                   WHERE stock_code=%s
+                   ORDER BY fiscal_year DESC, FIELD(report_period,'Q1','Q2','Q3','FY') DESC
+                   LIMIT 1""",
+                (code,),
+            )
+            if latest:
+                year = int(latest[0]["fiscal_year"])
+                period = latest[0].get("report_period") or "FY"
+            else:
+                year = datetime.now().year
+        else:
+            available_period_rows = execute_query(
+                """SELECT report_period
+                   FROM custom_financials
+                   WHERE stock_code=%s AND fiscal_year=%s
+                   ORDER BY FIELD(report_period,'Q1','Q2','Q3','FY') DESC""",
+                (code, year),
+            )
+            available_periods_for_year = [r.get("report_period") or "FY" for r in available_period_rows]
+            if available_periods_for_year and period not in available_periods_for_year:
+                period = available_periods_for_year[0]
+
+        period_fallback_note = None
+        if period != requested_period:
+            period_fallback_note = f"{year} {requested_period} 暂无数据，已切换到 {period}"
         view = request.args.get("view", "cumulative")
         single_view = view == "single" and period not in ("FY", "Q1")
 
@@ -583,6 +612,7 @@ def register_dashboard_routes(app, deps):
             "year": year,
             "period": period,
             "view": "single" if single_view else "cumulative",
+            "period_fallback_note": period_fallback_note,
             "available_years": [int(r["fiscal_year"]) for r in available_years],
             "default_metrics": COMPARE_DEFAULT_METRICS,
             "metric_options": COMPARE_METRICS,

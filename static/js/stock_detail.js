@@ -502,6 +502,14 @@ async function loadCompareDashboard() {
     compareDefaultMetrics = data.default_metrics || compareDefaultMetrics;
     if (!compareSelectedMetrics.length) compareSelectedMetrics = [...compareDefaultMetrics];
     renderCompareYearSelect(data.available_years || [], data.year);
+    if (periodEl && data.period && periodEl.value !== data.period) {
+      periodEl.value = data.period;
+      if (viewEl) {
+        viewEl.disabled = data.period === 'FY';
+        if (data.period === 'FY') viewEl.value = 'cumulative';
+      }
+    }
+    if (data.period_fallback_note) showToast(data.period_fallback_note, 'success');
     renderCompareMetricSelect();
     renderCompareMetricChips();
     renderCompareStockChips(data.stocks || []);
