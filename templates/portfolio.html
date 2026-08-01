@@ -624,6 +624,11 @@ function money(v) {
   return Number(v).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
+function dividendHistoryMoney(v) {
+  if (v == null || Number.isNaN(Number(v))) return '--';
+  return Number(v).toLocaleString('zh-CN', {minimumFractionDigits: 3, maximumFractionDigits: 3});
+}
+
 function maskedMoney() {
   return '******';
 }
@@ -836,7 +841,7 @@ function renderPositions(rows) {
           <button class="btn btn-outline btn-sm" onclick="resetDividendAuto('${esc(r.code)}')">重置</button>
         </div>
         <div class="dividend-meta">
-          ${r.dividend_source === 'custom' ? '自定义' : '自动'} · 最新历史分红 ${r.auto_dividend_per_share == null ? '--' : money(r.auto_dividend_per_share)}
+          ${r.dividend_source === 'custom' ? '自定义' : '自动'} · 最新历史分红 ${r.auto_dividend_per_share == null ? '--' : dividendHistoryMoney(r.auto_dividend_per_share)}
         </div>
       </td>
       <td class="num">${money(r.expected_dividend)}</td>
@@ -1346,7 +1351,7 @@ async function resetDividendAuto(code) {
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     await loadNav();
-    const reset = data.reset_to ? `：${data.reset_to.fiscal_year} 年 ${money(data.reset_to.dividend_per_share)}` : '';
+    const reset = data.reset_to ? `：${data.reset_to.fiscal_year} 年 ${dividendHistoryMoney(data.reset_to.dividend_per_share)}` : '';
     showToast('已重置为最新历史每股分红' + reset, 'success');
   } catch (e) {
     showToast(e.message || '重置失败', 'error');
