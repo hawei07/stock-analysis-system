@@ -72,6 +72,11 @@ from services.sticky_notes_service import (
     load_notes as sticky_load_notes,
     save_notes as sticky_save_notes,
 )
+from services.market_data import (
+    fetch_realtime_prices as market_fetch_realtime_prices,
+    fetch_realtime_quotes as market_fetch_realtime_quotes,
+    fetch_ytd_return as market_fetch_ytd_return,
+)
 from routes.portfolio import register_portfolio_routes
 from routes.corporate_actions import register_corporate_action_routes
 from routes.notes_chat import register_notes_chat_routes
@@ -933,84 +938,15 @@ def _graham_payload(code):
 
 
 def _fetch_realtime_quotes(stocks):
-    symbols = [_quote_symbol(s["code"], s.get("market")) for s in stocks]
-    if not symbols:
-        return {}
-    quotes = {}
-    try:
-        resp = requests.get(
-            "https://qt.gtimg.cn/q=" + ",".join(symbols),
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10,
-        )
-        resp.encoding = "gbk"
-        for line in resp.text.split(";"):
-            if "=" not in line:
-                continue
-            parts = line.split('"')
-            if len(parts) < 2:
-                continue
-            fields = parts[1].split("~")
-            if len(fields) >= 4:
-                code = fields[2]
-                quote = {}
-                try:
-                    quote["price"] = float(fields[3])
-                except (TypeError, ValueError):
-                    pass
-                if len(fields) > 31:
-                    try:
-                        quote["day_change"] = float(fields[31])
-                    except (TypeError, ValueError):
-                        pass
-                if len(fields) > 32:
-                    try:
-                        quote["day_change_pct"] = float(fields[32])
-                    except (TypeError, ValueError):
-                        pass
-                if quote:
-                    quotes[code] = quote
-    except Exception:
-        pass
-    return quotes
+    return market_fetch_realtime_quotes(stocks, _quote_symbol)
 
 
 def _fetch_realtime_prices(stocks):
-    quotes = _fetch_realtime_quotes(stocks)
-    return {
-        code: quote.get("price")
-        for code, quote in quotes.items()
-        if quote.get("price") is not None
-    }
+    return market_fetch_realtime_prices(stocks, _quote_symbol)
 
 
 def _fetch_ytd_return(code, market, current_price=None):
-    try:
-        year = datetime.now().year
-        symbol = _quote_symbol(code, market)
-        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{year-1}-12-01,,360,qfq"
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-        data = resp.json()
-        stock_data = (data.get("data") or {}).get(symbol, {})
-        rows = stock_data.get("qfqday") or stock_data.get("day") or []
-        if not rows:
-            return None
-
-        baseline_close = None
-        for row in rows:
-            if row[0] < f"{year}-01-01":
-                baseline_close = float(row[2])
-            else:
-                break
-        if baseline_close is None:
-            baseline_close = float(rows[0][1])
-
-        latest_close = current_price if current_price and current_price > 0 else float(rows[-1][2])
-        if baseline_close <= 0:
-            return None
-        return round((latest_close / baseline_close - 1) * 100, 2)
-    except Exception:
-        return None
+    return market_fetch_ytd_return(code, market, _quote_symbol, current_price)
 
 
 def _enrich_stock_list_metrics(stocks, include_ytd=False):
