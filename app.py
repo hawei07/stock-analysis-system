@@ -3273,8 +3273,8 @@ def api_stock_fundamental_dashboard(code):
             {"title": "成长性", "metrics": [
                 metric("营收 CAGR", revenue_cagr, "%", verdict_high(revenue_cagr, 15, 8, 0), cagr_note),
                 metric("归母净利 CAGR", profit_cagr, "%", verdict_high(profit_cagr, 15, 8, 0), cagr_note),
-                metric("最新营收同比", revenue_yoy, "%", verdict_high(revenue_yoy, 12, 5, 0), yoy_note),
-                metric("最新净利同比", profit_yoy, "%", verdict_high(profit_yoy, 12, 5, 0), yoy_note),
+                metric("最新营收累计同比", revenue_yoy, "%", verdict_high(revenue_yoy, 12, 5, 0), yoy_note),
+                metric("最新净利累计同比", profit_yoy, "%", verdict_high(profit_yoy, 12, 5, 0), yoy_note),
             ]},
             {"title": "现金流", "metrics": [
                 metric("现金流/净利润 5年均值", cf_profit_avg_5y, "%", verdict_high(cf_profit_avg_5y, 120, 90, 60), "经营现金流净额/归母净利润"),
