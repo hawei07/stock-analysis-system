@@ -102,7 +102,7 @@ async function loadFinancials() {
 
 const FINANCIAL_DEFAULT_INDICATORS = [
   { name: '营业总收入', field: 'total_revenue', unit: '亿元', isPercent: false, showYoy: true, source: '自定义财报' },
-  { name: '核心利润（营业利润）', field: 'operate_profit', unit: '亿元', isPercent: false, showYoy: true, source: '自定义财报' },
+  { name: '核心利润', field: 'operate_profit', unit: '亿元', isPercent: false, showYoy: true, source: '自定义财报' },
   { name: '核心利润率', field: 'core_profit_rate', unit: '%', isPercent: true, showYoy: true, source: '自定义财报' },
   { name: '归母净利润', field: 'parent_profit', unit: '亿元', isPercent: false, showYoy: true, source: '自定义财报' },
   { name: '扣非净利润', field: 'deducted_profit', unit: '亿元', isPercent: false, showYoy: true, source: '自定义财报' },

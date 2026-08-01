@@ -5711,7 +5711,9 @@ def api_stock_financials(code):
     ]
     income_extra_fields = [
         "total_revenue", "operating_revenue", "operating_cost", "cost_of_revenue",
+        "tax_surcharge", "interest_expense", "fee_commission_expense",
         "selling_expense", "admin_expense", "finance_expense", "rd_expense",
+        "finance_interest_income",
         "invest_income", "operating_profit", "total_profit", "net_profit",
         "parent_net_profit", "basic_eps",
     ]
@@ -5791,7 +5793,53 @@ def api_stock_financials(code):
         bonds_payable = float(r["bonds_payable"]) if r.get("bonds_payable") else None
         dividend_amount = float(r["dividend_amount"]) if r.get("dividend_amount") else None
         dividend_per_share = float(r["dividend_per_share"]) if r.get("dividend_per_share") else None
-        core_profit_rate = round(op / rev * 100, 2) if rev else None
+
+        def income_alias_value(field):
+            value = r.get(f"inc_{field}")
+            return float(value) if value is not None else 0
+
+        def positive_income_alias_value(field):
+            return max(income_alias_value(field), 0)
+
+        def income_revenue_value():
+            return income_alias_value("total_revenue") or income_alias_value("operating_revenue")
+
+        def income_finance_expense_before_interest_income_value():
+            finance_expense = income_alias_value("finance_expense")
+            finance_interest_income = positive_income_alias_value("finance_interest_income")
+            if finance_interest_income > 0:
+                return max(finance_expense + finance_interest_income, 0)
+            return max(finance_expense, 0)
+
+        def income_period_expense_value():
+            return (
+                positive_income_alias_value("selling_expense")
+                + positive_income_alias_value("admin_expense")
+                + positive_income_alias_value("rd_expense")
+                + income_finance_expense_before_interest_income_value()
+            )
+
+        def income_gross_value():
+            return max(
+                income_revenue_value()
+                - positive_income_alias_value("cost_of_revenue")
+                - positive_income_alias_value("interest_expense")
+                - positive_income_alias_value("fee_commission_expense"),
+                0,
+            )
+
+        income_has_core_fields = any(
+            r.get(f"inc_{field}") is not None
+            for field in (
+                "total_revenue", "operating_revenue", "cost_of_revenue",
+                "selling_expense", "admin_expense", "finance_expense", "rd_expense",
+            )
+        )
+        if income_has_core_fields:
+            op = income_gross_value() - income_period_expense_value() - positive_income_alias_value("tax_surcharge")
+            core_profit_rate = round(op / income_revenue_value() * 100, 2) if income_revenue_value() else None
+        else:
+            core_profit_rate = round(op / rev * 100, 2) if rev else None
         net_profit_rate = round(pp / rev * 100, 2) if rev else None
         cashflow_to_profit = round(ocf / pp * 100, 2) if pp and pp > 0 else None
         dividend_payout_ratio = (
@@ -5891,7 +5939,8 @@ def api_stock_financials(code):
             pp_s = single.get("parent_profit") or 0
             ocf_s = single.get("operate_cashflow") or 0
             da_s = single.get("dividend_amount")
-            single["core_profit_rate"] = round(op_s / rev_s * 100, 2) if rev_s else None
+            core_revenue_s = single.get("inc_total_revenue") or single.get("inc_operating_revenue") or rev_s
+            single["core_profit_rate"] = round(op_s / core_revenue_s * 100, 2) if core_revenue_s else None
             single["net_profit_rate"] = round(pp_s / rev_s * 100, 2) if rev_s else None
             single["cashflow_to_profit"] = round(ocf_s / pp_s * 100, 2) if pp_s and pp_s > 0 else None
             single["dividend_payout_ratio"] = round(da_s / pp_s * 100, 2) if (da_s is not None and pp_s and pp_s > 0) else None
