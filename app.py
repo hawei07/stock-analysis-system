@@ -61,6 +61,8 @@ from services.cloud_backup_service import (
     validate_sql_backup_file,
 )
 from services.stock_identity import (
+    eastmoney_secu_code as _eastmoney_secu_code,
+    eastmoney_web_code as _eastmoney_web_code,
     fetch_stock_industry as _fetch_stock_industry,
     lookup_hk_stock_info as _lookup_hk_stock_info,
     normalize_stock_code as _normalize_stock_code,
@@ -2194,23 +2196,6 @@ register_stock_basic_routes(app, {
     "lookup_hk_stock_info": _lookup_hk_stock_info,
     "fetch_stock_industry": _fetch_stock_industry,
 })
-
-
-def _eastmoney_secu_code(code, market=None):
-    market = (market or "").upper()
-    if market in {"SH", "SZ", "BJ"}:
-        return f"{code}.{market}"
-    if code.startswith(("6", "5", "9")):
-        return f"{code}.SH"
-    if code.startswith(("4", "8")):
-        return f"{code}.BJ"
-    return f"{code}.SZ"
-
-
-def _eastmoney_web_code(code, market=None):
-    secu_code = _eastmoney_secu_code(code, market)
-    code_part, market_part = secu_code.split(".")
-    return f"{market_part}{code_part}"
 
 
 def _as_list(value):

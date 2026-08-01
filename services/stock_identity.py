@@ -46,6 +46,23 @@ def eastmoney_secid(code, market=None):
     return f"0.{code}"
 
 
+def eastmoney_secu_code(code, market=None):
+    market = (market or "").upper()
+    if market in {"SH", "SZ", "BJ"}:
+        return f"{code}.{market}"
+    if str(code).startswith(("6", "5", "9")):
+        return f"{code}.SH"
+    if str(code).startswith(("4", "8")):
+        return f"{code}.BJ"
+    return f"{code}.SZ"
+
+
+def eastmoney_web_code(code, market=None):
+    secu_code = eastmoney_secu_code(code, market)
+    code_part, market_part = secu_code.split(".")
+    return f"{market_part}{code_part}"
+
+
 def fetch_stock_industry(code, market=None):
     try:
         resp = requests.get(
