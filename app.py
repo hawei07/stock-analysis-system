@@ -3096,12 +3096,25 @@ def api_stock_fundamental_dashboard(code):
             cagr_years = None
 
         rows = execute_query(
-            """SELECT fiscal_year, report_period, total_revenue, operate_profit, parent_profit, deducted_profit,
-                      operate_cashflow, roe, deducted_roe, roic, total_assets, total_equity,
-                      total_shares, basic_eps, debt_ratio, interest_bearing_debt_ratio
-               FROM custom_financials
-               WHERE stock_code=%s
-               ORDER BY fiscal_year ASC, FIELD(report_period,'Q1','Q2','Q3','FY') ASC""",
+            """SELECT cf.fiscal_year, cf.report_period, cf.total_revenue, cf.operate_profit, cf.parent_profit, cf.deducted_profit,
+                      cf.operate_cashflow, cf.roe, cf.deducted_roe, cf.roic, cf.total_assets, cf.total_equity,
+                      cf.total_shares, cf.basic_eps, cf.debt_ratio, cf.interest_bearing_debt_ratio,
+                      inc.total_revenue AS inc_total_revenue,
+                      inc.operating_revenue AS inc_operating_revenue,
+                      inc.cost_of_revenue AS inc_cost_of_revenue,
+                      inc.interest_expense AS inc_interest_expense,
+                      inc.fee_commission_expense AS inc_fee_commission_expense,
+                      inc.selling_expense AS inc_selling_expense,
+                      inc.admin_expense AS inc_admin_expense,
+                      inc.finance_expense AS inc_finance_expense,
+                      inc.rd_expense AS inc_rd_expense,
+                      inc.finance_interest_income AS inc_finance_interest_income,
+                      inc.tax_surcharge AS inc_tax_surcharge
+               FROM custom_financials cf
+               LEFT JOIN income_statements inc ON cf.stock_code = inc.stock_code
+                    AND cf.fiscal_year = inc.fiscal_year AND cf.report_period = inc.report_period
+               WHERE cf.stock_code=%s
+               ORDER BY cf.fiscal_year ASC, FIELD(cf.report_period,'Q1','Q2','Q3','FY') ASC""",
             (code,),
         )
 
@@ -3128,7 +3141,45 @@ def api_stock_fundamental_dashboard(code):
             parent_profit = item["parent_profit"]
             operate_profit = item["operate_profit"]
             operate_cashflow = item["operate_cashflow"]
-            item["core_profit_rate"] = operate_profit / revenue * 100 if revenue else None
+            def income_value(field):
+                return to_float(r.get(f"inc_{field}")) or 0
+
+            def positive_income_value(field):
+                return max(income_value(field), 0)
+
+            income_revenue = income_value("total_revenue") or income_value("operating_revenue")
+            income_has_core_fields = any(
+                r.get(f"inc_{field}") is not None
+                for field in (
+                    "total_revenue", "operating_revenue", "cost_of_revenue",
+                    "selling_expense", "admin_expense", "finance_expense", "rd_expense",
+                )
+            )
+            if income_has_core_fields:
+                finance_expense = income_value("finance_expense")
+                finance_interest_income = positive_income_value("finance_interest_income")
+                finance_expense_before_interest_income = (
+                    max(finance_expense + finance_interest_income, 0)
+                    if finance_interest_income > 0 else max(finance_expense, 0)
+                )
+                period_expense = (
+                    positive_income_value("selling_expense")
+                    + positive_income_value("admin_expense")
+                    + positive_income_value("rd_expense")
+                    + finance_expense_before_interest_income
+                )
+                gross_profit = max(
+                    income_revenue
+                    - positive_income_value("cost_of_revenue")
+                    - positive_income_value("interest_expense")
+                    - positive_income_value("fee_commission_expense"),
+                    0,
+                )
+                operate_profit = gross_profit - period_expense - positive_income_value("tax_surcharge")
+                item["operate_profit"] = operate_profit
+                item["core_profit_rate"] = operate_profit / income_revenue * 100 if income_revenue else None
+            else:
+                item["core_profit_rate"] = operate_profit / revenue * 100 if revenue else None
             item["net_profit_rate"] = parent_profit / revenue * 100 if revenue else None
             item["cashflow_to_profit"] = (
                 operate_cashflow / parent_profit * 100
@@ -3268,7 +3319,7 @@ def api_stock_fundamental_dashboard(code):
                 metric("ROE 5年均值", roe_avg_5y, "%", verdict_high(roe_avg_5y, 20, 15, 8), "股东资本回报"),
                 metric("ROIC 5年均值", roic_avg_5y, "%", verdict_high(roic_avg_5y, 15, 10, 6), "投入资本回报"),
                 metric("最新净利率", latest.get("net_profit_rate"), "%", verdict_high(latest.get("net_profit_rate"), 20, 10, 4), f"{latest['fiscal_year']} 年"),
-                metric("最新核心利润率", latest.get("core_profit_rate"), "%", verdict_high(latest.get("core_profit_rate"), 20, 10, 4), "营业利润/营收"),
+                metric("最新核心利润率", latest.get("core_profit_rate"), "%", verdict_high(latest.get("core_profit_rate"), 20, 10, 4), f"{latest['fiscal_year']} 年报，利润表口径"),
             ]},
             {"title": "成长性", "metrics": [
                 metric("营收 CAGR", revenue_cagr, "%", verdict_high(revenue_cagr, 15, 8, 0), cagr_note),
