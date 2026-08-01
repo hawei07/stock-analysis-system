@@ -63,6 +63,12 @@ from services.cloud_backup_service import (
     backup_file_groups,
     validate_sql_backup_file,
 )
+from services.stock_identity import (
+    fetch_stock_industry as _fetch_stock_industry,
+    lookup_hk_stock_info as _lookup_hk_stock_info,
+    normalize_stock_code as _normalize_stock_code,
+    quote_symbol as _quote_symbol,
+)
 from routes.portfolio import register_portfolio_routes
 from routes.corporate_actions import register_corporate_action_routes
 from routes.notes_chat import register_notes_chat_routes
@@ -697,85 +703,6 @@ register_page_routes(app)
 
 
 # ==================== API 路由 ====================
-
-def _market_from_code(code, market=None):
-    code = str(code or "")
-    if market == "HK" or re.fullmatch(r"\d{5}", code):
-        return "HK"
-    if code.startswith(("6", "5", "9")):
-        return "SH"
-    if code.startswith(("4", "8")):
-        return "BJ"
-    if code.startswith(("0", "2", "3")):
-        return "SZ"
-    return market or "SZ"
-
-
-def _quote_symbol(code, market=None):
-    code = str(code or "")
-    inferred_market = _market_from_code(code, market)
-    if inferred_market == "HK":
-        return f"hk{code.zfill(5)}"
-    if inferred_market == "SH":
-        return f"sh{code}"
-    if inferred_market == "BJ":
-        return f"bj{code}"
-    return f"sz{code}"
-
-
-def _normalize_stock_code(code):
-    code = str(code or "").strip().upper()
-    if code.startswith("HK"):
-        code = code[2:]
-    return code.zfill(5) if re.fullmatch(r"\d{1,5}", code) else code
-
-
-def _lookup_hk_stock_info(code):
-    code = _normalize_stock_code(code)
-    if not re.fullmatch(r"\d{5}", code):
-        return None
-    try:
-        resp = requests.get(
-            f"https://qt.gtimg.cn/q=hk{code}",
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=8,
-        )
-        resp.encoding = "gbk"
-        text = resp.text or ""
-        if not text.startswith("v_hk"):
-            return None
-        fields = text.split('"')[1].split("~") if '"' in text else []
-        name = fields[1].strip() if len(fields) > 1 else ""
-        if not name:
-            return None
-        return {"code": code, "name": name, "market": "HK", "industry": _fetch_stock_industry(code, "HK")}
-    except Exception:
-        return None
-
-
-def _eastmoney_secid(code, market=None):
-    market = (market or "").upper()
-    if market == "HK" or re.fullmatch(r"\d{5}", str(code or "")):
-        return f"116.{_normalize_stock_code(code)}"
-    if market == "SH" or str(code).startswith(("6", "5", "9")):
-        return f"1.{code}"
-    return f"0.{code}"
-
-
-def _fetch_stock_industry(code, market=None):
-    try:
-        resp = requests.get(
-            "https://push2.eastmoney.com/api/qt/stock/get",
-            params={"secid": _eastmoney_secid(code, market), "fields": "f57,f58,f127"},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=8,
-        )
-        data = resp.json().get("data") or {}
-        industry = str(data.get("f127") or "").strip()
-        return industry or None
-    except Exception:
-        return None
-
 
 def _fill_missing_stock_industries(stock_rows):
     changed = {}
