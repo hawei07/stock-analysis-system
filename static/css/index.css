@@ -150,6 +150,9 @@ tr:hover td{background:#fafbff}
 .fund-head{display:flex;align-items:center;justify-content:space-between;gap:16px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .fund-title{font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:4px}
 .fund-subtitle{font-size:12px;color:#8a94a6}
+.fund-head-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.fund-cagr-control{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#5f6b7a;font-size:12px}
+.fund-cagr-control input{width:56px;height:24px;border:0;border-bottom:1px solid #d9d9d9;background:transparent;color:#1a1a2e;text-align:center;outline:none}
 .fund-score-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
 .fund-score-card{background:#fff;border:1px solid #e8e8e8;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.06);border-top:3px solid #9aa4b2;min-height:150px}
 .fund-score-card.fund-good{border-top-color:#16a34a}
@@ -492,6 +495,7 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   .chat-input-bar{padding:8px 12px}
   .detail-content{padding:12px 8px}
   .fund-head{align-items:flex-start;flex-direction:column}
+  .fund-head-actions{width:100%;justify-content:space-between}
   .fund-score-grid{grid-template-columns:1fr}
   .fund-score-card{min-height:0}
   .fund-metric{align-items:flex-start;flex-direction:column;gap:6px}
@@ -625,6 +629,8 @@ html[data-theme="dark"] .capital-chart-card,
 html[data-theme="dark"] .capital-table-card,
 html[data-theme="dark"] .capital-side section{background:var(--surface)!important;border-color:var(--border)!important;box-shadow:var(--shadow)}
 html[data-theme="dark"] .fund-metric{background:var(--surface-soft)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .fund-cagr-control{background:var(--surface-soft)!important;border-color:var(--border)!important;color:var(--text-muted)!important}
+html[data-theme="dark"] .fund-cagr-control input{border-color:var(--border)!important;color:var(--text)!important}
 html[data-theme="dark"] .compare-table th,
 html[data-theme="dark"] .compare-table td{background:var(--surface)!important;border-color:var(--border-soft)!important;color:var(--text)!important}
 html[data-theme="dark"] .compare-table thead th,

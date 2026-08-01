@@ -3010,6 +3010,10 @@ def api_stock_fundamental_dashboard(code):
             return None
         return ((new / old) ** (1 / years) - 1) * 100
 
+    def period_label(year, period):
+        labels = {"Q1": "一季报", "Q2": "中报", "Q3": "三季报", "FY": "年报"}
+        return f"{year} {labels.get(period, period or '')}".strip()
+
     def clamp_score(score):
         return max(0, min(100, round(score)))
 
@@ -3087,13 +3091,17 @@ def api_stock_fundamental_dashboard(code):
         enriched = _enrich_stock_list_metrics([dict(stock)], include_ytd=False)
         market_metrics = enriched[0] if enriched else stock
 
+        cagr_years = request.args.get("cagr_years", type=int)
+        if cagr_years is not None and cagr_years <= 0:
+            cagr_years = None
+
         rows = execute_query(
-            """SELECT fiscal_year, total_revenue, operate_profit, parent_profit, deducted_profit,
+            """SELECT fiscal_year, report_period, total_revenue, operate_profit, parent_profit, deducted_profit,
                       operate_cashflow, roe, deducted_roe, roic, total_assets, total_equity,
                       total_shares, basic_eps, debt_ratio, interest_bearing_debt_ratio
                FROM custom_financials
-               WHERE stock_code=%s AND report_period='FY'
-               ORDER BY fiscal_year ASC""",
+               WHERE stock_code=%s
+               ORDER BY fiscal_year ASC, FIELD(report_period,'Q1','Q2','Q3','FY') ASC""",
             (code,),
         )
 
@@ -3108,7 +3116,7 @@ def api_stock_fundamental_dashboard(code):
 
         data = []
         for r in rows:
-            item = {"fiscal_year": int(r["fiscal_year"])}
+            item = {"fiscal_year": int(r["fiscal_year"]), "report_period": r.get("report_period") or "FY"}
             for key in [
                 "total_revenue", "operate_profit", "parent_profit", "deducted_profit",
                 "operate_cashflow", "roe", "deducted_roe", "roic", "total_assets",
@@ -3128,16 +3136,55 @@ def api_stock_fundamental_dashboard(code):
             )
             data.append(item)
 
-        latest = data[-1]
-        prev = data[-2] if len(data) >= 2 else None
-        recent = data[-5:]
-        earliest = data[0]
-        year_span = latest["fiscal_year"] - earliest["fiscal_year"]
+        period_order = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}
+        latest_period_data = max(
+            data,
+            key=lambda r: (r["fiscal_year"], period_order.get(r.get("report_period"), 0)),
+        )
+        same_period_map = {
+            (r["fiscal_year"], r.get("report_period")): r
+            for r in data
+        }
+        yoy_base = same_period_map.get((
+            latest_period_data["fiscal_year"] - 1,
+            latest_period_data.get("report_period"),
+        ))
 
-        revenue_cagr = cagr(earliest["total_revenue"], latest["total_revenue"], year_span)
-        profit_cagr = cagr(earliest["parent_profit"], latest["parent_profit"], year_span)
-        revenue_yoy = pct_change(latest["total_revenue"], prev["total_revenue"] if prev else None)
-        profit_yoy = pct_change(latest["parent_profit"], prev["parent_profit"] if prev else None)
+        annual_data = [r for r in data if r.get("report_period") == "FY"]
+        if not annual_data:
+            return jsonify({
+                "stock": {"code": stock["code"], "name": stock["name"], "industry": stock.get("industry")},
+                "summary": [],
+                "groups": [],
+                "signals": [],
+                "message": "暂无年报财务数据，请先更新财报数据。",
+            })
+
+        latest = annual_data[-1]
+        recent = annual_data[-5:]
+        all_earliest = annual_data[0]
+        if cagr_years:
+            cagr_candidates = [r for r in annual_data if r["fiscal_year"] >= latest["fiscal_year"] - cagr_years]
+            cagr_earliest = cagr_candidates[0] if cagr_candidates else all_earliest
+        else:
+            cagr_earliest = all_earliest
+        year_span = latest["fiscal_year"] - cagr_earliest["fiscal_year"]
+
+        revenue_cagr = cagr(cagr_earliest["total_revenue"], latest["total_revenue"], year_span)
+        profit_cagr = cagr(cagr_earliest["parent_profit"], latest["parent_profit"], year_span)
+        revenue_yoy = pct_change(
+            latest_period_data["total_revenue"],
+            yoy_base["total_revenue"] if yoy_base else None,
+        )
+        profit_yoy = pct_change(
+            latest_period_data["parent_profit"],
+            yoy_base["parent_profit"] if yoy_base else None,
+        )
+        latest_period_note = period_label(latest_period_data["fiscal_year"], latest_period_data.get("report_period"))
+        yoy_base_note = period_label(yoy_base["fiscal_year"], yoy_base.get("report_period")) if yoy_base else "缺少去年同周期"
+        yoy_note = f"{latest_period_note} vs {yoy_base_note}"
+        cagr_note = f"{cagr_earliest['fiscal_year']}-{latest['fiscal_year']}"
+        cagr_scope_text = f"近{cagr_years}年" if cagr_years else "上市以来"
         roe_avg_5y = avg([r["roe"] for r in recent])
         roic_avg_5y = avg([r["roic"] for r in recent])
         cf_profit_avg_5y = avg([r["cashflow_to_profit"] for r in recent])
@@ -3200,7 +3247,7 @@ def api_stock_fundamental_dashboard(code):
 
         summary = [
             {"key": "quality", "title": "公司质量", "score": quality_score, **status_from_score(quality_score), "main": f"ROE 5年均值 {round_or_none(roe_avg_5y) if roe_avg_5y is not None else '-'}%", "note": "盈利能力、资本回报和利润稳定性"},
-            {"key": "growth", "title": "成长性", "score": growth_score, **status_from_score(growth_score), "main": f"净利润 CAGR {round_or_none(profit_cagr) if profit_cagr is not None else '-'}%", "note": "营收和归母净利润的长期与最新变化"},
+            {"key": "growth", "title": "成长性", "score": growth_score, **status_from_score(growth_score), "main": f"净利润 CAGR {round_or_none(profit_cagr) if profit_cagr is not None else '-'}%", "note": f"营收和归母净利润的{cagr_scope_text}与最新同周期变化"},
             {"key": "cashflow", "title": "现金流质量", "score": cashflow_score, **status_from_score(cashflow_score), "main": f"现金流/净利润 {round_or_none(cf_profit_avg_5y) if cf_profit_avg_5y is not None else '-'}%", "note": "利润能否转化成经营现金流"},
             {"key": "balance", "title": "资产负债", "score": balance_score, **status_from_score(balance_score), "main": f"资产负债率 {round_or_none(latest.get('debt_ratio')) if latest.get('debt_ratio') is not None else '-'}%", "note": "杠杆、有息负债和商誉压力"},
             {"key": "valuation", "title": "估值位置", "score": valuation_score, **status_from_score(valuation_score), "main": f"PE {round_or_none(pe_ttm) if pe_ttm is not None else '-'}", "note": "合理价偏离、PE、PB和股息率"},
@@ -3214,10 +3261,10 @@ def api_stock_fundamental_dashboard(code):
                 metric("最新核心利润率", latest.get("core_profit_rate"), "%", verdict_high(latest.get("core_profit_rate"), 20, 10, 4), "营业利润/营收"),
             ]},
             {"title": "成长性", "metrics": [
-                metric("营收 CAGR", revenue_cagr, "%", verdict_high(revenue_cagr, 15, 8, 0), f"{earliest['fiscal_year']}-{latest['fiscal_year']}"),
-                metric("归母净利 CAGR", profit_cagr, "%", verdict_high(profit_cagr, 15, 8, 0), f"{earliest['fiscal_year']}-{latest['fiscal_year']}"),
-                metric("最新营收同比", revenue_yoy, "%", verdict_high(revenue_yoy, 12, 5, 0), f"{latest['fiscal_year']} 年"),
-                metric("最新净利同比", profit_yoy, "%", verdict_high(profit_yoy, 12, 5, 0), f"{latest['fiscal_year']} 年"),
+                metric("营收 CAGR", revenue_cagr, "%", verdict_high(revenue_cagr, 15, 8, 0), cagr_note),
+                metric("归母净利 CAGR", profit_cagr, "%", verdict_high(profit_cagr, 15, 8, 0), cagr_note),
+                metric("最新营收同比", revenue_yoy, "%", verdict_high(revenue_yoy, 12, 5, 0), yoy_note),
+                metric("最新净利同比", profit_yoy, "%", verdict_high(profit_yoy, 12, 5, 0), yoy_note),
             ]},
             {"title": "现金流", "metrics": [
                 metric("现金流/净利润 5年均值", cf_profit_avg_5y, "%", verdict_high(cf_profit_avg_5y, 120, 90, 60), "经营现金流净额/归母净利润"),
@@ -3249,9 +3296,9 @@ def api_stock_fundamental_dashboard(code):
         if cf_profit_avg_5y is not None and cf_profit_avg_5y < 80:
             add_signal("warn", "近5年现金流覆盖不足", f"近5年均值为 {round_or_none(cf_profit_avg_5y)}%")
         if profit_yoy is not None and profit_yoy < -20:
-            add_signal("bad", "最新净利润明显下滑", f"{latest['fiscal_year']} 年归母净利润同比 {round_or_none(profit_yoy)}%")
+            add_signal("bad", "最新净利润明显下滑", f"{latest_period_note}归母净利润同比 {round_or_none(profit_yoy)}%")
         if revenue_yoy is not None and revenue_yoy < -10:
-            add_signal("warn", "最新营收下滑", f"{latest['fiscal_year']} 年营收同比 {round_or_none(revenue_yoy)}%")
+            add_signal("warn", "最新营收下滑", f"{latest_period_note}营收同比 {round_or_none(revenue_yoy)}%")
         if latest.get("debt_ratio") is not None and latest["debt_ratio"] > 70:
             add_signal("bad", "资产负债率偏高", f"{latest['fiscal_year']} 年资产负债率 {round_or_none(latest['debt_ratio'])}%")
         if goodwill_to_equity is not None and goodwill_to_equity > 30:
@@ -3270,7 +3317,10 @@ def api_stock_fundamental_dashboard(code):
                 "reasonable_price": round_or_none(reasonable_price),
             },
             "latest_year": latest["fiscal_year"],
-            "year_range": f"{earliest['fiscal_year']}-{latest['fiscal_year']}",
+            "latest_period": latest_period_note,
+            "year_range": f"{all_earliest['fiscal_year']}-{latest['fiscal_year']}",
+            "cagr_years": cagr_years,
+            "cagr_range": cagr_note,
             "summary": summary,
             "groups": groups,
             "signals": signals,

@@ -601,7 +601,11 @@ async function loadFundamentalDashboard(code) {
   if (!code || !wrap) return;
   wrap.innerHTML = '<div class="empty">加载中...</div>';
   try {
-    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/fundamental-dashboard');
+    const params = new URLSearchParams();
+    const cagrYears = getFundamentalCagrYears();
+    if (cagrYears) params.set('cagr_years', cagrYears);
+    const query = params.toString();
+    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/fundamental-dashboard' + (query ? '?' + query : ''));
     const data = await res.json();
     if (code !== getCurrentCode()) return;
     if (!res.ok || data.error) throw new Error(data.error || '加载失败');
@@ -609,6 +613,19 @@ async function loadFundamentalDashboard(code) {
   } catch (e) {
     wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">基本面驾驶舱加载失败: ' + esc(e.message || '') + '</div>';
   }
+}
+
+function getFundamentalCagrYears() {
+  const input = document.getElementById('fundCagrYears');
+  const raw = input ? input.value : (localStorage.getItem('fundCagrYears') || '');
+  const years = parseInt(raw, 10);
+  return Number.isFinite(years) && years > 0 ? String(years) : '';
+}
+
+function onFundamentalCagrYearsChange() {
+  const years = getFundamentalCagrYears();
+  localStorage.setItem('fundCagrYears', years);
+  loadFundamentalDashboard(getCurrentCode());
 }
 
 function formatFundValue(metric) {
@@ -675,9 +692,16 @@ function renderFundamentalDashboard(data) {
     <div class="fund-head">
       <div>
         <div class="fund-title">基本面驾驶舱</div>
-        <div class="fund-subtitle">数据区间：${esc(data.year_range || '-')}，最新年报：${esc(String(data.latest_year || '-'))}</div>
+        <div class="fund-subtitle">数据区间：${esc(data.year_range || '-')}，最新年报：${esc(String(data.latest_year || '-'))}，最新同比：${esc(data.latest_period || '-')}，CAGR区间：${esc(data.cagr_range || '-')}</div>
       </div>
-      <button class="btn btn-outline btn-sm" type="button" onclick="loadFundamentalDashboard(getCurrentCode())">刷新</button>
+      <div class="fund-head-actions">
+        <label class="fund-cagr-control">
+          <span>CAGR</span>
+          <input id="fundCagrYears" type="number" min="1" max="30" step="1" placeholder="全部" value="${esc(data.cagr_years ? String(data.cagr_years) : '')}" onchange="onFundamentalCagrYearsChange()" onkeydown="if(event.key==='Enter')onFundamentalCagrYearsChange()">
+          <span>年</span>
+        </label>
+        <button class="btn btn-outline btn-sm" type="button" onclick="loadFundamentalDashboard(getCurrentCode())">刷新</button>
+      </div>
     </div>
     <div class="fund-score-grid">${summaryHtml}</div>
     <div class="fund-body-grid">
