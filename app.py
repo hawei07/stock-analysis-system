@@ -478,6 +478,7 @@ AUTO_CLOUD_BACKUP_ENDPOINTS = {
     "api_portfolio_delete_flow": "portfolio-flow-delete",
     "api_portfolio_snapshot": "portfolio-snapshot",
     "api_config_put": "config-update",
+    "api_financial_indicator_preferences_put": "financial-indicator-preferences-update",
 }
 
 
@@ -816,6 +817,45 @@ def _ensure_stock_order_column():
         )
     except Exception:
         pass
+
+
+def _ensure_ui_preferences_table():
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS ui_preferences (
+            pref_key VARCHAR(80) NOT NULL PRIMARY KEY,
+            pref_value JSON NOT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
+
+
+def _ui_preference_get(pref_key):
+    _ensure_ui_preferences_table()
+    rows = execute_query(
+        "SELECT pref_value, updated_at FROM ui_preferences WHERE pref_key=%s LIMIT 1",
+        (pref_key,),
+    )
+    if not rows:
+        return None, None
+    value = rows[0].get("pref_value")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            value = None
+    return value, rows[0].get("updated_at")
+
+
+def _ui_preference_set(pref_key, pref_value):
+    _ensure_ui_preferences_table()
+    execute_query(
+        """INSERT INTO ui_preferences (pref_key, pref_value)
+           VALUES (%s, %s)
+           ON DUPLICATE KEY UPDATE pref_value=VALUES(pref_value), updated_at=CURRENT_TIMESTAMP""",
+        (pref_key, json.dumps(pref_value, ensure_ascii=False)),
+        fetch=False,
+    )
 
 
 def _ensure_graham_valuation_table():
@@ -3716,6 +3756,33 @@ def api_config_put():
         set_config(k, str(v))
         updated.append(k)
     return jsonify({"ok": True, "updated": updated})
+
+
+@app.route("/api/preferences/financial-indicators", methods=["GET"])
+def api_financial_indicator_preferences_get():
+    value, updated_at = _ui_preference_get("financial_indicators")
+    return jsonify({
+        "fields": value.get("fields") if isinstance(value, dict) else None,
+        "updated_at": str(updated_at) if updated_at else None,
+    })
+
+
+@app.route("/api/preferences/financial-indicators", methods=["PUT"])
+def api_financial_indicator_preferences_put():
+    data = request.get_json(silent=True) or {}
+    fields = data.get("fields")
+    if not isinstance(fields, list):
+        return jsonify({"error": "fields 必须是数组"}), 400
+    cleaned = []
+    seen = set()
+    for field in fields:
+        field = str(field or "").strip()
+        if not field or field in seen or len(field) > 80:
+            continue
+        seen.add(field)
+        cleaned.append(field)
+    _ui_preference_set("financial_indicators", {"fields": cleaned})
+    return jsonify({"ok": True, "fields": cleaned})
 
 
 LOCAL_SETTING_KEYS = {

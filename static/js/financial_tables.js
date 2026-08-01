@@ -60,6 +60,8 @@ function onBsPeriodChange() {
 async function loadFinancials() {
   const code = document.getElementById('detailCode').textContent.trim();
   if (!code) return;
+  await ensureFinancialIndicatorPreferencesLoaded();
+  if (code !== document.getElementById('detailCode').textContent.trim()) return;
   const from = document.getElementById('finFromYear').value;
   const to = document.getElementById('finToYear').value;
   const period = document.getElementById('finPeriod').value;
@@ -160,6 +162,9 @@ const FINANCIAL_EXTRA_INDICATORS = [
   { name: '筹资现金流净额', field: 'cf_cf_finance_net', unit: '亿元', source: '现金流量表' },
 ];
 
+let financialIndicatorPreferencesLoaded = false;
+let financialIndicatorPreferencesLoading = null;
+
 function getFinancialIndicatorCatalog() {
   return [...FINANCIAL_DEFAULT_INDICATORS, ...FINANCIAL_EXTRA_INDICATORS].map(ind => ({
     showYoy: true,
@@ -213,10 +218,58 @@ function getFinancialVisibleFields() {
   return getFinancialDefaultFields();
 }
 
-function setFinancialVisibleFields(fields) {
+function localFinancialSavedFields() {
+  for (const key of ['financials-visible-indicators', 'financials-indicator-order']) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) || 'null');
+      if (Array.isArray(saved) && saved.length) return saved;
+    } catch (e) {}
+  }
+  return null;
+}
+
+async function ensureFinancialIndicatorPreferencesLoaded() {
+  if (financialIndicatorPreferencesLoaded) return;
+  if (financialIndicatorPreferencesLoading) return financialIndicatorPreferencesLoading;
+  financialIndicatorPreferencesLoading = (async () => {
+    try {
+      const res = await fetch('/api/preferences/financial-indicators');
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || '读取自定义财报配置失败');
+      if (Array.isArray(data.fields) && data.fields.length) {
+        const normalized = normalizeFinancialVisibleFields(data.fields);
+        localStorage.setItem('financials-visible-indicators', JSON.stringify(normalized));
+        localStorage.setItem('financials-indicator-order', JSON.stringify(normalized));
+      } else {
+        const localSaved = localFinancialSavedFields();
+        if (localSaved && localSaved.length) {
+          await saveFinancialIndicatorPreferences(normalizeFinancialVisibleFields(localSaved));
+        }
+      }
+    } catch (e) {
+    } finally {
+      financialIndicatorPreferencesLoaded = true;
+      financialIndicatorPreferencesLoading = null;
+    }
+  })();
+  return financialIndicatorPreferencesLoading;
+}
+
+async function saveFinancialIndicatorPreferences(fields) {
+  try {
+    await fetch('/api/preferences/financial-indicators', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({fields})
+    });
+  } catch (e) {}
+}
+
+function setFinancialVisibleFields(fields, options = {}) {
   const cleaned = normalizeFinancialVisibleFields(fields);
   localStorage.setItem('financials-visible-indicators', JSON.stringify(cleaned));
   localStorage.setItem('financials-indicator-order', JSON.stringify(cleaned));
+  if (!options.localOnly) saveFinancialIndicatorPreferences(cleaned);
 }
 
 function getFinancialVisibleIndicators() {
@@ -634,6 +687,7 @@ function _onSortMouseDown(e) {
       const newOrder = Array.from(newRows).map(r => r.dataset.indicatorField);
       localStorage.setItem('financials-indicator-order', JSON.stringify(newOrder));
       localStorage.setItem('financials-visible-indicators', JSON.stringify(newOrder));
+      saveFinancialIndicatorPreferences(normalizeFinancialVisibleFields(newOrder));
       // 更新全局 indicators
       if (window._finIndicators) {
         const fieldMap = {};
