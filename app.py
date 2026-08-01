@@ -6336,16 +6336,16 @@ if __name__ == "__main__":
     try:
         migration_result = run_migrations()
         if migration_result["count"]:
-            print(f"✓ 已执行数据库迁移: {', '.join(migration_result['applied'])}")
+            print(f"OK 已执行数据库迁移: {', '.join(migration_result['applied'])}")
         else:
-            print("✓ 数据库迁移已是最新")
+            print("OK 数据库迁移已是最新")
         _ensure_financials_columns()
         _ensure_segments_table()
         _ensure_stock_order_column()
         _ensure_portfolio_tables()
         _ensure_graham_valuation_table()
         _ensure_shareholders_table()
-        print("✓ 已确保 custom_financials 表结构完整")
+        print("OK 已确保 custom_financials 表结构完整")
     except Exception as e:
-        print(f"⚠ 表结构检查异常: {e}")
+        print(f"WARN 表结构检查异常: {e}")
     app.run(host="0.0.0.0", port=APP_PORT, debug=True)
