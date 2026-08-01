@@ -1,7 +1,7 @@
 # stock - 架构与业务说明
 
-> 当前版本：v3.1  
-> 更新日期：2026-07-26  
+> 当前版本：v3.2
+> 更新日期：2026-08-01
 > 技术栈：Python Flask + MySQL + 原生 HTML/CSS/JavaScript  
 > 默认访问地址：`http://127.0.0.1:5002`
 
@@ -65,10 +65,33 @@ MySQL stock_analysis
 
 | 文件 | 职责 |
 |---|---|
-| `app.py` | Flask 入口、页面路由、REST API、数据抓取、云备份/恢复、自动备份调度 |
+| `app.py` | Flask 入口、全局配置、服务注册、云备份/恢复调度、少量兼容 helper。业务路由已拆分到 `routes/`，通用逻辑逐步下沉到 `services/` |
+| `routes/pages.py` | 页面入口路由：`/`、`/stock/<code>` |
+| `routes/stocks.py` | 首页股票列表、实时行情列表、年初至今涨跌幅、首页排序、Graham 估值参数接口 |
+| `routes/stock_basic.py` | 股票详情、搜索、添加、修改、删除、统计等股票基础接口 |
+| `routes/dashboard.py` | 基本面驾驶舱、对比、资本配置接口 |
+| `routes/custom_financials.py` | 自定义财报/财务摘要查询与更新 |
+| `routes/balance_sheet.py` | 资产负债表查询与更新 |
+| `routes/statements.py` | 利润表、现金流量表查询与更新 |
+| `routes/segments.py` | 营收构成查询与更新 |
+| `routes/market_charts.py` | 估值、走势/K 线接口 |
+| `routes/corporate_actions.py` | 分红、融资接口 |
+| `routes/dividend_update.py` | 分红数据更新接口 |
+| `routes/shareholders.py` | 股东数据查询、抓取、缓存 |
+| `routes/irm.py` | 互动易/上证 e 互动查询与增量抓取 |
+| `routes/portfolio.py` | 我的持仓、交易、资金流水、净值、快照、手续费配置 |
+| `routes/system.py` | 配置、云备份、云恢复、迁移状态、本机设置 |
+| `routes/notes_chat.py` | 便利贴、图片附件、对话芒格 |
 | `migrations.py` | 轻量数据库迁移执行器，按顺序执行 `migrations/*.sql` 并写入 `schema_migrations` |
 | `migrations/001_current_schema.sql` | 当前数据库结构基线迁移，覆盖股票、财务、持仓、芒格、配置等核心表 |
 | `services/cloud_backup_service.py` | 云备份保留策略、自动备份延迟策略、SQL 备份文件校验 |
+| `services/financial_periods.py` | 财务报告期 helper：可用期间过滤、最新期间、去年同期、年报序列、CAGR 起点 |
+| `services/financial_metrics.py` | 财务指标 helper：数字转换、同比、CAGR、核心利润口径、财务摘要派生指标 |
+| `services/stock_identity.py` | 股票代码规范化、市场识别、腾讯行情 symbol、东方财富编码、港股识别、行业获取 |
+| `services/market_data.py` | 腾讯实时行情、实时价格、年初至今涨跌幅 |
+| `services/stock_metrics_service.py` | 首页股票指标增强、Graham 合理估值、合理股价、PB 扣商誉、实时列表指标 |
+| `services/sticky_notes_service.py` | 便利贴 JSON 存储、base64 图片落盘、关联图片清理 |
+| `services/shareholder_schema.py` | 股东缓存表结构确保 |
 | `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、备份管理弹窗 |
 | `templates/portfolio.html` | 我的持仓页面，含持仓、现金、资金流水、净值曲线 |
 | `static/css/index.css` | 首页和股票详情页样式 |
@@ -971,3 +994,56 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 营业收入 1688.3810 亿 + 主表利息收入 32.1607 亿 = 营业总收入 1720.5417 亿
 财务费用 -8.1524 亿 ≈ 财务费用利息费用 0.2873 亿 - 财务费用利息收入 8.4299 亿
 ```
+
+---
+
+## 14. 2026-08-01 架构拆分与对比页修正
+
+### 14.1 后端模块化拆分
+
+`app.py` 已完成第一阶段瘦身：业务路由不再直接堆在入口文件中，而是按业务域注册到 `routes/` 模块。当前 `app.py` 主要保留：
+
+- Flask 应用创建、全局配置读取、本机配置覆盖
+- 数据库、模型、服务和路由模块的依赖注入注册
+- 云备份/恢复调度相关胶水逻辑
+- 少量仍待继续下沉的兼容 helper
+
+已拆分出的路由模块包括：
+
+- `routes/pages.py`：页面入口
+- `routes/stocks.py`、`routes/stock_basic.py`：股票列表与股票基础 CRUD
+- `routes/dashboard.py`：基本面驾驶舱、对比、资本配置
+- `routes/custom_financials.py`、`routes/balance_sheet.py`、`routes/statements.py`：财报摘要、资产负债表、利润表、现金流量表
+- `routes/segments.py`：营收构成
+- `routes/market_charts.py`：估值、走势/K 线
+- `routes/corporate_actions.py`、`routes/dividend_update.py`：分红、融资、分红更新
+- `routes/shareholders.py`：股东
+- `routes/irm.py`：互动易/上证 e 互动
+- `routes/portfolio.py`：我的持仓
+- `routes/system.py`：配置、云备份、本机设置、迁移状态
+- `routes/notes_chat.py`：便利贴、图片、对话芒格
+
+### 14.2 服务层抽取
+
+已抽取的服务模块包括：
+
+- `services/financial_periods.py`：财务报告期选择逻辑，避免把当前年只有 Q1 的数据误当作 FY 年报使用。
+- `services/financial_metrics.py`：通用财务指标计算，包含同比、CAGR、核心利润口径等。
+- `services/stock_identity.py`：股票代码、市场、腾讯 symbol、东方财富编码、港股识别、行业获取。
+- `services/market_data.py`：腾讯实时行情、实时价格、年初至今涨跌幅。
+- `services/stock_metrics_service.py`：首页股票列表指标增强、Graham 合理估值、合理股价、PB 扣商誉等。
+- `services/sticky_notes_service.py`：便利贴 JSON 存储和图片附件处理。
+- `services/shareholder_schema.py`：股东缓存表结构确保。
+
+后续如果继续拆分，优先方向是把 `app.py` 中剩余的持仓 helper、云备份 helper、表结构确保逻辑进一步迁入 `services/`。
+
+### 14.3 对比页期间选择修正
+
+对比页 `/api/stock/<code>/compare-dashboard` 已调整报告期选择逻辑：
+
+- 如果没有显式选择年份，默认使用该股票最新已有财报期间，而不是简单取 `MAX(fiscal_year)` 后强制使用 `FY`。
+- 如果用户选择了某年某期间，但该期间暂无数据，会自动回退到该年最新已有期间。
+- 例如当前 `2026` 年只有 `Q1`，用户选 `2026 年报/FY` 时，接口会自动回退到 `2026 Q1`，并返回 `period_fallback_note`。
+- 前端收到 `period_fallback_note` 后，会同步更新期间下拉框并提示用户，避免页面显示“年报”但财务指标为空。
+
+这可以避免 PE、PB、股息率等行情指标有值，但 ROE、ROIC、毛利率、净利率、资产负债率等财报指标全部为空的误解。
