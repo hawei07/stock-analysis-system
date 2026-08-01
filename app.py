@@ -2213,10 +2213,10 @@ def _portfolio_current_state():
             "cost_value_currency": "CNY",
             "unrealized_profit": round(unrealized_profit, 2) if unrealized_profit is not None else None,
             "unrealized_profit_pct": round(unrealized_profit_pct, 2) if unrealized_profit_pct is not None else None,
-            "dividend_per_share": round(dividend_per_share, 4) if dividend_per_share is not None else None,
+            "dividend_per_share": round(dividend_per_share, 2) if dividend_per_share is not None else None,
             "dividend_year": div.get("fiscal_year"),
-            "auto_dividend_per_share": round(div.get("dividend_per_share"), 4) if div.get("dividend_per_share") is not None else None,
-            "custom_dividend_per_share": round(custom_dividend, 4) if custom_dividend is not None else None,
+            "auto_dividend_per_share": round(div.get("dividend_per_share"), 2) if div.get("dividend_per_share") is not None else None,
+            "custom_dividend_per_share": round(custom_dividend, 2) if custom_dividend is not None else None,
             "dividend_source": "custom" if custom_dividend is not None else "auto",
             "original_expected_dividend": round(original_dividend_amount, 2) if original_dividend_amount is not None else None,
             "original_expected_dividend_currency": currency,
@@ -2371,9 +2371,9 @@ def api_portfolio_position_get(code):
         "shares": shares,
         "cost_price": round(float(r["cost_price"]), 4) if r.get("cost_price") is not None else None,
         "cost_price_currency": _currency_for_market(r.get("market")),
-        "custom_dividend_per_share": round(custom_dividend, 4) if custom_dividend is not None else None,
-        "auto_dividend_per_share": round(auto_dividend, 4) if auto_dividend is not None else None,
-        "dividend_per_share": round(dividend_per_share, 4) if dividend_per_share is not None else None,
+        "custom_dividend_per_share": round(custom_dividend, 2) if custom_dividend is not None else None,
+        "auto_dividend_per_share": round(auto_dividend, 2) if auto_dividend is not None else None,
+        "dividend_per_share": round(dividend_per_share, 2) if dividend_per_share is not None else None,
         "dividend_year": dividends.get("fiscal_year"),
         "dividend_source": "custom" if custom_dividend is not None else "auto",
     })
@@ -2785,8 +2785,8 @@ def api_portfolio_update_dividend(code):
     data = request.get_json(force=True)
     value = data.get("dividend_per_share")
     try:
-        value = float(value)
-    except (TypeError, ValueError):
+        value = _quantize(value, "0.01")
+    except Exception:
         return jsonify({"error": "每股分红必须是数字"}), 400
     if value < 0:
         return jsonify({"error": "每股分红不能小于 0"}), 400

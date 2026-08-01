@@ -831,7 +831,7 @@ function renderPositions(rows) {
       <td class="num">${r.allocation_pct == null ? '--' : Number(r.allocation_pct).toFixed(2) + '%'}</td>
       <td class="num">
         <div class="dividend-cell">
-          <input class="dividend-input" id="dividendInput-${esc(r.code)}" type="number" min="0" step="0.0001" value="${r.dividend_per_share == null ? '' : Number(r.dividend_per_share).toFixed(4)}">
+          <input class="dividend-input" id="dividendInput-${esc(r.code)}" type="number" min="0" step="0.01" value="${r.dividend_per_share == null ? '' : Number(r.dividend_per_share).toFixed(2)}">
           <button class="btn btn-outline btn-sm" onclick="saveCustomDividend('${esc(r.code)}')">保存</button>
           <button class="btn btn-outline btn-sm" onclick="resetDividendAuto('${esc(r.code)}')">重置</button>
         </div>
@@ -1317,7 +1317,8 @@ async function rebuildPortfolioLedger() {
 
 async function saveCustomDividend(code) {
   const input = document.getElementById('dividendInput-' + code);
-  const value = input ? input.value : '';
+  const rawValue = input ? input.value : '';
+  const value = rawValue === '' ? '' : Number(rawValue).toFixed(2);
   try {
     const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code) + '/dividend', {
       method: 'PUT',
