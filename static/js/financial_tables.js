@@ -504,7 +504,9 @@ function renderFinancialsTable(data, cmpData, cmpCode, cmpName) {
       const val = d ? d[ind.field] : null;
       const yoy = yoyMap[k] ? yoyMap[k][ind.field] : null;
       if (!ind.showYoy) {
-        html += `<td style="text-align:left">${val || '-'}</td><td>-</td>`;
+        let display = fmtVal(val, ind);
+        if (val != null && ind.unit) display += ' ' + ind.unit;
+        html += `<td>${display}</td><td>-</td>`;
       } else {
         let display = fmtVal(val, ind);
         if (val != null && ind.unit) display += ' ' + ind.unit;
@@ -522,7 +524,9 @@ function renderFinancialsTable(data, cmpData, cmpCode, cmpName) {
         const val = d ? d[ind.field] : null;
         const yoy = cmpYoyMap[k] ? cmpYoyMap[k][ind.field] : null;
         if (!ind.showYoy) {
-          html += `<td style="text-align:left;background:#fff7e6;color:#fa8c16">${val || '-'}</td><td style="background:#fff7e6;color:#fa8c16">-</td>`;
+          let display = fmtVal(val, ind);
+          if (val != null && ind.unit) display += ' ' + ind.unit;
+          html += `<td style="background:#fff7e6;color:#fa8c16">${display}</td><td style="background:#fff7e6;color:#fa8c16">-</td>`;
         } else {
           let display = fmtVal(val, ind);
           if (val != null && ind.unit) display += ' ' + ind.unit;
