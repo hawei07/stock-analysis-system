@@ -11,9 +11,6 @@ import shutil
 import subprocess
 import tempfile
 import threading
-import base64
-import uuid
-import html as html_lib
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -68,6 +65,12 @@ from services.stock_identity import (
     lookup_hk_stock_info as _lookup_hk_stock_info,
     normalize_stock_code as _normalize_stock_code,
     quote_symbol as _quote_symbol,
+)
+from services.sticky_notes_service import (
+    cleanup_images as sticky_cleanup_images,
+    extract_images as sticky_extract_images,
+    load_notes as sticky_load_notes,
+    save_notes as sticky_save_notes,
 )
 from routes.portfolio import register_portfolio_routes
 from routes.corporate_actions import register_corporate_action_routes
@@ -635,68 +638,19 @@ _json_lock = threading.Lock()
 
 
 def _load_notes():
-    """从 JSON 文件加载所有便利贴"""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    if not os.path.exists(JSON_PATH):
-        return []
-    try:
-        with open(JSON_PATH, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-            return json.loads(content) if content else []
-    except (json.JSONDecodeError, FileNotFoundError):
-        return []
+    return sticky_load_notes(JSON_PATH, DATA_DIR)
 
 
 def _save_notes(notes):
-    """保存便利贴到 JSON 文件（线程安全）"""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with _json_lock:
-        with open(JSON_PATH, 'w', encoding='utf-8') as f:
-            json.dump(notes, f, ensure_ascii=False, indent=2)
+    sticky_save_notes(notes, JSON_PATH, DATA_DIR)
 
 
 def _extract_images(content, note_id):
-    """提取 content 中的 base64 图片到文件，替换为文件路径"""
-    os.makedirs(IMAGES_DIR, exist_ok=True)
-
-    def replace_base64(match):
-        data_uri = match.group(0)
-        try:
-            header, b64data = data_uri.split(',', 1)
-        except ValueError:
-            return data_uri
-        if 'image/png' in header:
-            ext = 'png'
-        elif 'image/jpeg' in header or 'image/jpg' in header:
-            ext = 'jpg'
-        elif 'image/gif' in header:
-            ext = 'gif'
-        elif 'image/webp' in header:
-            ext = 'webp'
-        else:
-            ext = 'png'
-        filename = f'{note_id}_{uuid.uuid4().hex[:8]}.{ext}'
-        filepath = os.path.join(IMAGES_DIR, filename)
-        try:
-            with open(filepath, 'wb') as f:
-                f.write(base64.b64decode(b64data))
-        except Exception:
-            return data_uri
-        return f'/data/images/{filename}'
-
-    return re.sub(r'data:image/[^;]+;base64,[a-zA-Z0-9+/=]+', replace_base64, content)
+    return sticky_extract_images(content, note_id, IMAGES_DIR)
 
 
 def _cleanup_images(note):
-    """删除便利贴关联的图片文件"""
-    paths = re.findall(r'/data/images/([^"\')\s]+)', note.get('content', ''))
-    for fname in paths:
-        fpath = os.path.join(IMAGES_DIR, fname)
-        if os.path.exists(fpath):
-            try:
-                os.remove(fpath)
-            except OSError:
-                pass
+    sticky_cleanup_images(note, IMAGES_DIR)
 
 
 register_page_routes(app)
