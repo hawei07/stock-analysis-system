@@ -134,6 +134,7 @@ function renderCapitalAllocation(data) {
   const notes = data.notes || [];
   const cardHtml = [
     {name: '经营现金流', value: fmtCapitalMoney(selected.operating_cashflow), note: '自身造血'},
+    {name: '投资收益现金', value: fmtCapitalMoney(selected.investment_income_cash), note: '投资回收'},
     {name: '融资流入', value: fmtCapitalMoney(selected.financing_sources), note: '借款/发债/股权融资'},
     {name: '资本开支', value: fmtCapitalMoney(selected.capex), note: fmtCapitalPct(selected.capex_to_ocf) + ' / OCF'},
     {name: '分红', value: fmtCapitalMoney(selected.dividend), note: '分红率 ' + fmtCapitalPct(selected.dividend_payout_ratio)},
@@ -160,6 +161,7 @@ function renderCapitalAllocation(data) {
     <tr>
       <td>${esc(String(r.year))}</td>
       <td>${esc(fmtCapitalMoney(r.operating_cashflow))}</td>
+      <td>${esc(fmtCapitalMoney(r.investment_income_cash))}</td>
       <td>${esc(fmtCapitalMoney(r.financing_sources))}</td>
       <td>${esc(fmtCapitalMoney(r.capex))}</td>
       <td>${esc(fmtCapitalMoney(r.dividend))}</td>
@@ -178,7 +180,7 @@ function renderCapitalAllocation(data) {
         <div class="capital-chart-card">
           <div class="capital-section-head">
             <h3>${esc(String(selected.year || '-'))} 年资金去向瀑布图</h3>
-            <span>经营现金流 + 融资流入 - 资本开支 - 分红 - 回购 - 偿债 = 融资后剩余</span>
+            <span>经营现金流 + 投资收益现金 + 融资流入 - 资本开支 - 分红 - 回购 - 偿债 = 融资后剩余</span>
           </div>
           <div id="capitalWaterfallChart" class="capital-chart"></div>
         </div>
@@ -189,7 +191,7 @@ function renderCapitalAllocation(data) {
           </div>
           <div class="capital-table-wrap">
             <table class="capital-table">
-              <thead><tr><th>年份</th><th>经营现金流</th><th>融资流入</th><th>资本开支</th><th>分红</th><th>偿债</th><th>经营剩余</th><th>融资后剩余</th><th>商誉变化</th><th>股本变化</th></tr></thead>
+              <thead><tr><th>年份</th><th>经营现金流</th><th>投资收益现金</th><th>融资流入</th><th>资本开支</th><th>分红</th><th>偿债</th><th>经营剩余</th><th>融资后剩余</th><th>商誉变化</th><th>股本变化</th></tr></thead>
               <tbody>${trendRows}</tbody>
             </table>
           </div>
@@ -225,6 +227,7 @@ function renderCapitalWaterfallChart(row) {
   if (capitalAllocationChart) capitalAllocationChart.dispose();
   capitalAllocationChart = echarts.init(el);
   const ocf = Number(row.operating_cashflow || 0);
+  const investmentIncomeCash = Number(row.investment_income_cash || 0);
   const debtIn = Number(row.debt_borrow || 0);
   const financingSources = Number(row.financing_sources || 0);
   let equityOtherIn = Number(row.equity_financing || 0) + Number(row.other_financing || 0);
@@ -234,7 +237,7 @@ function renderCapitalWaterfallChart(row) {
   const buyback = Number(row.buyback || 0);
   const debt = Number(row.debt_repayment || 0);
   const remaining = Number(row.financing_remaining_after_allocation || 0);
-  const labels = ['经营现金流', '借款/发债', '股权/其他融资', '资本开支', '分红', '回购', '偿债', '融资后剩余'];
+  const labels = ['经营现金流', '投资收益现金', '借款/发债', '股权/其他融资', '资本开支', '分红', '回购', '偿债', '融资后剩余'];
   let running = 0;
   const helper = [];
   const values = [];
@@ -266,6 +269,7 @@ function renderCapitalWaterfallChart(row) {
   }
 
   addStart(ocf, '#4a6cf7');
+  addPositive(investmentIncomeCash, '#16a34a');
   addPositive(debtIn, '#0ea5e9');
   addPositive(equityOtherIn, '#14b8a6');
   addDeduct(capex, '#d97706');
@@ -280,7 +284,7 @@ function renderCapitalWaterfallChart(row) {
       axisPointer: {type: 'shadow'},
       formatter: params => {
         const idx = params[0].dataIndex;
-        const raw = [ocf, debtIn, equityOtherIn, -capex, -dividend, -buyback, -debt, remaining][idx];
+        const raw = [ocf, investmentIncomeCash, debtIn, equityOtherIn, -capex, -dividend, -buyback, -debt, remaining][idx];
         return `${labels[idx]}<br/><b>${fmtCapitalMoney(raw)}</b>`;
       }
     },
@@ -289,7 +293,7 @@ function renderCapitalWaterfallChart(row) {
     yAxis: {type: 'value', name: '亿元'},
     series: [
       {type: 'bar', stack: 'total', itemStyle: {color: 'transparent'}, emphasis: {itemStyle: {color: 'transparent'}}, data: helper},
-      {type: 'bar', stack: 'total', data: values.map((v, i) => ({value: v, itemStyle: {color: colors[i]}})), label: {show: true, position: 'top', formatter: p => fmtCapitalMoney([ocf, debtIn, equityOtherIn, -capex, -dividend, -buyback, -debt, remaining][p.dataIndex])}}
+      {type: 'bar', stack: 'total', data: values.map((v, i) => ({value: v, itemStyle: {color: colors[i]}})), label: {show: true, position: 'top', formatter: p => fmtCapitalMoney([ocf, investmentIncomeCash, debtIn, equityOtherIn, -capex, -dividend, -buyback, -debt, remaining][p.dataIndex])}}
     ]
   });
 }

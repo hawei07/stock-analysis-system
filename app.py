@@ -3560,7 +3560,7 @@ def api_stock_capital_allocation(code):
         params,
     )
     cash_rows = execute_query(
-        f"""SELECT fiscal_year, cf_oper_net, cf_buy_assets, cf_repay_debt, cf_borrow,
+        f"""SELECT fiscal_year, cf_oper_net, cf_buy_assets, cf_invest_income, cf_repay_debt, cf_borrow,
                    cf_bond, cf_finance_in, cf_other_finance_in, cf_finance_inflow,
                    cf_finance_net, cf_dividend_interest
             FROM cash_flows
@@ -3592,6 +3592,7 @@ def api_stock_capital_allocation(code):
         if operating_cashflow is None:
             operating_cashflow = get_val(fin, "operate_cashflow")
         capex = get_val(cash, "cf_buy_assets", 0)
+        investment_income_cash = get_val(cash, "cf_invest_income", 0)
         dividend = get_val(div, "dividend_amount", 0)
         buyback = 0
         debt_repayment = get_val(cash, "cf_repay_debt", 0)
@@ -3610,11 +3611,11 @@ def api_stock_capital_allocation(code):
             if operating_cashflow is not None and capex is not None else None
         )
         remaining_after_allocation = (
-            operating_cashflow - capex - dividend - buyback - debt_repayment
+            operating_cashflow + investment_income_cash - capex - dividend - buyback - debt_repayment
             if operating_cashflow is not None else None
         )
         financing_remaining_after_allocation = (
-            operating_cashflow + financing_sources - capex - dividend - buyback - debt_repayment
+            operating_cashflow + investment_income_cash + financing_sources - capex - dividend - buyback - debt_repayment
             if operating_cashflow is not None else None
         )
 
@@ -3634,6 +3635,7 @@ def api_stock_capital_allocation(code):
             "year": year,
             "operating_cashflow": round_or_none(operating_cashflow),
             "capex": round_or_none(capex),
+            "investment_income_cash": round_or_none(investment_income_cash),
             "dividend": round_or_none(dividend),
             "buyback": buyback,
             "debt_repayment": round_or_none(debt_repayment),
@@ -3691,8 +3693,9 @@ def api_stock_capital_allocation(code):
         "notes": [
             "回购暂无专项数据表，当前瀑布图按 0 处理并在页面标注。",
             "资本开支使用现金流量表“购建固定资产、无形资产和其他长期资产支付的现金”。",
-            "经营剩余 = 经营现金流 - 资本开支 - 分红 - 回购 - 偿债。",
-            "融资后剩余 = 经营现金流 + 借款/发债流入 + 股权融资/其他筹资流入 - 资本开支 - 分红 - 回购 - 偿债。",
+            "投资收益现金使用现金流量表“取得投资收益所收到的现金”，作为过去资本配置带来的现金回收单独展示。",
+            "经营剩余 = 经营现金流 + 投资收益现金 - 资本开支 - 分红 - 回购 - 偿债。",
+            "融资后剩余 = 经营现金流 + 投资收益现金 + 借款/发债流入 + 股权融资/其他筹资流入 - 资本开支 - 分红 - 回购 - 偿债。",
             "偿债使用现金流量表“偿还债务支付的现金”，融资流入包含取得借款、发行债券、吸收投资和其他筹资流入。",
         ],
     })
