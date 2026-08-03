@@ -250,6 +250,7 @@
           <tr>
             <th>日期</th>
             <th class="num">净值</th>
+            <th class="num">涨跌幅</th>
             <th class="num">总资产</th>
             <th class="num">持仓市值</th>
             <th class="num">现金</th>
@@ -642,6 +643,12 @@ function signedPrivateMoney(v) {
   if (amountPrivacyMode) return maskedMoney();
   const n = Number(v);
   return (n > 0 ? '+' : '') + money(n);
+}
+
+function signedPct(v) {
+  if (v == null || Number.isNaN(Number(v))) return '--';
+  const n = Number(v);
+  return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
 }
 
 function profitClass(v) {
@@ -1502,6 +1509,7 @@ function renderNavHistoryTable() {
     return `<tr>
       <td>${esc(String(row.date || ''))}</td>
       <td class="num">${row.nav_index == null ? '--' : Number(row.nav_index).toFixed(4)}</td>
+      <td class="num ${profitClass(row.nav_change_pct)}">${signedPct(row.nav_change_pct)}</td>
       <td class="num">${money(totalValue)}</td>
       <td class="num">${money(stockValue)}</td>
       <td class="num">${money(row.cash_amount)}</td>
@@ -1572,6 +1580,7 @@ function exportNavHistoryExcel() {
     return `<tr>
       <td>${excelCell(row.date)}</td>
       <td>${row.nav_index == null ? '' : Number(row.nav_index).toFixed(4)}</td>
+      <td>${row.nav_change_pct == null ? '' : Number(row.nav_change_pct).toFixed(2) + '%'}</td>
       <td>${totalValue == null ? '' : Number(totalValue).toFixed(2)}</td>
       <td>${stockValue == null ? '' : Number(stockValue).toFixed(2)}</td>
       <td>${row.cash_amount == null ? '' : Number(row.cash_amount).toFixed(2)}</td>
@@ -1584,7 +1593,7 @@ function exportNavHistoryExcel() {
   }).join('');
   const html = `<!doctype html><html><head><meta charset="UTF-8"></head><body>
     <table border="1">
-      <thead><tr><th>日期</th><th>净值</th><th>总资产</th><th>持仓市值</th><th>现金</th><th>仓位</th><th>当日收益</th><th>累计收益</th><th>累计入金</th><th>累计出金</th></tr></thead>
+      <thead><tr><th>日期</th><th>净值</th><th>涨跌幅</th><th>总资产</th><th>持仓市值</th><th>现金</th><th>仓位</th><th>当日收益</th><th>累计收益</th><th>累计入金</th><th>累计出金</th></tr></thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;

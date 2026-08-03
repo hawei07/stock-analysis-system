@@ -696,6 +696,12 @@ def register_portfolio_routes(app, deps):
                 daily_return = value - prev_value - net_flow
                 cumulative_return += daily_return
                 nav_index = nav_index * (adjusted_value / prev_value)
+            prev_nav_index = result[-1]["nav_index"] if result else None
+            nav_change_pct = (
+                (nav_index / prev_nav_index - 1) * 100
+                if nav_index is not None and prev_nav_index not in (None, 0)
+                else None
+            )
             result.append({
                 "date": date_str,
                 "total_market_value": round(value, 2),
@@ -711,6 +717,7 @@ def register_portfolio_routes(app, deps):
                 "cumulative_return": round(cumulative_return, 2),
                 "expected_dividend": round(float(r["expected_dividend"]), 2),
                 "nav_index": round(nav_index, 4) if nav_index is not None else None,
+                "nav_change_pct": round(nav_change_pct, 2) if nav_change_pct is not None else None,
             })
             prev_value = value
         return jsonify(result)
