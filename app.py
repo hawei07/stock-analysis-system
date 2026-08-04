@@ -76,6 +76,7 @@ from services.sticky_notes_service import (
 )
 from services import stock_metrics_service
 from services.shareholder_schema import ensure_shareholders_table
+from services import portfolio_audit
 from services import portfolio_cash
 from services import portfolio_money
 from services import portfolio_nav
@@ -907,66 +908,13 @@ def _void_linked_cash_flow(source_type, source_id, flow_source, flow_date, amoun
     )
 
 def _portfolio_audit_payload():
-    _ensure_portfolio_tables()
-    issues = []
-    current_cash = _decimal_value(_portfolio_cash_amount())
-    rebuilt_cash = _portfolio_rebuilt_cash_amount()
-    if not _decimal_equal(current_cash, rebuilt_cash, "0.01"):
-        issues.append({
-            "type": "cash",
-            "message": f"现金与流水推导不一致，相差 {float(_quantize(current_cash - rebuilt_cash, '0.01')):.2f}",
-            "current": float(_quantize(current_cash, "0.01")),
-            "expected": float(_quantize(rebuilt_cash, "0.01")),
-        })
-
-    rows = execute_query(
-        """SELECT stock_code, shares_after, cost_price_after
-           FROM (
-             SELECT stock_code, shares_after, cost_price_after,
-                    ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY d DESC, sort_id DESC) AS rn
-             FROM (
-               SELECT stock_code, shares_after, cost_price_after, trade_date AS d, id AS sort_id
-               FROM portfolio_trades WHERE is_void=0
-               UNION ALL
-               SELECT stock_code, shares_after, cost_price_after, action_date AS d, id AS sort_id
-               FROM portfolio_corporate_actions WHERE is_void=0
-             ) x
-           ) y
-           WHERE rn=1"""
+    return portfolio_audit.audit_payload(
+        execute_query,
+        _ensure_portfolio_tables,
+        _portfolio_cash_amount,
+        _portfolio_rebuilt_cash_amount,
+        _portfolio_cash_base_amount,
     )
-    for row in rows:
-        position_rows = execute_query(
-            "SELECT shares, cost_price FROM portfolio_positions WHERE stock_code=%s LIMIT 1",
-            (row["stock_code"],),
-        )
-        if not position_rows:
-            issues.append({"type": "position", "code": row["stock_code"], "message": "账本有记录但当前持仓缺失"})
-            continue
-        pos = position_rows[0]
-        if (
-            not _decimal_equal(pos.get("shares"), row.get("shares_after"))
-            or not _decimal_equal(pos.get("cost_price"), row.get("cost_price_after"))
-        ):
-            issues.append({
-                "type": "position",
-                "code": row["stock_code"],
-                "message": "当前持仓与账本回放结果不一致",
-                "current_shares": float(_quantize(pos.get("shares"))),
-                "expected_shares": float(_quantize(row.get("shares_after"))),
-                "current_cost": float(_quantize(pos.get("cost_price"))) if pos.get("cost_price") is not None else None,
-                "expected_cost": float(_quantize(row.get("cost_price_after"))) if row.get("cost_price_after") is not None else None,
-            })
-
-    return {
-        "ok": not issues,
-        "issues": issues,
-        "cash": {
-            "current": float(_quantize(current_cash, "0.01")),
-            "expected": float(_quantize(rebuilt_cash, "0.01")),
-            "base_amount": float(_quantize(_portfolio_cash_base_amount(), "0.01")),
-        },
-    }
-
 
 def _latest_dividend_per_share(codes):
     if not codes:
