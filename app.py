@@ -76,6 +76,7 @@ from services.sticky_notes_service import (
 )
 from services import stock_metrics_service
 from services.shareholder_schema import ensure_shareholders_table
+from services import portfolio_cash
 from services import portfolio_money
 from services import portfolio_nav
 from services import portfolio_positions
@@ -867,53 +868,23 @@ def _sync_portfolio_cost_basis_from_trades():
     return portfolio_positions.sync_cost_basis_from_trades(execute_query)
 
 def _portfolio_cash_amount():
-    _ensure_portfolio_tables()
-    rows = execute_query("SELECT amount FROM portfolio_cash WHERE id=1")
-    return float(rows[0]["amount"]) if rows else 0.0
+    return portfolio_cash.cash_amount(execute_query, _ensure_portfolio_tables)
 
 
 def _portfolio_cash_base_amount():
-    _ensure_portfolio_tables()
-    rows = execute_query("SELECT base_amount FROM portfolio_cash WHERE id=1")
-    return _decimal_value(rows[0]["base_amount"]) if rows and rows[0].get("base_amount") is not None else Decimal("0")
+    return portfolio_cash.base_amount(execute_query, _ensure_portfolio_tables)
 
 
 def _portfolio_rebuilt_cash_amount():
-    base_amount = _portfolio_cash_base_amount()
-    rows = execute_query("SELECT COALESCE(SUM(amount), 0) AS total FROM portfolio_cash_flows WHERE is_void=0")
-    return base_amount + _decimal_value(rows[0]["total"] if rows else 0)
+    return portfolio_cash.rebuilt_amount(execute_query, _portfolio_cash_base_amount)
 
 
 def _portfolio_flow_rows(limit=100):
-    _ensure_portfolio_tables()
-    return execute_query(
-        """SELECT id, flow_date, amount, flow_source, source_type, source_id, note,
-                  is_void, voided_at, void_note, created_at
-           FROM portfolio_cash_flows
-           ORDER BY flow_date DESC, id DESC
-           LIMIT %s""",
-        (limit,),
-    )
+    return portfolio_cash.flow_rows(execute_query, _ensure_portfolio_tables, limit)
 
 
 def _portfolio_flows_payload():
-    return [
-        {
-            "id": r["id"],
-            "flow_date": str(r["flow_date"]),
-            "amount": round(float(r["amount"]), 2),
-            "flow_source": r.get("flow_source") or "external",
-            "source_type": r.get("source_type"),
-            "source_id": r.get("source_id"),
-            "is_void": bool(r.get("is_void")),
-            "voided_at": str(r["voided_at"]) if r.get("voided_at") else None,
-            "void_note": r.get("void_note") or "",
-            "note": r.get("note") or "",
-            "created_at": str(r["created_at"]) if r.get("created_at") else None,
-        }
-        for r in _portfolio_flow_rows()
-    ]
-
+    return portfolio_cash.flows_payload(execute_query, _ensure_portfolio_tables)
 
 def _portfolio_trades_payload(limit=1000):
     _ensure_portfolio_tables()
@@ -975,33 +946,16 @@ def _portfolio_actions_payload(limit=100):
 
 
 def _void_linked_cash_flow(source_type, source_id, flow_source, flow_date, amount, code, void_note):
-    rows = execute_query(
-        """SELECT id, amount
-           FROM portfolio_cash_flows
-           WHERE is_void=0 AND source_type=%s AND source_id=%s
-           LIMIT 1""",
-        (source_type, source_id),
+    return portfolio_cash.void_linked_cash_flow(
+        execute_query,
+        source_type,
+        source_id,
+        flow_source,
+        flow_date,
+        amount,
+        code,
+        void_note,
     )
-    if not rows:
-        rows = execute_query(
-            """SELECT id, amount
-               FROM portfolio_cash_flows
-               WHERE is_void=0 AND flow_source=%s AND flow_date=%s
-                 AND amount=%s AND (note LIKE %s OR note IS NULL OR note='')
-               ORDER BY id DESC
-               LIMIT 1""",
-            (flow_source, flow_date, amount, f"%{code}%"),
-        )
-    if not rows:
-        return Decimal("0")
-    row = rows[0]
-    execute_query(
-        "UPDATE portfolio_cash_flows SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note=%s WHERE id=%s",
-        (void_note, row["id"]),
-        fetch=False,
-    )
-    return _decimal_value(row["amount"])
-
 
 def _portfolio_audit_payload():
     _ensure_portfolio_tables()
