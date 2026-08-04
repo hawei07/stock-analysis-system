@@ -174,43 +174,18 @@ def register_portfolio_routes(app, deps):
 
     @app.route("/api/portfolio/trades/<int:trade_id>/void", methods=["POST"])
     def api_portfolio_void_trade(trade_id):
-        _ensure_portfolio_tables()
         data = request.get_json(silent=True) or {}
-        void_note = str(data.get("void_note") or "作废交易").strip()[:255]
-        rows = execute_query(
-            """SELECT id, trade_date, stock_code, cash_delta, is_void
-               FROM portfolio_trades
-               WHERE id=%s
-               LIMIT 1""",
-            (trade_id,),
-        )
-        if not rows:
-            return jsonify({"error": "未找到这笔交易"}), 404
-        row = rows[0]
-        if row.get("is_void"):
-            return jsonify({"error": "这笔交易已作废"}), 400
-        execute_query(
-            "UPDATE portfolio_trades SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note=%s WHERE id=%s",
-            (void_note, trade_id),
-            fetch=False,
-        )
-        voided_flow_amount = _void_linked_cash_flow(
-            "trade",
-            trade_id,
-            "trade",
-            row["trade_date"],
-            row["cash_delta"],
-            row["stock_code"],
-            void_note,
-        )
-        if voided_flow_amount != 0:
-            current_cash = _decimal_value(_portfolio_cash_amount())
-            execute_query(
-                "UPDATE portfolio_cash SET amount=%s WHERE id=1",
-                (_quantize(current_cash - voided_flow_amount, "0.01"),),
-                fetch=False,
+        try:
+            portfolio_trades.void_trade(
+                execute_query,
+                _void_linked_cash_flow,
+                _sync_portfolio_cost_basis_from_trades,
+                _portfolio_cash_amount,
+                trade_id,
+                data.get("void_note"),
             )
-        _sync_portfolio_cost_basis_from_trades()
+        except portfolio_trades.PortfolioTradeError as exc:
+            return jsonify({"error": str(exc)}), exc.status_code
         state = _save_portfolio_snapshot()
         state["audit"] = _portfolio_audit_payload()
         state["trades"] = _portfolio_trades_payload()

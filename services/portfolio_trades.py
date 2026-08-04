@@ -146,3 +146,50 @@ def add_trade(
         "trade_type": trade_type,
         "cash_delta": float(cash_delta_dec),
     }
+
+
+def void_trade(
+    execute_query,
+    void_linked_cash_flow,
+    sync_cost_basis,
+    cash_amount_func,
+    trade_id,
+    void_note="作废交易",
+):
+    void_note = str(void_note or "作废交易").strip()[:255]
+    rows = execute_query(
+        """SELECT id, trade_date, stock_code, cash_delta, is_void
+           FROM portfolio_trades
+           WHERE id=%s
+           LIMIT 1""",
+        (trade_id,),
+    )
+    if not rows:
+        raise PortfolioTradeError("未找到这笔交易", 404)
+    row = rows[0]
+    if row.get("is_void"):
+        raise PortfolioTradeError("这笔交易已作废")
+
+    execute_query(
+        "UPDATE portfolio_trades SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note=%s WHERE id=%s",
+        (void_note, trade_id),
+        fetch=False,
+    )
+    voided_flow_amount = void_linked_cash_flow(
+        "trade",
+        trade_id,
+        "trade",
+        row["trade_date"],
+        row["cash_delta"],
+        row["stock_code"],
+        void_note,
+    )
+    if voided_flow_amount != 0:
+        current_cash = decimal_value(cash_amount_func())
+        execute_query(
+            "UPDATE portfolio_cash SET amount=%s WHERE id=1",
+            (quantize(current_cash - voided_flow_amount, "0.01"),),
+            fetch=False,
+        )
+    sync_cost_basis()
+    return {"trade_id": trade_id, "voided_flow_amount": float(voided_flow_amount)}
