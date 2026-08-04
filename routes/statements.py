@@ -442,11 +442,11 @@ def register_statement_routes(app, deps):
 
                 existing = set()
                 if mode == "incremental":
-                    for r in execute_query("SELECT fiscal_year FROM cash_flows WHERE stock_code=%s", (code,)):
-                        existing.add(r["fiscal_year"])
+                    for r in execute_query("SELECT fiscal_year, report_period FROM cash_flows WHERE stock_code=%s", (code,)):
+                        existing.add((r["fiscal_year"], r["report_period"]))
 
                 for (year, rp), values in sorted(all_years.items()):
-                    if mode == "incremental" and year in existing:
+                    if mode == "incremental" and (year, rp) in existing:
                         continue
                     _upsert_finance(code, {(year, rp): values}, CASHFLOW_COLUMNS, "cash_flows")
                     updated += 1
