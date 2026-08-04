@@ -1046,11 +1046,15 @@ register_stock_routes(app, {
 
 register_stock_basic_routes(app, {
     "Stock": Stock,
+    "get_connection": get_connection,
     "execute_query": execute_query,
     "quote_symbol": _quote_symbol,
     "normalize_stock_code": _normalize_stock_code,
     "lookup_hk_stock_info": _lookup_hk_stock_info,
     "fetch_stock_industry": _fetch_stock_industry,
+    "load_notes": _load_notes,
+    "save_notes": _save_notes,
+    "cleanup_images": _cleanup_images,
 })
 
 

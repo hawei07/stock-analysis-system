@@ -663,7 +663,7 @@ GET /api/db/migrations
 | `GET` | `/api/stock/<code>` | 股票详情 |
 | `POST` | `/api/stock` | 添加股票，支持自动获取名称/市场 |
 | `PUT` | `/api/stock/<code>` | 修改股票 |
-| `DELETE` | `/api/stock/<code>` | 删除股票 |
+| `DELETE` | `/api/stock/<code>` | 删除股票，并清理该股票所有本地股票维度数据 |
 | `GET` | `/api/stats` | 统计概览 |
 | `GET` | `/api/stock-search` | 本地 + 东方财富搜索 |
 | `GET` | `/api/stock-info/<code>` | 东方财富获取股票名称和市场 |
@@ -1093,3 +1093,12 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 - 前端收到 `period_fallback_note` 后，会同步更新期间下拉框并提示用户，避免页面显示“年报”但财务指标为空。
 
 这可以避免 PE、PB、股息率等行情指标有值，但 ROE、ROIC、毛利率、净利率、资产负债率等财报指标全部为空的误解。
+
+### 14.5 删除股票数据清理
+
+删除股票接口 `/api/stock/<code>` 会通过 `services/stock_delete_service.py` 清理该股票的本地数据：
+
+- 动态删除所有包含 `stock_code` 字段且匹配该股票代码的数据库记录，包括财报、分红、估值参数、股东、互动易、便利贴、芒格对话、持仓记录等。
+- 删除持仓交易/公司行为前，会先删除其关联的 `portfolio_cash_flows`，并按被删除流水金额反向调整当前现金。
+- 删除 `data/sticky_notes.json` 中绑定该股票的便利贴，并清理便利贴图片附件。
+- 组合级历史数据如 `portfolio_nav_snapshots` 没有单只股票字段，删除股票时不会按单股拆分删除。

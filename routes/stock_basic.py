@@ -5,14 +5,20 @@ import re
 import requests
 from flask import jsonify, request
 
+from services.stock_delete_service import delete_stock_sticky_notes, delete_stock_with_related_data
+
 
 def register_stock_basic_routes(app, deps):
     Stock = deps["Stock"]
+    get_connection = deps["get_connection"]
     execute_query = deps["execute_query"]
     quote_symbol = deps["quote_symbol"]
     normalize_stock_code = deps["normalize_stock_code"]
     lookup_hk_stock_info = deps["lookup_hk_stock_info"]
     fetch_stock_industry = deps["fetch_stock_industry"]
+    load_notes = deps["load_notes"]
+    save_notes = deps["save_notes"]
+    cleanup_images = deps["cleanup_images"]
 
     @app.route("/api/stock/<code>")
     def api_stock_detail(code):
@@ -215,10 +221,12 @@ def register_stock_basic_routes(app, deps):
 
     @app.route("/api/stock/<code>", methods=["DELETE"])
     def api_delete_stock(code):
+        code = normalize_stock_code(code)
         try:
-            cnt = Stock.delete(code)
-            if cnt:
-                return jsonify({"success": True, "message": "删除成功"})
+            result = delete_stock_with_related_data(get_connection, code)
+            if result.get("deleted_stock"):
+                result["sticky_json_deleted"] = delete_stock_sticky_notes(load_notes, save_notes, cleanup_images, code)
+                return jsonify({"success": True, "message": "删除成功，相关数据已清理", **result})
             return jsonify({"error": "未找到该股票"}), 404
         except Exception as e:
             return jsonify({"error": str(e)}), 400
