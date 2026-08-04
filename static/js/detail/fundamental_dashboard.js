@@ -8,10 +8,8 @@ async function loadFundamentalDashboard(code) {
     const cagrYears = getFundamentalCagrYears();
     if (cagrYears) params.set('cagr_years', cagrYears);
     const query = params.toString();
-    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/fundamental-dashboard' + (query ? '?' + query : ''));
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stock/' + encodeURIComponent(code) + '/fundamental-dashboard' + (query ? '?' + query : ''));
     if (code !== getCurrentCode()) return;
-    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     renderFundamentalDashboard(data);
   } catch (e) {
     wrap.innerHTML = '<div class="empty" style="color:#ff4d4f">基本面驾驶舱加载失败: ' + esc(e.message || '') + '</div>';
@@ -36,7 +34,7 @@ function formatFundValue(metric) {
   const value = Number(metric.value);
   if (Number.isNaN(value)) return '-';
   const decimals = Math.abs(value) >= 100 ? 1 : 2;
-  return value.toLocaleString('zh-CN', {minimumFractionDigits: 0, maximumFractionDigits: decimals}) + (metric.unit || '');
+  return StockFormat.number(value, { maximumFractionDigits: decimals }) + (metric.unit || '');
 }
 
 function renderFundamentalDashboard(data) {

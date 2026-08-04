@@ -5,10 +5,8 @@ async function loadFinancing(code) {
   const statusEl = document.getElementById('financingStatus');
   if (statusEl) statusEl.textContent = '加载中...';
   try {
-    const res = await fetch('/api/stock/' + code + '/financing');
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stock/' + code + '/financing');
     if (code !== getCurrentCode()) return;
-    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     renderFinancingChart(data.annual || []);
     renderFinancingTable(data.details || []);
     if (statusEl) statusEl.textContent = data.source || '';
@@ -22,7 +20,7 @@ async function loadFinancing(code) {
 
 function financingMoney(value) {
   if (value == null || Number.isNaN(Number(value))) return '--';
-  return (Number(value) / 1e8).toFixed(2) + '亿元';
+  return StockFormat.moneyYi(Number(value) / 1e8, { maximumFractionDigits: 2 });
 }
 
 function financingShares(value) {

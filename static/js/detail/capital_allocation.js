@@ -21,10 +21,8 @@ async function loadCapitalAllocation() {
   const params = new URLSearchParams();
   if (yearEl?.value) params.set('year', yearEl.value);
   try {
-    const res = await fetch('/api/stock/' + encodeURIComponent(code) + '/capital-allocation?' + params.toString());
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stock/' + encodeURIComponent(code) + '/capital-allocation?' + params.toString());
     if (code !== getCurrentCode()) return;
-    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     renderCapitalYearSelect(data.years || [], data.selected_year);
     renderCapitalAllocation(data);
   } catch (e) {
@@ -42,14 +40,11 @@ function renderCapitalYearSelect(years, selectedYear) {
 }
 
 function fmtCapitalMoney(value) {
-  if (value == null || Number.isNaN(Number(value))) return '-';
-  const num = Number(value);
-  return num.toLocaleString('zh-CN', {maximumFractionDigits: Math.abs(num) >= 100 ? 1 : 2}) + '亿';
+  return StockFormat.moneyYi(value);
 }
 
 function fmtCapitalPct(value) {
-  if (value == null || Number.isNaN(Number(value))) return '-';
-  return Number(value).toLocaleString('zh-CN', {maximumFractionDigits: 2}) + '%';
+  return StockFormat.percent(value);
 }
 
 function renderCapitalAllocation(data) {

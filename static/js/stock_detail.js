@@ -71,8 +71,7 @@ async function loadDetail(code) {
   divYearsPopulated = false;
   try {
     // 加载股票基本信息
-    const stockRes = await fetch('/api/stock/' + code);
-    const stock = await stockRes.json();
+    const stock = await StockApi.getJson('/api/stock/' + code);
     if (stock.error) { showToast(stock.error, 'error'); goList(); return; }
     document.getElementById('detailCode').textContent = stock.code;
     document.getElementById('detailName').textContent = stock.name;
@@ -126,15 +125,13 @@ async function loadPortfolioPositionCard(code) {
   if (!sharesEl) return;
   sharesEl.textContent = '--';
   try {
-    const res = await fetch('/api/portfolio/positions/' + encodeURIComponent(code));
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '读取持仓失败');
+    const data = await StockApi.getJson('/api/portfolio/positions/' + encodeURIComponent(code));
     if (!data.held) {
       sharesEl.textContent = '未持仓';
       return;
     }
     const shares = Number(data.shares || 0);
-    sharesEl.textContent = shares.toLocaleString('zh-CN', {maximumFractionDigits: 2}) + ' 股';
+    sharesEl.textContent = StockFormat.shares(shares);
   } catch (e) {
     sharesEl.textContent = '--';
   }

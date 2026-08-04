@@ -153,32 +153,25 @@
       return;
     }
     if (action === 'cancel') {
-      await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+      await StockApi.postJson(`/api/jobs/${jobId}/cancel`);
       await refreshJobs(true);
       return;
     }
     if (action === 'retry') {
-      const res = await fetch(`/api/jobs/${jobId}/retry`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ failed_only: true })
-      });
-      const data = await res.json();
+      const data = await StockApi.postJson(`/api/jobs/${jobId}/retry`, { failed_only: true });
       if (data.new_job_id) watchJob(data.new_job_id, { open: true });
       await refreshJobs(true);
     }
   }
 
   async function loadLogs(jobId) {
-    const res = await fetch(`/api/jobs/${jobId}/logs?limit=200`);
-    const data = await res.json();
+    const data = await StockApi.getJson(`/api/jobs/${jobId}/logs?limit=200`);
     state.logs[jobId] = data.logs || [];
   }
 
   async function refreshJobs(openOnActive) {
     try {
-      const res = await fetch('/api/jobs?limit=20');
-      const data = await res.json();
+      const data = await StockApi.getJson('/api/jobs?limit=20');
       state.jobs = (data.jobs || []).filter(job => ACTIVE.has(job.status));
       const hasActive = state.jobs.length > 0;
       if (openOnActive && hasActive) state.open = true;

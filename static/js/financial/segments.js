@@ -48,8 +48,7 @@ async function loadSegments() {
 
   try {
     const params = new URLSearchParams({ from_year: from, to_year: to, dimension });
-    const res = await fetch(`/api/stock/${code}/segments?${params}`);
-    const payload = await res.json();
+    const payload = await StockApi.getJson(`/api/stock/${code}/segments?${params}`);
     if (requestSeq !== segmentLoadSeq || code !== document.getElementById('detailCode').textContent.trim()) return;
     const data = payload.data || [];
     segmentCache = { data, summary: payload.summary || null };
@@ -76,13 +75,8 @@ async function updateSegments() {
   const status = document.getElementById('segStatus');
   status.textContent = '更新中...';
   try {
-    const res = await fetch('/api/update-segments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code })
-    });
-    const data = await res.json();
-    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    const data = await StockApi.postJson('/api/update-segments', { code });
+    StockApi.watchJob(data, { open: true });
     if (data.background) {
       status.textContent = data.message || '已转入后台任务';
       return;

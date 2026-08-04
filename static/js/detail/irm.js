@@ -14,12 +14,11 @@ async function startIrmAutoSync() {
   if (localStorage.getItem(IRM_AUTO_SYNC_DATE_KEY) === today) return;
   irmAutoSyncStarted = true;
   try {
-    const res = await fetch('/api/irm/sync', { method: 'POST' });
-    const data = await res.json();
-    if (res.ok && (data.started || data.already_running || data.ok)) {
+    const data = await StockApi.postJson('/api/irm/sync');
+    if (data.started || data.already_running || data.ok) {
       localStorage.setItem(IRM_AUTO_SYNC_DATE_KEY, today);
     }
-    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: false });
+    StockApi.watchJob(data, { open: false });
     pollIrmStatus();
   } catch (e) {
     // 自动抓取静默失败，不影响正常打开系统。
@@ -28,8 +27,7 @@ async function startIrmAutoSync() {
 
 async function pollIrmStatus() {
   try {
-    const res = await fetch('/api/irm/status');
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/irm/status');
     const statusEl = document.getElementById('irmStatus');
     if (statusEl && data.message) statusEl.textContent = data.message;
     if (data.running) {
@@ -49,10 +47,8 @@ async function loadIrm(code, options = {}) {
   if (statusEl && !options.silent) statusEl.textContent = '加载中...';
   if (list && !options.silent) list.innerHTML = '<div class="empty" id="irmEmpty">正在加载互动易问答...</div>';
   try {
-    const res = await fetch('/api/stock/' + code + '/irm');
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stock/' + code + '/irm');
     if (code !== getCurrentCode()) return;
-    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     renderIrm(data);
   } catch (e) {
     if (list) list.innerHTML = '<div class="empty" id="irmEmpty">互动易问答加载失败</div>';
@@ -67,9 +63,7 @@ async function syncCurrentIrm() {
   const statusEl = document.getElementById('irmStatus');
   if (statusEl) statusEl.textContent = '抓取中...';
   try {
-    const res = await fetch('/api/stock/' + code + '/irm/sync', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '抓取失败');
+    const data = await StockApi.postJson('/api/stock/' + code + '/irm/sync');
     if (statusEl) statusEl.textContent = data.message || ('本次新增 ' + (data.inserted || 0) + ' 条');
     await loadIrm(code, { silent: true });
   } catch (e) {

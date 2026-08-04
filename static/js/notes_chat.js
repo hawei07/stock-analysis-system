@@ -6,8 +6,7 @@ async function loadMungerChat() {
   const container = document.getElementById('chatMessages');
 
   try {
-    const res = await fetch('/api/stock/' + code + '/munger-chat');
-    const msgs = await res.json();
+    const msgs = await StockApi.getJson('/api/stock/' + code + '/munger-chat');
     if (code !== document.getElementById('detailCode').textContent.trim()) return;
     container.innerHTML = '';
     if (!msgs.length) {
@@ -72,12 +71,7 @@ async function sendMungerChat() {
   scrollChatBottom();
 
   try {
-    const res = await fetch('/api/stock/' + code + '/munger-chat', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message: msg})
-    });
-    const data = await res.json();
+    const data = await StockApi.postJson('/api/stock/' + code + '/munger-chat', {message: msg});
     // Remove typing
     const t = document.getElementById('chatTyping');
     if (t) t.remove();
@@ -96,7 +90,7 @@ async function sendMungerChat() {
 async function deleteChatMsg(msgId, btn) {
   if (!confirm('删除这条消息？')) return;
   try {
-    await fetch('/api/stock/' + document.getElementById('detailCode').textContent + '/munger-chat?msg_id=' + msgId, {method: 'DELETE'});
+    await StockApi.deleteJson('/api/stock/' + document.getElementById('detailCode').textContent + '/munger-chat?msg_id=' + msgId);
     btn.closest('.chat-msg').remove();
     // Show empty if no messages left
     if (!document.querySelector('.chat-msg')) {
@@ -109,7 +103,7 @@ async function clearMungerChat() {
   const code = document.getElementById('detailCode').textContent;
   if (!confirm('确定清空全部对话？')) return;
   try {
-    await fetch('/api/stock/' + code + '/munger-chat', {method: 'DELETE'});
+    await StockApi.deleteJson('/api/stock/' + code + '/munger-chat');
     document.getElementById('chatMessages').innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
   } catch(e) {}
 }
@@ -132,8 +126,7 @@ async function loadStickyNotes() {
   const code = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent.trim() : '';
   if (!code) return;
   try {
-    const res = await fetch('/api/sticky-notes?stock_code=' + code);
-    const notes = await res.json();
+    const notes = await StockApi.getJson('/api/sticky-notes?stock_code=' + code);
     if (code !== (document.getElementById('detailCode')?.textContent.trim() || '')) return;
     const list = document.getElementById('stickyList');
     if (!notes.length) {
@@ -187,7 +180,7 @@ function openStickyModal(id, title, content) {
   const sel = document.getElementById('stickyStock');
   const curCode = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
   if (sel.options.length <= 1) {
-    fetch('/api/stocks?page=1&page_size=200').then(r => r.json()).then(d => {
+    StockApi.getJson('/api/stocks?page=1&page_size=200').then(d => {
       d.data.forEach(s => { const o = document.createElement('option'); o.value = s.code; o.textContent = s.code + ' ' + s.name; sel.appendChild(o); });
       sel.value = curCode;
     });
@@ -199,8 +192,7 @@ function openStickyModal(id, title, content) {
 
 async function editSticky(id, btn) {
   // Fetch notes to find this one
-  const res = await fetch('/api/sticky-notes?stock_code=' + (document.getElementById('detailCode')?.textContent || ''));
-  const notes = await res.json();
+  const notes = await StockApi.getJson('/api/sticky-notes?stock_code=' + (document.getElementById('detailCode')?.textContent || ''));
   const n = notes.find(x => x.id === id);
   if (n) openStickyModal(n.id, n.title, n.content);
 }
@@ -218,7 +210,11 @@ async function saveSticky() {
   const method = stickyEditId ? 'PUT' : 'POST';
   const url = '/api/sticky-notes' + (stickyEditId ? '/' + stickyEditId : '');
   try {
-    await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (stickyEditId) {
+      await StockApi.putJson(url, body);
+    } else {
+      await StockApi.postJson(url, body);
+    }
     closeStickyModal();
     loadStickyNotes();
   } catch(e) {}
@@ -227,7 +223,7 @@ async function saveSticky() {
 async function deleteSticky(id, btn) {
   if (!confirm('确定删除？')) return;
   try {
-    await fetch('/api/sticky-notes/' + id, { method: 'DELETE' });
+    await StockApi.deleteJson('/api/sticky-notes/' + id);
     btn.closest('.sticky-card').style.opacity = '0';
     setTimeout(loadStickyNotes, 300);
   } catch(e) {}

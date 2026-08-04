@@ -15,17 +15,14 @@ async function loadBalanceSheet() {
 
   try {
     const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
-    const res = await fetch(`/api/stock/${code}/balance-sheet?${params}`);
-    let data = await res.json();
+    let data = await StockApi.getJson(`/api/stock/${code}/balance-sheet?${params}`);
     if (code !== document.getElementById('detailCode').textContent.trim()) return;
 
     let cmpData = null, cmpName = '';
     if (cmpCode && cmpCode !== code) {
       try {
-        const cmpRes = await fetch(`/api/stock/${cmpCode}/balance-sheet?${params}`);
-        cmpData = await cmpRes.json();
-        const infoRes = await fetch('/api/stock/' + cmpCode);
-        const info = await infoRes.json();
+        cmpData = await StockApi.getJson(`/api/stock/${cmpCode}/balance-sheet?${params}`);
+        const info = await StockApi.getJson('/api/stock/' + cmpCode);
         if (code !== document.getElementById('detailCode').textContent.trim()) return;
         if (!info.error) cmpName = info.name;
       } catch {}
@@ -787,13 +784,8 @@ async function updateBalanceSheet() {
   statusEl.style.color = '#1890ff';
 
   try {
-    const res = await fetch('/api/update-balance-sheet', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'incremental' })
-    });
-    const data = await res.json();
-    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    const data = await StockApi.postJson('/api/update-balance-sheet', { mode: 'incremental' });
+    StockApi.watchJob(data, { open: true });
     if (data.background) {
       statusEl.textContent = data.message || '已转入后台任务';
       statusEl.style.color = '#1890ff';

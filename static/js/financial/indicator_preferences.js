@@ -129,9 +129,7 @@ async function ensureFinancialIndicatorPreferencesLoaded() {
   if (financialIndicatorPreferencesLoading) return financialIndicatorPreferencesLoading;
   financialIndicatorPreferencesLoading = (async () => {
     try {
-      const res = await fetch('/api/preferences/financial-indicators');
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '读取自定义财报配置失败');
+      const data = await StockApi.getJson('/api/preferences/financial-indicators');
       if (Array.isArray(data.fields) && data.fields.length) {
         const normalized = normalizeFinancialVisibleFields(data.fields);
         localStorage.setItem('financials-visible-indicators', JSON.stringify(normalized));
@@ -153,11 +151,7 @@ async function ensureFinancialIndicatorPreferencesLoaded() {
 
 async function saveFinancialIndicatorPreferences(fields) {
   try {
-    await fetch('/api/preferences/financial-indicators', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({fields})
-    });
+    await StockApi.putJson('/api/preferences/financial-indicators', {fields});
   } catch (e) {}
 }
 

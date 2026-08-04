@@ -194,10 +194,8 @@ async function loadCompareDashboard() {
   if (yearEl?.value) params.set('year', yearEl.value);
   if (compareSelectedMetrics.length) params.set('metrics', compareSelectedMetrics.join(','));
   try {
-    const res = await fetch('/api/stock/' + encodeURIComponent(primary) + '/compare-dashboard?' + params.toString());
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stock/' + encodeURIComponent(primary) + '/compare-dashboard?' + params.toString());
     if (primary !== getCurrentCode()) return;
-    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     compareMetricOptions = data.metric_options || compareMetricOptions;
     compareDefaultMetrics = data.default_metrics || compareDefaultMetrics;
     if (!compareSelectedMetrics.length) compareSelectedMetrics = [...compareDefaultMetrics];
@@ -231,7 +229,7 @@ function formatCompareValue(value, unit) {
   if (value == null || Number.isNaN(Number(value))) return '-';
   const num = Number(value);
   const digits = Math.abs(num) >= 100 ? 1 : 2;
-  return num.toLocaleString('zh-CN', {maximumFractionDigits: digits}) + (unit || '');
+  return StockFormat.number(num, { maximumFractionDigits: digits }) + (unit || '');
 }
 
 function renderCompareRows(data) {

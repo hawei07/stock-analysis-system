@@ -51,10 +51,8 @@ async function loadKline() {
   statusEl.textContent = '加载中...';
 
   try {
-    const res = await fetch(`/api/stock/${code}/kline?days=${days}&period=${period}`);
-    const data = await res.json();
+    const data = await StockApi.getJson(`/api/stock/${code}/kline?days=${days}&period=${period}`);
     if (code !== getCurrentCode()) return;
-    if (data.error) { statusEl.textContent = data.error; return; }
     if (!data || data.length === 0) { statusEl.textContent = '无数据'; return; }
 
     const dates = data.map(d => d.date);

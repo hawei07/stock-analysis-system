@@ -14,8 +14,7 @@ async function loadStocks() {
   }
 
   try {
-    const res = await fetch('/api/stocks?' + params);
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stocks?' + params);
     renderTable(data.data);
     totalPages = data.total_pages;
     renderPagination(data);
@@ -126,8 +125,7 @@ async function refreshVisibleStockPrices(force = false) {
   if (!codes.length) return;
   stockPriceAutoRefreshBusy = true;
   try {
-    const res = await fetch('/api/stocks/realtime?codes=' + encodeURIComponent(codes.join(',')));
-    const payload = await res.json();
+    const payload = await StockApi.getJson('/api/stocks/realtime?codes=' + encodeURIComponent(codes.join(',')));
     updateStockRealtimeCells(payload.data || []);
   } catch (e) {
   } finally {
@@ -141,8 +139,7 @@ async function refreshVisibleStockYtd() {
   if (!codes.length) return;
   const refreshId = ++stockYtdRefreshId;
   try {
-    const res = await fetch('/api/stocks/ytd?codes=' + encodeURIComponent(codes.join(',')));
-    const payload = await res.json();
+    const payload = await StockApi.getJson('/api/stocks/ytd?codes=' + encodeURIComponent(codes.join(',')));
     if (refreshId !== stockYtdRefreshId) return;
     for (const item of payload.data || []) {
       const row = document.querySelector(`#stockTableBody tr[data-code="${item.code}"]`);
@@ -204,8 +201,7 @@ async function openGrahamModal(code) {
   document.getElementById('grahamPreview').textContent = '加载中...';
   modal.classList.add('active');
   try {
-    const res = await fetch(`/api/stock/${code}/graham-valuation`);
-    const data = await res.json();
+    const data = await StockApi.getJson(`/api/stock/${code}/graham-valuation`);
     grahamDefaults = data.defaults || {};
     grahamDefaults.total_shares = data.total_shares;
     document.getElementById('grahamGrowthRate').value = numOrEmpty(data.params?.growth_rate);
@@ -244,13 +240,8 @@ async function saveGrahamValuation() {
     expected_profit: document.getElementById('grahamExpectedProfit').value,
   };
   try {
-    const res = await fetch(`/api/stock/${code}/graham-valuation`, {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
+    const data = await StockApi.putJson(`/api/stock/${code}/graham-valuation`, payload);
+    if (data.error) {
       showToast(data.error || '保存失败', 'error');
       return;
     }
@@ -356,13 +347,8 @@ async function saveDefaultOrder() {
   const codes = Array.from(document.querySelectorAll('#stockTableBody tr')).map(row => row.dataset.code).filter(Boolean);
   if (!codes.length) return;
   try {
-    const res = await fetch('/api/stocks/reorder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codes })
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    const data = await StockApi.postJson('/api/stocks/reorder', { codes });
+    if (data.error) throw new Error(data.error || '保存失败');
     showToast('默认顺序已保存', 'success');
     reorderMode = false;
     listPageSize = 15;
@@ -390,8 +376,7 @@ function goPage(p) { currentPage = p; loadStocks(); }
 
 async function loadStats() {
   try {
-    const res = await fetch('/api/stats');
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stats');
     document.getElementById('statsInfo').textContent = `共 ${data.total} 只股票 | SH:${data.markets.SH || 0} SZ:${data.markets.SZ || 0} BJ:${data.markets.BJ || 0} HK:${data.markets.HK || 0}`;
   } catch (e) {}
 }
@@ -410,8 +395,7 @@ function openAddModal() {
 
 async function openEditModal(code) {
   try {
-    const res = await fetch('/api/stock/' + code);
-    const s = await res.json();
+    const s = await StockApi.getJson('/api/stock/' + code);
     if (s.error) { showToast(s.error, 'error'); return; }
     document.getElementById('modalTitle').textContent = '编辑股票';
     document.getElementById('editCode').value = s.code;
@@ -436,8 +420,7 @@ async function lookupStock() {
   try {
     // If not a 6-digit code, search first
     if (!/^\d{6}$/.test(code)) {
-      const searchRes = await fetch('/api/stock-search?keyword=' + encodeURIComponent(code));
-      const searchData = await searchRes.json();
+      const searchData = await StockApi.getJson('/api/stock-search?keyword=' + encodeURIComponent(code));
       if (searchData && searchData.length > 0) {
         const s = searchData[0];
         document.getElementById('inputCode').value = s.code;
@@ -452,8 +435,7 @@ async function lookupStock() {
       btn.textContent = '查询';
       return;
     }
-    const res = await fetch('/api/stock-info/' + code);
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stock-info/' + code);
     if (data.error) {
       showToast(data.error, 'error');
     } else {
@@ -487,8 +469,7 @@ async function saveStock() {
   const method = isEdit ? 'PUT' : 'POST';
 
   try {
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const data = await res.json();
+    const data = isEdit ? await StockApi.putJson(url, body) : await StockApi.postJson(url, body);
     if (data.success) {
       showToast(isEdit ? '更新成功' : '添加成功', 'success');
       closeModal();
@@ -518,13 +499,8 @@ async function syncAddedStockDetails(code) {
   let failed = 0;
   for (const url of apis) {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, mode: 'incremental', background: true })
-      });
-      const data = await res.json();
-      if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+      const data = await StockApi.postJson(url, { code, mode: 'incremental', background: true });
+      StockApi.watchJob(data, { open: true });
       if (!data.success) failed += 1;
     } catch (e) {
       failed += 1;
@@ -540,8 +516,7 @@ async function syncAddedStockDetails(code) {
 async function deleteStock(code, name) {
   if (!confirm(`确认删除 ${code} ${name}？\n\n这会清理该股票详情页的财报、分红、股东、互动易、估值、便利贴和芒格对话数据，但不会删除我的持仓中的仓位、交易记录或现金流水。`)) return;
   try {
-    const res = await fetch('/api/stock/' + code, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await StockApi.deleteJson('/api/stock/' + code);
     if (data.success) {
       showToast('删除成功', 'success');
       loadStocks();
@@ -563,8 +538,7 @@ async function populateStockSwitcher(currentCode) {
   const sel = document.getElementById('stockSwitcher');
   sel.innerHTML = '<option value="">切换股票...</option>';
   try {
-    const res = await fetch('/api/stocks?page=1&page_size=200');
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stocks?page=1&page_size=200');
     for (const s of data.data) {
       const opt = document.createElement('option');
       opt.value = s.code;

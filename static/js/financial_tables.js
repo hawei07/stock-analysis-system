@@ -2,8 +2,7 @@ async function resolveStockCode(input) {
   if (!input) return null;
   if (/^\d{6}$/.test(input.trim())) return input.trim();
   try {
-    const res = await fetch('/api/stock-search?keyword=' + encodeURIComponent(input.trim()));
-    const data = await res.json();
+    const data = await StockApi.getJson('/api/stock-search?keyword=' + encodeURIComponent(input.trim()));
     if (data && data.length > 0) return data[0].code;
   } catch (e) {}
   return null;
@@ -76,17 +75,14 @@ async function loadFinancials() {
 
   try {
     const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
-    const res = await fetch(`/api/stock/${code}/financials?${params}`);
-    let data = await res.json();
+    let data = await StockApi.getJson(`/api/stock/${code}/financials?${params}`);
     if (code !== document.getElementById('detailCode').textContent.trim()) return;
 
     let cmpData = null, cmpName = '';
     if (cmpCode && cmpCode !== code) {
       try {
-        const cmpRes = await fetch(`/api/stock/${cmpCode}/financials?${params}`);
-        cmpData = await cmpRes.json();
-        const infoRes = await fetch('/api/stock/' + cmpCode);
-        const info = await infoRes.json();
+        cmpData = await StockApi.getJson(`/api/stock/${cmpCode}/financials?${params}`);
+        const info = await StockApi.getJson('/api/stock/' + cmpCode);
         if (code !== document.getElementById('detailCode').textContent.trim()) return;
         if (!info.error) cmpName = info.name;
       } catch {}
@@ -478,13 +474,8 @@ async function updateFinancials() {
   statusEl.style.color = '#1890ff';
 
   try {
-    const res = await fetch('/api/update-financials', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'incremental' })
-    });
-    const data = await res.json();
-    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    const data = await StockApi.postJson('/api/update-financials', { mode: 'incremental' });
+    StockApi.watchJob(data, { open: true });
     if (data.background) {
       statusEl.textContent = data.message || '已转入后台任务';
       statusEl.style.color = '#1890ff';

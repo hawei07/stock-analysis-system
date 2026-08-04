@@ -43,9 +43,8 @@ function setCloudStatusPill(status) {
 
 async function refreshCloudBackupStatus() {
   try {
-    const res = await fetch('/api/cloud-backup/status');
-    const status = await res.json();
-    if (res.ok && !status.error) setCloudStatusPill(status);
+    const status = await StockApi.getJson('/api/cloud-backup/status');
+    setCloudStatusPill(status);
     return status;
   } catch (e) {
     const el = document.getElementById('cloudBackupStatus');
@@ -79,14 +78,10 @@ function backupManagerRows(files) {
 
 async function openBackupManager() {
   try {
-    const [statusRes, filesRes] = await Promise.all([
-      fetch('/api/cloud-backup/status'),
-      fetch('/api/cloud-backup/files')
+    const [status, filesData] = await Promise.all([
+      StockApi.getJson('/api/cloud-backup/status'),
+      StockApi.getJson('/api/cloud-backup/files')
     ]);
-    const status = await statusRes.json();
-    const filesData = await filesRes.json();
-    if (!statusRes.ok || status.error) throw new Error(status.error || '读取备份状态失败');
-    if (!filesRes.ok || filesData.error) throw new Error(filesData.error || '读取备份列表失败');
     showBackupManagerModal(status, filesData.files || []);
   } catch (e) {
     showToast(e.message || '打开备份管理失败', 'error');
@@ -161,12 +156,7 @@ function showBackupManagerModal(status, files) {
 async function backupCloud() {
   showToast('正在备份到云同步目录...', 'success');
   try {
-    const res = await fetch('/api/cloud-backup/backup', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '云备份失败', 'error');
-      return;
-    }
+    const data = await StockApi.postJson('/api/cloud-backup/backup');
     showToast(`云备份完成: ${data.latest_backup}`, 'success');
     refreshCloudBackupStatus();
   } catch (e) {
@@ -177,8 +167,7 @@ async function backupCloud() {
 async function restoreCloud() {
   let statusText = '';
   try {
-    const statusRes = await fetch('/api/cloud-backup/status');
-    const status = await statusRes.json();
+    const status = await StockApi.getJson('/api/cloud-backup/status');
     statusText = status.latest_mtime ? `\n云端备份时间：${status.latest_mtime}\n目录：${status.backup_dir}` : '\n未检测到云端备份';
     if (status.possible_conflict) {
       statusText += '\n\n注意：检测到云端较新，同时本机有未上传修改，可能存在同步冲突。';
@@ -191,12 +180,7 @@ async function restoreCloud() {
   if (!confirm('从云端备份恢复会覆盖本地数据库。系统会先自动备份当前本地数据。确认恢复？' + statusText)) return;
   showToast('正在从云端恢复，请稍候...', 'success');
   try {
-    const res = await fetch('/api/cloud-backup/restore', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '云恢复失败', 'error');
-      return;
-    }
+    await StockApi.postJson('/api/cloud-backup/restore');
     showToast('云恢复完成，正在刷新页面...', 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (e) {
@@ -232,20 +216,7 @@ async function restoreSelectedBackupFile(filename, btn) {
   }
   showToast('正在恢复历史备份，请稍候...', 'success');
   try {
-    const restoreRes = await fetch('/api/cloud-backup/restore-file', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename })
-    });
-    const restoreData = await restoreRes.json();
-    if (!restoreRes.ok || restoreData.error) {
-      showToast(restoreData.error || '历史恢复失败', 'error');
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = '恢复选中版本';
-      }
-      return;
-    }
+    await StockApi.postJson('/api/cloud-backup/restore-file', { filename });
     showToast('历史恢复完成，正在刷新页面...', 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (e) {
@@ -259,8 +230,7 @@ async function restoreSelectedBackupFile(filename, btn) {
 
 async function checkCloudUpdateOnStartup() {
   try {
-    const res = await fetch('/api/cloud-backup/status?startup=1');
-    const status = await res.json();
+    const status = await StockApi.getJson('/api/cloud-backup/status?startup=1');
     if (!status.cloud_newer) return;
     showCloudUpdatePrompt(status);
   } catch (e) {
@@ -304,14 +274,7 @@ async function restoreCloudFromStartup(overlay) {
   btn.textContent = '更新中...';
   showToast('正在从云端更新本地数据，请稍候...', 'success');
   try {
-    const res = await fetch('/api/cloud-backup/restore', { method: 'POST' });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      showToast(data.error || '云端更新失败', 'error');
-      btn.disabled = false;
-      btn.textContent = '立即更新';
-      return;
-    }
+    await StockApi.postJson('/api/cloud-backup/restore');
     showToast('云端更新完成，正在刷新页面...', 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (e) {

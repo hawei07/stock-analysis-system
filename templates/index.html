@@ -793,9 +793,8 @@ async function doUpdateAll(mode) {
   let msgs = [];
   for (const api of apis) {
     try {
-      const res = await fetch(api.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
-      const data = await res.json();
-      if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+      const data = await StockApi.postJson(api.url, { mode });
+      StockApi.watchJob(data, { open: true });
       if (data.success) msgs.push(api.name + ': ' + (data.records_updated || data.message || 'OK'));
       else msgs.push(api.name + ': 失败');
     } catch (e) {
@@ -812,8 +811,7 @@ async function openSettings() {
   document.getElementById('settingsMsg').style.display = 'none';
   loadLocalSettings();
   try {
-    const res = await fetch('/api/config');
-    const cfg = await res.json();
+    const cfg = await StockApi.getJson('/api/config');
     // If API key exists (masked), show placeholder hint
     if (cfg.deepseek_api_key) {
       document.getElementById('settingApiKey').placeholder = cfg.deepseek_api_key + ' (已配置)';
@@ -829,12 +827,7 @@ async function saveSettings() {
   const key = document.getElementById('settingApiKey').value.trim();
   if (!key) { showSettingsMsg('请输入 API Key', 'error'); return; }
   try {
-    const res = await fetch('/api/config', {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({deepseek_api_key: key})
-    });
-    const data = await res.json();
+    const data = await StockApi.putJson('/api/config', {deepseek_api_key: key});
     if (data.ok) {
       showSettingsMsg('✅ 保存成功', 'success');
       document.getElementById('settingApiKey').value = '';
@@ -892,7 +885,12 @@ async function saveSettings() {
     </div>
   </div>
 </div>
+<!-- Core utilities -->
 <script src="/static/js/ui_utils.js"></script>
+<script src="/static/js/core/api.js"></script>
+<script src="/static/js/core/formatters.js"></script>
+
+<!-- Stock detail shell and detail tabs -->
 <script src="/static/js/stock_detail.js"></script>
 <script src="/static/js/detail/capital_allocation.js"></script>
 <script src="/static/js/detail/compare_dashboard.js"></script>
@@ -903,11 +901,15 @@ async function saveSettings() {
 <script src="/static/js/detail/irm.js"></script>
 <script src="/static/js/detail/kline.js"></script>
 <script src="/static/js/detail/valuation.js"></script>
+
+<!-- Financial tabs -->
 <script src="/static/js/financial/indicator_preferences.js"></script>
 <script src="/static/js/financial_tables.js"></script>
 <script src="/static/js/financial/segments.js"></script>
 <script src="/static/js/financial/balance_sheet.js"></script>
 <script src="/static/js/financial/standard_statements.js"></script>
+
+<!-- List, notes, settings and background jobs -->
 <script src="/static/js/stock_list.js"></script>
 <script src="/static/js/notes_chat.js"></script>
 <script src="/static/js/cloud_backup.js"></script>

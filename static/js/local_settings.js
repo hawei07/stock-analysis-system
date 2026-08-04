@@ -39,9 +39,7 @@ function fillLocalSettings(data) {
 
 async function loadLocalSettings() {
   try {
-    const res = await fetch('/api/local-settings');
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '读取本机配置失败');
+    const data = await StockApi.getJson('/api/local-settings');
     fillLocalSettings(data);
   } catch (e) {
     document.getElementById('localSettingsStatus').textContent = e.message || '读取本机配置失败';
@@ -51,12 +49,7 @@ async function loadLocalSettings() {
 async function testLocalSettings() {
   showSettingsMsg('正在测试本机环境...', 'success');
   try {
-    const res = await fetch('/api/local-settings/test', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(collectLocalSettings())
-    });
-    const data = await res.json();
+    const data = await StockApi.postJson('/api/local-settings/test', collectLocalSettings());
     const checks = data.checks || {};
     const lines = Object.values(checks).map(item => (item.ok ? '✓ ' : '✗ ') + item.message);
     showSettingsMsg(lines.join('；'), data.ok ? 'success' : 'error');
@@ -67,13 +60,7 @@ async function testLocalSettings() {
 
 async function saveLocalSettings() {
   try {
-    const res = await fetch('/api/local-settings', {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(collectLocalSettings())
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '保存失败');
+    const data = await StockApi.putJson('/api/local-settings', collectLocalSettings());
     fillLocalSettings(data);
     showSettingsMsg('本机配置已保存，重启项目后完整生效', 'success');
   } catch (e) {

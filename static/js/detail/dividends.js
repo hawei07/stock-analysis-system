@@ -10,8 +10,7 @@ async function loadDividends(code) {
     if (from) params.push('start_year=' + from);
     if (to) params.push('end_year=' + to);
     if (params.length) url += '?' + params.join('&');
-    const res = await fetch(url);
-    const data = await res.json();
+    const data = await StockApi.getJson(url);
     if (code !== getCurrentCode()) return;
     
     // 首次加载时用全部年份数据填充下拉框

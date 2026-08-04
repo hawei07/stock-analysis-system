@@ -25,17 +25,14 @@ async function loadFinanceTable(prefix) {
 
   try {
     const params = new URLSearchParams({ from_year: from, to_year: to, period: actualPeriod, view });
-    const res = await fetch(`/api/stock/${code}/${t.api}?${params}`);
-    let data = await res.json();
+    let data = await StockApi.getJson(`/api/stock/${code}/${t.api}?${params}`);
     if (code !== document.getElementById('detailCode').textContent.trim()) return;
 
     let cmpData = null, cmpName = '';
     if (cmpCode && cmpCode !== code) {
       try {
-        const cmpRes = await fetch(`/api/stock/${cmpCode}/${t.api}?${params}`);
-        cmpData = await cmpRes.json();
-        const infoRes = await fetch('/api/stock/' + cmpCode);
-        const info = await infoRes.json();
+        cmpData = await StockApi.getJson(`/api/stock/${cmpCode}/${t.api}?${params}`);
+        const info = await StockApi.getJson('/api/stock/' + cmpCode);
         if (code !== document.getElementById('detailCode').textContent.trim()) return;
         if (!info.error) cmpName = info.name;
       } catch {}
@@ -312,8 +309,7 @@ async function incomeSankeySegmentRows(key, revenue) {
   if (!code || !Number.isFinite(year)) return [];
   try {
     const params = new URLSearchParams({ from_year: year, to_year: year, dimension: 'product' });
-    const res = await fetch(`/api/stock/${code}/segments?${params}`);
-    const payload = await res.json();
+    const payload = await StockApi.getJson(`/api/stock/${code}/segments?${params}`);
     const rows = (payload.data || [])
       .filter(row => row.fiscal_year === year && Number(row.revenue) > 0)
       .sort((a, b) => Number(b.revenue || 0) - Number(a.revenue || 0));
@@ -570,9 +566,8 @@ async function updateFinanceTable(prefix, apiUrl) {
   const statusEl = document.getElementById(t.statusId);
   statusEl.textContent = '正在更新数据，请稍候...'; statusEl.style.color = '#1890ff';
   try {
-    const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'incremental' }) });
-    const data = await res.json();
-    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    const data = await StockApi.postJson(apiUrl, { mode: 'incremental' });
+    StockApi.watchJob(data, { open: true });
     if (data.background) {
       statusEl.textContent = data.message || '已转入后台任务';
       statusEl.style.color = '#1890ff';

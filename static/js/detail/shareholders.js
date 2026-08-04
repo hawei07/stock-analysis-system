@@ -17,10 +17,8 @@ async function loadShareholders(code, options = {}) {
   if (wrap) wrap.innerHTML = '<div class="empty" id="shareholdersEmpty">' + (force ? '正在更新股东数据...' : '正在加载股东数据...') + '</div>';
   try {
     const url = '/api/stock/' + code + '/shareholders' + (force ? '?refresh=1' : '');
-    const res = await fetch(url);
-    const data = await res.json();
+    const data = await StockApi.getJson(url);
     if (code !== getCurrentCode()) return;
-    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
     shareholderCache = data.periods || [];
     shareholderCacheCode = code;
     renderShareholders();
