@@ -254,6 +254,7 @@ def register_segment_routes(app, deps):
 
 
     def _upsert_segments(stock_code, records):
+        updated = 0
         for r in records:
             execute_query(
                 """INSERT INTO business_segments
@@ -271,6 +272,27 @@ def register_segment_routes(app, deps):
                 ),
                 fetch=False,
             )
+            updated += 1
+        return updated
+
+
+    def _filter_new_segment_records(stock_code, records):
+        if not records:
+            return []
+        existing_rows = execute_query(
+            """SELECT fiscal_year, report_period, dimension_type, segment_name
+               FROM business_segments
+               WHERE stock_code=%s""",
+            (stock_code,),
+        )
+        existing_keys = {
+            (row["fiscal_year"], row["report_period"], row["dimension_type"], row["segment_name"])
+            for row in existing_rows
+        }
+        return [
+            r for r in records
+            if (r["fiscal_year"], r["report_period"], r["dimension_type"], r["segment_name"]) not in existing_keys
+        ]
 
 
     def _segment_summary(rows):
@@ -324,6 +346,10 @@ def register_segment_routes(app, deps):
     def api_update_segments():
         _ensure_segments_table()
         payload = request.get_json(silent=True) or {}
+        mode = payload.get("mode", "full")
+        if request.args.get("mode"):
+            mode = request.args["mode"]
+        payload = {**payload, "mode": mode}
         stocks = _get_update_stocks(payload)
         if len(stocks) > 1 or (payload.get("background") and stocks):
             return jsonify(start_endpoint_stock_batch(
@@ -363,8 +389,9 @@ def register_segment_routes(app, deps):
                 if not records:
                     errors.append(f"{stock_code}: 未解析到业务构成数据")
                     continue
-                _upsert_segments(stock_code, records)
-                updated += len(records)
+                if mode == "incremental":
+                    records = _filter_new_segment_records(stock_code, records)
+                updated += _upsert_segments(stock_code, records)
             except Exception as e:
                 errors.append(f"{stock_code}: {str(e)}")
             time.sleep(0.3)
@@ -373,6 +400,7 @@ def register_segment_routes(app, deps):
             "success": len(errors) == 0 or updated > 0,
             "records_updated": updated,
             "stocks_processed": len(stocks),
+            "mode": mode,
             "errors": errors[:5] if errors else [],
         })
 
