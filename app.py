@@ -80,6 +80,7 @@ from services import portfolio_cash
 from services import portfolio_money
 from services import portfolio_nav
 from services import portfolio_positions
+from services import portfolio_records
 from services.portfolio_schema import ensure_portfolio_tables
 from services.market_data import (
     fetch_realtime_prices as market_fetch_realtime_prices,
@@ -887,63 +888,11 @@ def _portfolio_flows_payload():
     return portfolio_cash.flows_payload(execute_query, _ensure_portfolio_tables)
 
 def _portfolio_trades_payload(limit=1000):
-    _ensure_portfolio_tables()
-    rows = execute_query(
-        """SELECT t.id, t.trade_date, t.stock_code, s.name, s.market, t.trade_type,
-                  t.shares, t.price, t.amount, t.commission, t.stamp_tax, t.transfer_fee,
-                  t.total_fee, t.cash_delta, t.shares_before, t.shares_after,
-                  t.cost_price_before, t.cost_price_after, t.realized_profit, t.note,
-                  t.is_void, t.voided_at, t.void_note
-           FROM portfolio_trades t
-           JOIN stocks s ON s.code = t.stock_code
-           ORDER BY t.trade_date DESC, t.id DESC
-           LIMIT %s""",
-        (limit,),
-    )
-    result = []
-    for r in rows:
-        item = dict(r)
-        item["trade_date"] = str(r["trade_date"])
-        item["currency"] = _currency_for_market(r.get("market"))
-        for field in ("shares", "price", "amount", "commission", "stamp_tax", "transfer_fee", "total_fee", "cash_delta", "shares_before", "shares_after"):
-            item[field] = float(r[field])
-        for field in ("cost_price_before", "cost_price_after", "realized_profit"):
-            item[field] = float(r[field]) if r.get(field) is not None else None
-        item["is_void"] = bool(r.get("is_void"))
-        item["voided_at"] = str(r["voided_at"]) if r.get("voided_at") else None
-        item["void_note"] = r.get("void_note") or ""
-        result.append(item)
-    return result
+    return portfolio_records.trades_payload(execute_query, _ensure_portfolio_tables, _currency_for_market, limit)
 
 
 def _portfolio_actions_payload(limit=100):
-    _ensure_portfolio_tables()
-    rows = execute_query(
-        """SELECT a.id, a.action_date, a.stock_code, s.name, s.market, a.action_type,
-                  a.cash_amount, a.shares, a.price, a.amount, a.cash_delta,
-                  a.shares_before, a.shares_after, a.cost_price_before, a.cost_price_after, a.note,
-                  a.is_void, a.voided_at, a.void_note
-           FROM portfolio_corporate_actions a
-           JOIN stocks s ON s.code = a.stock_code
-           ORDER BY a.action_date DESC, a.id DESC
-           LIMIT %s""",
-        (limit,),
-    )
-    result = []
-    for r in rows:
-        item = dict(r)
-        item["action_date"] = str(r["action_date"])
-        item["currency"] = _currency_for_market(r.get("market"))
-        for field in ("cash_amount", "shares", "price", "amount", "cash_delta", "shares_before", "shares_after"):
-            item[field] = float(r[field]) if r.get(field) is not None else None
-        for field in ("cost_price_before", "cost_price_after"):
-            item[field] = float(r[field]) if r.get(field) is not None else None
-        item["is_void"] = bool(r.get("is_void"))
-        item["voided_at"] = str(r["voided_at"]) if r.get("voided_at") else None
-        item["void_note"] = r.get("void_note") or ""
-        result.append(item)
-    return result
-
+    return portfolio_records.actions_payload(execute_query, _ensure_portfolio_tables, _currency_for_market, limit)
 
 def _void_linked_cash_flow(source_type, source_id, flow_source, flow_date, amount, code, void_note):
     return portfolio_cash.void_linked_cash_flow(
