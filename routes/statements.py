@@ -3,10 +3,11 @@
 import re
 import time
 
-import requests
 from flask import jsonify, request
 
 from services.background_jobs import start_endpoint_stock_batch
+from services.providers.eastmoney import finance_report
+from services.providers.sina import finance_statement_html
 
 
 def register_statement_routes(app, deps):
@@ -229,22 +230,17 @@ def register_statement_routes(app, deps):
 
 
     def _fetch_eastmoney_income(stock_code):
-        url = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
-        resp = requests.get(
-            url,
+        data = finance_report(
+            "RPT_F10_FINANCE_GINCOME",
             params={
-                "reportName": "RPT_F10_FINANCE_GINCOME",
-                "columns": "ALL",
                 "filter": f'(SECURITY_CODE="{stock_code}")',
                 "pageNumber": 1,
                 "pageSize": 500,
                 "sortColumns": "REPORT_DATE",
                 "sortTypes": -1,
             },
-            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/"},
             timeout=15,
         )
-        data = resp.json()
         rows = (data.get("result") or {}).get("data") or []
         result = {}
         for row in rows:
@@ -352,10 +348,8 @@ def register_statement_routes(app, deps):
         for s in stocks:
             code = s["code"]
             try:
-                url = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_ProfitStatement/stockid/{code}/ctrl/part/displaytype/0.phtml"
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                resp.encoding = "gbk"
-                all_years = _parse_sina_finance(resp.text, INCOME_ROW_MAP)
+                html = finance_statement_html(code, "vFD_ProfitStatement", timeout=15)
+                all_years = _parse_sina_finance(html, INCOME_ROW_MAP)
                 eastmoney_years = _fetch_eastmoney_income(code)
                 all_years = _merge_income_sources(all_years, eastmoney_years)
 
@@ -435,10 +429,8 @@ def register_statement_routes(app, deps):
         for s in stocks:
             code = s["code"]
             try:
-                url = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_CashFlow/stockid/{code}/ctrl/part/displaytype/0.phtml"
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                resp.encoding = "gbk"
-                all_years = _parse_sina_finance(resp.text, CASHFLOW_ROW_MAP)
+                html = finance_statement_html(code, "vFD_CashFlow", timeout=15)
+                all_years = _parse_sina_finance(html, CASHFLOW_ROW_MAP)
 
                 existing = set()
                 if mode == "incremental":

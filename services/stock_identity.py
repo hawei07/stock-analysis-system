@@ -2,7 +2,8 @@
 
 import re
 
-import requests
+from services.providers.eastmoney import stock_snapshot
+from services.providers.tencent import quote_text
 
 
 def market_from_code(code, market=None):
@@ -65,13 +66,8 @@ def eastmoney_web_code(code, market=None):
 
 def fetch_stock_industry(code, market=None):
     try:
-        resp = requests.get(
-            "https://push2.eastmoney.com/api/qt/stock/get",
-            params={"secid": eastmoney_secid(code, market), "fields": "f57,f58,f127"},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=8,
-        )
-        data = resp.json().get("data") or {}
+        data = stock_snapshot(eastmoney_secid(code, market), "f57,f58,f127", timeout=8)
+        data = data.get("data") or {}
         industry = str(data.get("f127") or "").strip()
         return industry or None
     except Exception:
@@ -83,13 +79,8 @@ def lookup_hk_stock_info(code):
     if not re.fullmatch(r"\d{5}", code):
         return None
     try:
-        resp = requests.get(
-            f"https://qt.gtimg.cn/q=hk{code}",
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=8,
-        )
-        resp.encoding = "gbk"
-        text = resp.text or ""
+        text = quote_text(f"hk{code}", timeout=8)
+        text = text or ""
         if not text.startswith("v_hk"):
             return None
         fields = text.split('"')[1].split("~") if '"' in text else []

@@ -3,8 +3,10 @@
 import time
 from datetime import datetime
 
-import requests
 from flask import jsonify, request
+
+from services.http_client import get_json
+from services.providers.tencent import fq_kline, quote_text
 
 
 def register_market_chart_routes(app, deps):
@@ -29,8 +31,7 @@ def register_market_chart_routes(app, deps):
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
             def _get_json(url, timeout=12):
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=timeout)
-                return resp.json()
+                return get_json(url, timeout=timeout)
 
             report_type_map = {
                 "%E5%B9%B4%E6%8A%A5": "FY",
@@ -237,10 +238,7 @@ def register_market_chart_routes(app, deps):
             realtime_pb = None
             try:
                 prefix = "sh" if code.startswith(("6", "5", "9")) else "sz"
-                url3 = f"https://qt.gtimg.cn/q={prefix}{code}"
-                resp3 = requests.get(url3, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-                resp3.encoding = "gbk"
-                text = resp3.text
+                text = quote_text(f"{prefix}{code}", timeout=8)
                 if text.startswith("v_"):
                     parts = text.split("~")
                     if len(parts) >= 40:
@@ -497,9 +495,7 @@ def register_market_chart_routes(app, deps):
             return groups
 
         try:
-            url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,,,{days},qfq"
-            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-            data = resp.json()
+            data = fq_kline(symbol, count=days, timeout=10)
             stock_data = data.get("data", {}).get(symbol, {})
             raw = stock_data.get("day") or stock_data.get("qfqday") or []
             result = aggregate_items([row_to_item(row) for row in raw])

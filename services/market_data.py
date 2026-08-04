@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-import requests
+from services.providers.tencent import fq_kline, quote_text
 
 
 def fetch_realtime_quotes(stocks, quote_symbol):
@@ -11,13 +11,8 @@ def fetch_realtime_quotes(stocks, quote_symbol):
         return {}
     quotes = {}
     try:
-        resp = requests.get(
-            "https://qt.gtimg.cn/q=" + ",".join(symbols),
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10,
-        )
-        resp.encoding = "gbk"
-        for line in resp.text.split(";"):
+        text = quote_text(symbols, timeout=10)
+        for line in text.split(";"):
             if "=" not in line:
                 continue
             parts = line.split('"')
@@ -61,9 +56,7 @@ def fetch_ytd_return(code, market, quote_symbol, current_price=None):
     try:
         year = datetime.now().year
         symbol = quote_symbol(code, market)
-        url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={symbol},day,{year-1}-12-01,,360,qfq"
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-        data = resp.json()
+        data = fq_kline(symbol, start=f"{year-1}-12-01", count=360, timeout=8)
         stock_data = (data.get("data") or {}).get(symbol, {})
         rows = stock_data.get("qfqday") or stock_data.get("day") or []
         if not rows:
