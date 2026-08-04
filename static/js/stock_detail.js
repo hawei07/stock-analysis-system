@@ -1288,13 +1288,26 @@ function renderShareholders() {
 // ==================== 互动易 ====================
 
 let irmAutoSyncStarted = false;
+const IRM_AUTO_SYNC_DATE_KEY = 'irmAutoSyncDate';
+
+function todayKey() {
+  const d = new Date();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
+}
 
 async function startIrmAutoSync() {
   if (irmAutoSyncStarted) return;
+  const today = todayKey();
+  if (localStorage.getItem(IRM_AUTO_SYNC_DATE_KEY) === today) return;
   irmAutoSyncStarted = true;
   try {
     const res = await fetch('/api/irm/sync', { method: 'POST' });
     const data = await res.json();
+    if (res.ok && (data.started || data.already_running || data.ok)) {
+      localStorage.setItem(IRM_AUTO_SYNC_DATE_KEY, today);
+    }
     if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: false });
     pollIrmStatus();
   } catch (e) {
