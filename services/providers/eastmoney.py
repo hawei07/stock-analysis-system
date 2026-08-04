@@ -25,3 +25,17 @@ def finance_report(report_name, *, params=None, timeout=15):
         timeout=timeout,
     )
 
+
+def finance_web_report(report_name, *, params=None, timeout=15):
+    query = {
+        "reportName": report_name,
+        "columns": "ALL",
+    }
+    if params:
+        query.update(params)
+    return get_json(
+        "https://datacenter-web.eastmoney.com/api/data/v1/get",
+        params=query,
+        headers={"Referer": "https://data.eastmoney.com/"},
+        timeout=timeout,
+    )

@@ -2,10 +2,10 @@
 
 import time
 
-import requests
 from flask import jsonify, request
 
 from services.background_jobs import start_endpoint_stock_batch
+from services.providers.sina import finance_statement_html
 
 
 def register_balance_sheet_routes(app, deps):
@@ -189,9 +189,7 @@ def register_balance_sheet_routes(app, deps):
             for s in stocks:
                 code = s["code"]
                 try:
-                    url = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vFD_BalanceSheet/stockid/{code}/ctrl/part/displaytype/0.phtml"
-                    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                    resp.encoding = "gbk"
+                    html = finance_statement_html(code, "vFD_BalanceSheet", timeout=15)
 
                     # 增量模式：查询已有 (year, period) 组合
                     existing_keys = set()
@@ -202,7 +200,7 @@ def register_balance_sheet_routes(app, deps):
                         existing_keys = {(r["fiscal_year"], r["report_period"]) for r in existing}
 
                     # 解析所有季度数据
-                    all_data = _parse_sina_bs(resp.text)
+                    all_data = _parse_sina_bs(html)
 
                     for (year, period), values in sorted(all_data.items()):
                         if mode == "incremental" and (year, period) in existing_keys:

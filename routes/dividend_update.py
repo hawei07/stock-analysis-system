@@ -3,10 +3,12 @@
 import re
 import time
 
-import requests
 from flask import jsonify, request
 
 from services.background_jobs import start_endpoint_stock_batch
+from services.providers.eastmoney import finance_web_report
+from services.providers.sina import share_bonus_html
+from services.providers.tencent import quote_text
 
 
 def register_dividend_update_routes(app, deps):
@@ -63,11 +65,14 @@ def register_dividend_update_routes(app, deps):
 
                 # 1. 获取净利润
                 try:
-                    url = ("https://datacenter-web.eastmoney.com/api/data/v1/get"
-                           "?reportName=RPT_F10_FINANCE_MAINFINADATA&columns=ALL"
-                           f"&filter=(SECURITY_CODE=%22{code}%22)&pageSize=200")
-                    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                    data = resp.json()
+                    data = finance_web_report(
+                        "RPT_F10_FINANCE_MAINFINADATA",
+                        params={
+                            "filter": f"(SECURITY_CODE=%22{code}%22)",
+                            "pageSize": 200,
+                        },
+                        timeout=15,
+                    )
                     if data.get("success"):
                         for item in data["result"]["data"]:
                             if item.get("REPORT_TYPE") == "年报":
@@ -91,10 +96,7 @@ def register_dividend_update_routes(app, deps):
                 need_dividend_fetch = mode == "full" or len(net_profits) > 0
                 if need_dividend_fetch and total_share > 0:
                     try:
-                        url2 = f"https://vip.stock.finance.sina.com.cn/corp/go.php/vISSUE_ShareBonus/stockid/{code}.phtml"
-                        resp2 = requests.get(url2, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-                        resp2.encoding = 'gbk'
-                        text = resp2.text
+                        text = share_bonus_html(code, timeout=15)
                         # 先匹配 tr 块，再提取字段（避免 .*?实施 过滤导致漏掉条目）
                         tr_blocks = re.findall(r'<tr[^>]*>(.*?)</tr>', text, re.DOTALL)
                         for tr in tr_blocks:
@@ -135,10 +137,7 @@ def register_dividend_update_routes(app, deps):
 
                 # 4. 更新 PE TTM 和股息率（腾讯行情接口）
                 try:
-                    url = f"https://qt.gtimg.cn/q={_quote_symbol(code, market)}"
-                    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                    resp.encoding = 'gbk'
-                    text = resp.text
+                    text = quote_text(_quote_symbol(code, market), timeout=10)
                     if text.startswith('v_'):
                         parts = text.split('~')
                         if len(parts) >= 40:
