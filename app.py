@@ -77,6 +77,7 @@ from services import stock_metrics_service
 from services.shareholder_schema import ensure_shareholders_table
 from services import portfolio_audit
 from services import portfolio_cash
+from services import portfolio_dividends
 from services import portfolio_fees
 from services import portfolio_money
 from services import portfolio_nav
@@ -892,30 +893,7 @@ def _portfolio_audit_payload():
     )
 
 def _latest_dividend_per_share(codes):
-    if not codes:
-        return {}
-    placeholders = ",".join(["%s"] * len(codes))
-    rows = execute_query(
-        f"""SELECT stock_code, dividend_per_share, fiscal_year
-            FROM (
-              SELECT stock_code, dividend_per_share, fiscal_year,
-                     ROW_NUMBER() OVER (PARTITION BY stock_code ORDER BY fiscal_year DESC) AS rn
-              FROM dividends
-              WHERE stock_code IN ({placeholders}) AND dividend_per_share IS NOT NULL
-            ) t
-            WHERE rn=1
-            ORDER BY stock_code, fiscal_year DESC""",
-        tuple(codes),
-    )
-    result = {}
-    for r in rows:
-        code = r["stock_code"]
-        item = result.setdefault(code, {})
-        if "dividend_per_share" not in item:
-            item["dividend_per_share"] = float(r["dividend_per_share"])
-            item["fiscal_year"] = int(r["fiscal_year"])
-    return result
-
+    return portfolio_dividends.latest_dividend_per_share(execute_query, codes)
 
 def _resolve_portfolio_stock(identifier):
     ident = _normalize_stock_code(identifier)
