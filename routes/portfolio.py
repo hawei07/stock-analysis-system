@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from flask import jsonify, render_template, request
+from services import portfolio_cash
 from services import portfolio_nav
 
 
@@ -139,11 +140,7 @@ def register_portfolio_routes(app, deps):
         _ensure_portfolio_tables()
         _sync_portfolio_cost_basis_from_trades()
         rebuilt_cash = _portfolio_rebuilt_cash_amount()
-        execute_query(
-            "UPDATE portfolio_cash SET amount=%s WHERE id=1",
-            (_quantize(rebuilt_cash, "0.01"),),
-            fetch=False,
-        )
+        portfolio_cash.set_cash_amount(execute_query, rebuilt_cash)
         state = _save_portfolio_snapshot()
         state["audit"] = _portfolio_audit_payload()
         state["trades"] = _portfolio_trades_payload()
@@ -569,34 +566,18 @@ def register_portfolio_routes(app, deps):
 
     @app.route("/api/portfolio/flows", methods=["POST"])
     def api_portfolio_add_flow():
-        _ensure_portfolio_tables()
         data = request.get_json(force=True)
-        flow_date = str(data.get("flow_date") or datetime.now().date()).strip()
         try:
-            datetime.strptime(flow_date, "%Y-%m-%d")
-        except ValueError:
-            return jsonify({"error": "日期格式必须是 YYYY-MM-DD"}), 400
-        try:
-            amount = float(data.get("amount"))
-        except (TypeError, ValueError):
-            return jsonify({"error": "资金金额必须是数字"}), 400
-        if amount == 0:
-            return jsonify({"error": "资金金额不能为 0"}), 400
-        note = str(data.get("note") or "").strip()[:255]
-        cash_amount = _portfolio_cash_amount()
-        new_cash = cash_amount + amount
-        if new_cash < 0:
-            return jsonify({"error": "现金不足，无法记录这笔流出"}), 400
-        execute_query(
-            "INSERT INTO portfolio_cash_flows (flow_date, amount, flow_source, note) VALUES (%s, %s, %s, %s)",
-            (flow_date, round(amount, 2), "external", note),
-            fetch=False,
-        )
-        execute_query(
-            "UPDATE portfolio_cash SET amount=%s WHERE id=1",
-            (round(new_cash, 2),),
-            fetch=False,
-        )
+            portfolio_cash.add_external_flow(
+                execute_query,
+                _ensure_portfolio_tables,
+                _portfolio_cash_amount,
+                data.get("flow_date"),
+                data.get("amount"),
+                data.get("note"),
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         state = _save_portfolio_snapshot()
         state["flows"] = _portfolio_flows_payload()
         return jsonify({"ok": True, **state})
@@ -604,29 +585,17 @@ def register_portfolio_routes(app, deps):
 
     @app.route("/api/portfolio/flows/<int:flow_id>", methods=["DELETE"])
     def api_portfolio_delete_flow(flow_id):
-        _ensure_portfolio_tables()
-        rows = execute_query("SELECT amount, flow_source, is_void FROM portfolio_cash_flows WHERE id=%s", (flow_id,))
-        if not rows:
-            return jsonify({"error": "未找到这笔资金流水"}), 404
-        if rows[0].get("is_void"):
-            return jsonify({"error": "这笔资金流水已作废"}), 400
-        if rows[0].get("flow_source") in ("trade", "action"):
-            return jsonify({"error": "交易或权益产生的资金流水不能单独作废，请作废原始记录"}), 400
-        amount = float(rows[0]["amount"])
-        cash_amount = _portfolio_cash_amount()
-        new_cash = cash_amount - amount
-        if new_cash < 0:
-            return jsonify({"error": "作废后现金会小于 0，无法作废"}), 400
-        execute_query(
-            "UPDATE portfolio_cash_flows SET is_void=1, voided_at=CURRENT_TIMESTAMP, void_note='作废资金流水' WHERE id=%s",
-            (flow_id,),
-            fetch=False,
-        )
-        execute_query(
-            "UPDATE portfolio_cash SET amount=%s WHERE id=1",
-            (round(new_cash, 2),),
-            fetch=False,
-        )
+        try:
+            portfolio_cash.void_external_flow(
+                execute_query,
+                _ensure_portfolio_tables,
+                _portfolio_cash_amount,
+                flow_id,
+            )
+        except LookupError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         state = _save_portfolio_snapshot()
         state["flows"] = _portfolio_flows_payload()
         return jsonify({"ok": True, **state})
