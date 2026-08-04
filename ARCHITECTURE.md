@@ -717,7 +717,17 @@ GET /api/db/migrations
 | `POST` | `/api/cloud-backup/restore` | 恢复 latest |
 | `POST` | `/api/cloud-backup/restore-file` | 恢复指定历史版本 |
 
-### 8.6 配置、芒格、便利贴
+### 8.6 后台任务
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/jobs` | 查询后台任务列表，支持 `job_type`、`status`、`limit` |
+| `GET` | `/api/jobs/latest` | 查询最近一个后台任务，可按 `job_type` 过滤 |
+| `GET` | `/api/jobs/<job_id>` | 查询单个后台任务详情 |
+| `GET` | `/api/jobs/<job_id>/logs` | 查询任务执行日志 |
+| `POST` | `/api/jobs/<job_id>/cancel` | 请求取消任务，当前股票处理完后停止 |
+
+### 8.7 配置、芒格、便利贴
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -1053,6 +1063,8 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 - 传入 `force: true` 可绕过防重复保护，用于确实需要强制再开一次任务的维护场景。
 - 批量任务创建成功时不会立刻触发自动云备份；任务真正写入数据并完成后，才按对应业务原因安排延迟备份。
 - 单只股票更新仍保持同步返回，并继续沿用原来的请求成功后自动云备份机制。
+- 任务支持取消请求；后台循环会在每只股票处理前检查取消标记，并保留真实进度。
+- 任务日志记录到 `background_job_logs`，用于前端展示每只股票的开始、完成、失败和取消原因。
 
 当前已接入的任务类型：
 

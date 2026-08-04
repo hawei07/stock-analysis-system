@@ -6,7 +6,9 @@ from services.background_jobs import (
     ensure_background_jobs_table,
     get_job,
     latest_job,
+    list_job_logs,
     list_jobs,
+    request_cancel_job,
 )
 
 
@@ -30,6 +32,21 @@ def register_job_routes(app, deps):
     @app.route("/api/jobs/<int:job_id>")
     def api_job_detail(job_id):
         job = get_job(execute_query, job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "未找到后台任务"}), 404
+        return jsonify({"ok": True, "job": job})
+
+    @app.route("/api/jobs/<int:job_id>/logs")
+    def api_job_logs(job_id):
+        job = get_job(execute_query, job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "未找到后台任务"}), 404
+        limit = request.args.get("limit", 200, type=int)
+        return jsonify({"ok": True, "job_id": job_id, "logs": list_job_logs(execute_query, job_id, limit=limit)})
+
+    @app.route("/api/jobs/<int:job_id>/cancel", methods=["POST"])
+    def api_cancel_job(job_id):
+        job = request_cancel_job(execute_query, job_id)
         if not job:
             return jsonify({"ok": False, "error": "未找到后台任务"}), 404
         return jsonify({"ok": True, "job": job})

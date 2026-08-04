@@ -11,9 +11,11 @@ import requests
 from flask import jsonify
 
 from services.background_jobs import (
+    add_job_log,
     create_job,
     fail_job,
     finish_job,
+    is_cancel_requested,
     start_job,
     update_job,
 )
@@ -368,6 +370,7 @@ def register_irm_routes(app, deps):
         inserted = 0
         skipped = 0
         errors = []
+        cancelled = False
         with _irm_sync_lock:
             if _irm_sync_running:
                 return
@@ -388,6 +391,7 @@ def register_irm_routes(app, deps):
             }
         if job_id:
             start_job(execute_query, job_id, "正在抓取互动易")
+            add_job_log(execute_query, job_id, "互动易抓取开始")
 
         try:
             stocks = execute_query("SELECT code, name, market FROM stocks WHERE status='正常' ORDER BY display_order IS NULL, display_order, code")
@@ -395,6 +399,32 @@ def register_irm_routes(app, deps):
             if job_id:
                 update_job(execute_query, job_id, progress_total=eligible_total, message=f"准备抓取 {eligible_total} 只股票的互动易")
             for stock in stocks:
+                if job_id and is_cancel_requested(execute_query, job_id):
+                    cancelled = True
+                    message = f"互动易抓取已取消，已处理 {total}/{eligible_total}"
+                    add_job_log(execute_query, job_id, message, level="warning")
+                    with _irm_sync_lock:
+                        _irm_sync_running = False
+                        _irm_sync_finished_at = datetime.now().isoformat(timespec="seconds")
+                        _irm_sync_last_result = {
+                            "status": "cancelled",
+                            "message": message,
+                            "updated_at": _irm_sync_finished_at,
+                            "scope": "all",
+                            "job_id": job_id,
+                            "total": total,
+                            "inserted": inserted,
+                            "skipped": skipped,
+                            "errors": errors[:20],
+                        }
+                    finish_job(
+                        execute_query,
+                        job_id,
+                        status="cancelled",
+                        message=message,
+                        result={"scope": "all", "total": total, "inserted": inserted, "skipped": skipped, "errors": errors[:20]},
+                    )
+                    return
                 code = stock["code"]
                 market = (stock.get("market") or "").upper()
                 if market not in {"SZ", "SH"}:
@@ -414,8 +444,18 @@ def register_irm_routes(app, deps):
                     result = _sync_irm_stock(code, stock.get("name"), market=market, max_pages=max_pages)
                     inserted += result.get("inserted", 0)
                     skipped += result.get("skipped", 0)
+                    if job_id:
+                        add_job_log(
+                            execute_query,
+                            job_id,
+                            f"{code} 互动易抓取完成",
+                            stock_code=code,
+                            detail={"inserted": result.get("inserted", 0), "skipped": result.get("skipped", 0)},
+                        )
                 except Exception as e:
                     errors.append(f"{code}: {e}")
+                    if job_id:
+                        add_job_log(execute_query, job_id, f"{code} 互动易抓取失败: {e}", level="error", stock_code=code)
                 if job_id:
                     update_job(
                         execute_query,
@@ -429,6 +469,8 @@ def register_irm_routes(app, deps):
         except Exception as e:
             errors.append(str(e))
         finally:
+            if cancelled:
+                return
             finished_at = datetime.now().isoformat(timespec="seconds")
             status = "done" if not errors else "partial"
             message = f"互动易抓取完成，新增 {inserted} 条" if not errors else f"互动易抓取部分完成，新增 {inserted} 条，失败 {len(errors)} 只"
@@ -455,8 +497,10 @@ def register_irm_routes(app, deps):
                 }
             if job_id:
                 if errors and total == 0:
+                    add_job_log(execute_query, job_id, message, level="error", detail={"errors": errors[:20]})
                     fail_job(execute_query, job_id, "\n".join(errors[:20]), message=message, result=result_payload)
                 else:
+                    add_job_log(execute_query, job_id, message, level="info" if status == "done" else "warning")
                     finish_job(execute_query, job_id, status=status, message=message, result=result_payload)
 
 

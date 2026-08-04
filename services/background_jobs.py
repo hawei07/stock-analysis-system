@@ -33,6 +33,15 @@ def _json_loads(value):
         return None
 
 
+def _ensure_column(execute_query, table, column, definition):
+    try:
+        rows = execute_query(f"SHOW COLUMNS FROM {table} LIKE %s", (column,))
+        if not rows:
+            execute_query(f"ALTER TABLE {table} ADD COLUMN {column} {definition}", fetch=False)
+    except Exception:
+        pass
+
+
 def ensure_background_jobs_table(execute_query):
     execute_query(
         """CREATE TABLE IF NOT EXISTS background_jobs (
@@ -44,8 +53,10 @@ def ensure_background_jobs_table(execute_query):
             progress_current INT NOT NULL DEFAULT 0,
             progress_total INT NOT NULL DEFAULT 0,
             message VARCHAR(500) NULL,
+            request_json JSON NULL,
             result_json JSON NULL,
             error TEXT NULL,
+            cancel_requested TINYINT(1) NOT NULL DEFAULT 0,
             started_at DATETIME NULL,
             finished_at DATETIME NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -56,9 +67,26 @@ def ensure_background_jobs_table(execute_query):
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
         fetch=False,
     )
+    _ensure_column(execute_query, "background_jobs", "request_json", "JSON NULL")
+    _ensure_column(execute_query, "background_jobs", "cancel_requested", "TINYINT(1) NOT NULL DEFAULT 0")
+    execute_query(
+        """CREATE TABLE IF NOT EXISTS background_job_logs (
+            id BIGINT NOT NULL AUTO_INCREMENT,
+            job_id BIGINT NOT NULL,
+            level VARCHAR(20) NOT NULL DEFAULT 'info',
+            stock_code VARCHAR(20) NULL,
+            message VARCHAR(500) NOT NULL,
+            detail_json JSON NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_background_job_logs_job_id (job_id),
+            KEY idx_background_job_logs_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
+        fetch=False,
+    )
 
 
-def create_job(get_connection, execute_query, job_type, title=None, stock_code=None, progress_total=0, message=None):
+def create_job(get_connection, execute_query, job_type, title=None, stock_code=None, progress_total=0, message=None, request_payload=None):
     ensure_background_jobs_table(execute_query)
     conn = get_connection()
     cursor = None
@@ -66,9 +94,9 @@ def create_job(get_connection, execute_query, job_type, title=None, stock_code=N
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
             """INSERT INTO background_jobs
-               (job_type, status, stock_code, title, progress_total, message)
-               VALUES (%s, 'queued', %s, %s, %s, %s)""",
-            (job_type, stock_code, title, int(progress_total or 0), message),
+               (job_type, status, stock_code, title, progress_total, message, request_json)
+               VALUES (%s, 'queued', %s, %s, %s, %s, %s)""",
+            (job_type, stock_code, title, int(progress_total or 0), message, _json_dumps(request_payload)),
         )
         conn.commit()
         return cursor.lastrowid
@@ -107,6 +135,63 @@ def start_job(execute_query, job_id, message=None):
     )
 
 
+def add_job_log(execute_query, job_id, message, level="info", stock_code=None, detail=None):
+    ensure_background_jobs_table(execute_query)
+    return execute_query(
+        """INSERT INTO background_job_logs (job_id, level, stock_code, message, detail_json)
+           VALUES (%s, %s, %s, %s, %s)""",
+        (job_id, level, stock_code, str(message)[:500], _json_dumps(detail)),
+        fetch=False,
+    )
+
+
+def log_payload(row):
+    return {
+        "id": row.get("id"),
+        "job_id": row.get("job_id"),
+        "level": row.get("level"),
+        "stock_code": row.get("stock_code"),
+        "message": row.get("message"),
+        "detail": _json_loads(row.get("detail_json")),
+        "created_at": row.get("created_at"),
+    }
+
+
+def list_job_logs(execute_query, job_id, limit=200):
+    ensure_background_jobs_table(execute_query)
+    rows = execute_query(
+        """SELECT id, job_id, level, stock_code, message, detail_json, created_at
+           FROM background_job_logs
+           WHERE job_id=%s
+           ORDER BY id ASC
+           LIMIT %s""",
+        (job_id, max(1, min(int(limit or 200), 1000))),
+    )
+    return [log_payload(row) for row in rows]
+
+
+def request_cancel_job(execute_query, job_id):
+    job = get_job(execute_query, job_id)
+    if not job:
+        return None
+    if job["status"] in TERMINAL_STATUSES:
+        return job
+    execute_query(
+        """UPDATE background_jobs
+           SET cancel_requested=1, message='正在取消，当前股票处理完后停止'
+           WHERE id=%s""",
+        (job_id,),
+        fetch=False,
+    )
+    add_job_log(execute_query, job_id, "收到取消请求，当前股票处理完后停止", level="warning")
+    return get_job(execute_query, job_id)
+
+
+def is_cancel_requested(execute_query, job_id):
+    rows = execute_query("SELECT cancel_requested FROM background_jobs WHERE id=%s LIMIT 1", (job_id,))
+    return bool(rows and rows[0].get("cancel_requested"))
+
+
 def update_job(execute_query, job_id, progress_current=None, progress_total=None, message=None, result=None):
     sets = []
     params = []
@@ -135,10 +220,11 @@ def update_job(execute_query, job_id, progress_current=None, progress_total=None
 def finish_job(execute_query, job_id, status="done", message=None, result=None):
     if status not in TERMINAL_STATUSES:
         status = "done"
+    progress_clause = ", progress_current=GREATEST(progress_current, progress_total)" if status == "done" else ""
     execute_query(
-        """UPDATE background_jobs
+        f"""UPDATE background_jobs
            SET status=%s, message=COALESCE(%s, message), result_json=COALESCE(%s, result_json),
-               finished_at=%s, progress_current=GREATEST(progress_current, progress_total)
+               finished_at=%s{progress_clause}
            WHERE id=%s""",
         (status, message, _json_dumps(result), _now(), job_id),
         fetch=False,
@@ -173,8 +259,10 @@ def job_payload(row):
         "progress_total": total,
         "progress_percent": progress_percent,
         "message": row.get("message"),
+        "request": _json_loads(row.get("request_json")),
         "result": _json_loads(row.get("result_json")),
         "error": row.get("error"),
+        "cancel_requested": bool(row.get("cancel_requested")),
         "started_at": row.get("started_at"),
         "finished_at": row.get("finished_at"),
         "created_at": row.get("created_at"),
@@ -268,6 +356,7 @@ def start_endpoint_stock_batch(
         title=title,
         progress_total=len(stocks),
         message="等待开始",
+        request_payload=payload,
     )
 
     def runner():
@@ -275,11 +364,24 @@ def start_endpoint_stock_batch(
         processed = 0
         errors = []
         start_job(execute_query, job_id, "后台任务已开始")
+        add_job_log(execute_query, job_id, f"{title}开始，共 {len(stocks)} 只股票")
         try:
             for stock in stocks:
+                if is_cancel_requested(execute_query, job_id):
+                    message = f"{title}已取消，已处理 {processed}/{len(stocks)}"
+                    add_job_log(execute_query, job_id, message, level="warning")
+                    finish_job(
+                        execute_query,
+                        job_id,
+                        status="cancelled",
+                        message=message,
+                        result={"stocks_processed": processed, "records_updated": updated, "errors": errors[:20]},
+                    )
+                    return
                 processed += 1
                 code = stock["code"]
                 stock_payload = {**payload, "code": code}
+                add_job_log(execute_query, job_id, f"开始更新 {code}", stock_code=code)
                 update_job(
                     execute_query,
                     job_id,
@@ -299,8 +401,16 @@ def start_endpoint_stock_batch(
                         errors.extend(f"{code}: {err}" for err in result.get("errors")[:5])
                     if result.get("success") is False:
                         errors.append(f"{code}: {result.get('error') or result.get('message') or '更新失败'}")
+                    add_job_log(
+                        execute_query,
+                        job_id,
+                        f"{code} 更新完成",
+                        stock_code=code,
+                        detail={"records_updated": result.get("records_updated") or result.get("saved_count") or 0, "errors": result.get("errors") or []},
+                    )
                 except Exception as exc:
                     errors.append(f"{code}: {exc}")
+                    add_job_log(execute_query, job_id, f"{code} 更新失败: {exc}", level="error", stock_code=code)
                 update_job(
                     execute_query,
                     job_id,
@@ -311,6 +421,7 @@ def start_endpoint_stock_batch(
                 )
             status = "done" if not errors else "partial"
             message = f"{title}完成" if not errors else f"{title}部分完成，失败 {len(errors)} 项"
+            add_job_log(execute_query, job_id, message, level="info" if status == "done" else "warning")
             finish_job(
                 execute_query,
                 job_id,
@@ -328,6 +439,7 @@ def start_endpoint_stock_batch(
                     "errors": errors[:20],
                 })
         except Exception:
+            add_job_log(execute_query, job_id, f"{title}失败", level="error", detail={"traceback": traceback.format_exc()})
             fail_job(execute_query, job_id, traceback.format_exc(), message=f"{title}失败")
 
     threading.Thread(target=runner, daemon=True).start()
