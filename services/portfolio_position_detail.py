@@ -21,7 +21,7 @@ def position_detail(
         """SELECT p.stock_code, p.shares, p.cost_price, p.custom_dividend_per_share,
                   s.name, s.market, s.industry
            FROM portfolio_positions p
-           JOIN stocks s ON s.code = p.stock_code
+           LEFT JOIN stocks s ON s.code = p.stock_code
            WHERE p.stock_code=%s
            LIMIT 1""",
         (code,),
@@ -39,8 +39,8 @@ def position_detail(
         "ok": True,
         "held": True,
         "code": r["stock_code"],
-        "name": r["name"],
-        "market": r["market"],
+        "name": r.get("name") or r["stock_code"],
+        "market": r.get("market") or "SH",
         "industry": r.get("industry"),
         "shares": shares,
         "cost_price": round(float(r["cost_price"]), 4) if r.get("cost_price") is not None else None,

@@ -1096,9 +1096,11 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 
 ### 14.5 删除股票数据清理
 
-删除股票接口 `/api/stock/<code>` 会通过 `services/stock_delete_service.py` 清理该股票的本地数据：
+删除股票接口 `/api/stock/<code>` 会通过 `services/stock_delete_service.py` 清理该股票的详情页/研究数据，但保留我的持仓数据：
 
-- 动态删除所有包含 `stock_code` 字段且匹配该股票代码的数据库记录，包括财报、分红、估值参数、股东、互动易、便利贴、芒格对话、持仓记录等。
-- 删除持仓交易/公司行为前，会先删除其关联的 `portfolio_cash_flows`，并按被删除流水金额反向调整当前现金。
+- 删除财报、分红、估值参数、股东、互动易、便利贴、芒格对话等详情页/研究数据。
+- 不删除 `portfolio_positions`、`portfolio_trades`、`portfolio_corporate_actions`，也不删除或调整 `portfolio_cash_flows`。
+- 如果该股票仍有持仓/交易/公司行为记录，`stocks` 主表不物理删除，只设置 `is_watchlist=0` 从自选股列表隐藏，避免数据库外键级联删除持仓。
+- 如果该股票没有任何持仓相关记录，则物理删除 `stocks` 主表记录。
 - 删除 `data/sticky_notes.json` 中绑定该股票的便利贴，并清理便利贴图片附件。
-- 组合级历史数据如 `portfolio_nav_snapshots` 没有单只股票字段，删除股票时不会按单股拆分删除。
+- 重新添加曾经隐藏的股票时，会把 `is_watchlist` 恢复为 `1`，重新显示在自选股列表。

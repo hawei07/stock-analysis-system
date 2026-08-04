@@ -157,12 +157,12 @@ def register_stock_basic_routes(app, deps):
             return jsonify({"error": "请输入股票代码"}), 400
 
         existing = Stock.get_by_code(code)
-        if existing:
+        if existing and int(existing.get("is_watchlist", 1) or 0) == 1:
             return jsonify({"error": f"股票代码 {code} 已存在"}), 409
 
         # 如果没传名称或市场，自动从东方财富获取
-        name = data.get("name", "").strip()
-        market = data.get("market", "").strip()
+        name = data.get("name", "").strip() or (existing.get("name") if existing else "")
+        market = data.get("market", "").strip() or (existing.get("market") if existing else "")
         if not name or not market:
             if re.fullmatch(r"\d{5}", code):
                 hk = lookup_hk_stock_info(code)
@@ -224,9 +224,9 @@ def register_stock_basic_routes(app, deps):
         code = normalize_stock_code(code)
         try:
             result = delete_stock_with_related_data(get_connection, code)
-            if result.get("deleted_stock"):
+            if result.get("deleted_stock") or result.get("hidden_stock"):
                 result["sticky_json_deleted"] = delete_stock_sticky_notes(load_notes, save_notes, cleanup_images, code)
-                return jsonify({"success": True, "message": "删除成功，相关数据已清理", **result})
+                return jsonify({"success": True, "message": "删除成功，详情数据已清理，持仓数据已保留", **result})
             return jsonify({"error": "未找到该股票"}), 404
         except Exception as e:
             return jsonify({"error": str(e)}), 400

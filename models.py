@@ -7,10 +7,22 @@ class Stock:
     """股票模型"""
 
     @staticmethod
+    def ensure_watchlist_column():
+        """Ensure stocks can be hidden from the watchlist without deleting portfolio refs."""
+        try:
+            rows = execute_query("SHOW COLUMNS FROM stocks LIKE 'is_watchlist'")
+            if not rows:
+                execute_update("ALTER TABLE stocks ADD COLUMN is_watchlist TINYINT NOT NULL DEFAULT 1")
+        except Exception:
+            pass
+
+    @staticmethod
     def get_all(page=1, page_size=20, market=None, status=None, keyword=None):
         """分页查询股票列表，支持按市场/状态筛选和关键字搜索"""
+        Stock.ensure_watchlist_column()
         conditions = []
         params = []
+        conditions.append("(is_watchlist IS NULL OR is_watchlist=1)")
 
         if market:
             conditions.append("market = %s")
@@ -50,9 +62,20 @@ class Stock:
     @staticmethod
     def add(code, name, market, industry=None, list_date=None, status="正常"):
         """添加一只股票"""
+        Stock.ensure_watchlist_column()
         sql = """INSERT INTO stocks (code, name, market, industry, list_date, status)
                  VALUES (%s, %s, %s, %s, %s, %s)"""
-        return execute_update(sql, (code, name, market, industry, list_date, status))
+        try:
+            return execute_update(sql, (code, name, market, industry, list_date, status))
+        except Exception as exc:
+            if "Duplicate" not in str(exc) and "1062" not in str(exc):
+                raise
+            return execute_update(
+                """UPDATE stocks
+                   SET name=%s, market=%s, industry=%s, list_date=%s, status=%s, is_watchlist=1
+                   WHERE code=%s""",
+                (name, market, industry, list_date, status, code),
+            )
 
     @staticmethod
     def update(code, **kwargs):

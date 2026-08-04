@@ -1,4 +1,18 @@
-"""Delete a stock and all stock-scoped local data."""
+"""Delete stock detail data without deleting portfolio history."""
+
+
+PORTFOLIO_TABLES = {
+    "portfolio_positions",
+    "portfolio_trades",
+    "portfolio_corporate_actions",
+}
+EXCLUDED_STOCK_CODE_TABLES = {
+    "background_jobs",
+    "background_job_logs",
+    "portfolio_positions",
+    "portfolio_trades",
+    "portfolio_corporate_actions",
+}
 
 
 def _table_exists(cursor, table):
@@ -28,68 +42,63 @@ def _delete_from_table(cursor, table, code):
     return cursor.rowcount
 
 
+def _ensure_watchlist_column(cursor):
+    cursor.execute("SHOW COLUMNS FROM stocks LIKE 'is_watchlist'")
+    if not cursor.fetchall():
+        cursor.execute("ALTER TABLE stocks ADD COLUMN is_watchlist TINYINT NOT NULL DEFAULT 1")
+
+
+def _has_portfolio_refs(cursor, code):
+    for table in PORTFOLIO_TABLES:
+        if not _table_exists(cursor, table):
+            continue
+        cursor.execute(f"SELECT 1 FROM `{table}` WHERE stock_code=%s LIMIT 1", (code,))
+        if cursor.fetchone():
+            return True
+    return False
+
+
 def delete_stock_with_related_data(get_connection, code):
-    """Delete stock master row and every local table keyed by stock_code."""
+    """Clear stock detail data and remove the stock from the watchlist.
+
+    Portfolio tables are intentionally kept. If portfolio records reference this
+    stock, the stocks row is kept with is_watchlist=0 to avoid FK cascades and to
+    preserve display metadata for holdings.
+    """
     conn = get_connection()
     cursor = None
     deleted = {}
-    cash_adjustment = 0
     try:
         cursor = conn.cursor(dictionary=True)
+        _ensure_watchlist_column(cursor)
         cursor.execute("SELECT code, name FROM stocks WHERE code=%s LIMIT 1", (code,))
         stock = cursor.fetchone()
         if not stock:
-            return {"deleted_stock": 0, "deleted": {}, "cash_adjustment": 0}
-
-        trade_ids = []
-        action_ids = []
-        if _table_exists(cursor, "portfolio_trades"):
-            cursor.execute("SELECT id FROM portfolio_trades WHERE stock_code=%s", (code,))
-            trade_ids = [row["id"] for row in cursor.fetchall()]
-        if _table_exists(cursor, "portfolio_corporate_actions"):
-            cursor.execute("SELECT id FROM portfolio_corporate_actions WHERE stock_code=%s", (code,))
-            action_ids = [row["id"] for row in cursor.fetchall()]
-
-        if _table_exists(cursor, "portfolio_cash_flows") and (trade_ids or action_ids):
-            clauses = []
-            params = []
-            if trade_ids:
-                placeholders = ", ".join(["%s"] * len(trade_ids))
-                clauses.append(f"(source_type='trade' AND source_id IN ({placeholders}))")
-                params.extend(trade_ids)
-            if action_ids:
-                placeholders = ", ".join(["%s"] * len(action_ids))
-                clauses.append(f"(source_type='action' AND source_id IN ({placeholders}))")
-                params.extend(action_ids)
-
-            where_sql = " OR ".join(clauses)
-            cursor.execute(
-                f"SELECT COALESCE(SUM(amount), 0) AS total FROM portfolio_cash_flows WHERE is_void=0 AND ({where_sql})",
-                tuple(params),
-            )
-            row = cursor.fetchone()
-            cash_adjustment = float(row["total"] or 0)
-            cursor.execute(f"DELETE FROM portfolio_cash_flows WHERE {where_sql}", tuple(params))
-            deleted["portfolio_cash_flows"] = cursor.rowcount
-
-            if cash_adjustment and _table_exists(cursor, "portfolio_cash"):
-                cursor.execute("UPDATE portfolio_cash SET amount=amount-%s WHERE id=1", (cash_adjustment,))
+            return {"deleted_stock": 0, "hidden_stock": 0, "deleted": {}}
 
         for table in _stock_code_tables(cursor):
-            if table == "stocks":
+            if table in EXCLUDED_STOCK_CODE_TABLES:
                 continue
             count = _delete_from_table(cursor, table, code)
             if count:
                 deleted[table] = deleted.get(table, 0) + count
 
-        cursor.execute("DELETE FROM stocks WHERE code=%s", (code,))
-        deleted_stock = cursor.rowcount
+        has_portfolio_refs = _has_portfolio_refs(cursor, code)
+        if has_portfolio_refs:
+            cursor.execute("UPDATE stocks SET is_watchlist=0 WHERE code=%s", (code,))
+            deleted_stock = 0
+            hidden_stock = cursor.rowcount
+        else:
+            cursor.execute("DELETE FROM stocks WHERE code=%s", (code,))
+            deleted_stock = cursor.rowcount
+            hidden_stock = 0
         conn.commit()
         return {
             "deleted_stock": deleted_stock,
+            "hidden_stock": hidden_stock,
+            "portfolio_preserved": has_portfolio_refs,
             "stock": stock,
             "deleted": deleted,
-            "cash_adjustment": cash_adjustment,
         }
     except Exception:
         conn.rollback()

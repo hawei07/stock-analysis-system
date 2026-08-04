@@ -538,7 +538,7 @@ async function syncAddedStockDetails(code) {
 }
 
 async function deleteStock(code, name) {
-  if (!confirm(`确认删除 ${code} ${name}？\n\n这会同时删除该股票的财报、分红、股东、互动易、估值、便利贴、芒格对话和持仓相关本地数据。`)) return;
+  if (!confirm(`确认删除 ${code} ${name}？\n\n这会清理该股票详情页的财报、分红、股东、互动易、估值、便利贴和芒格对话数据，但不会删除我的持仓中的仓位、交易记录或现金流水。`)) return;
   try {
     const res = await fetch('/api/stock/' + code, { method: 'DELETE' });
     const data = await res.json();

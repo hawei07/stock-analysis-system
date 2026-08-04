@@ -21,7 +21,7 @@ def current_state(
         """SELECT p.id, p.stock_code, p.shares, p.cost_price, p.custom_dividend_per_share,
                   s.name, s.market, s.industry
            FROM portfolio_positions p
-           JOIN stocks s ON s.code = p.stock_code
+           LEFT JOIN stocks s ON s.code = p.stock_code
            ORDER BY p.updated_at DESC, p.id DESC"""
     )
     fill_missing_stock_industries(rows)
@@ -100,8 +100,8 @@ def current_state(
         positions.append({
             "id": r["id"],
             "code": code,
-            "name": r["name"],
-            "market": r["market"],
+            "name": r.get("name") or code,
+            "market": r.get("market") or "SH",
             "industry": r.get("industry"),
             "shares": shares,
             "cost_price": round(cost_price, 4) if cost_price is not None else None,
