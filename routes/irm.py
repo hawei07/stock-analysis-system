@@ -7,7 +7,6 @@ import threading
 import time
 from datetime import datetime
 
-import requests
 from flask import jsonify
 
 from services.background_jobs import (
@@ -19,6 +18,7 @@ from services.background_jobs import (
     start_job,
     update_job,
 )
+from services.http_client import new_session
 
 _irm_sync_lock = threading.Lock()
 _irm_sync_running = False
@@ -165,7 +165,7 @@ def register_irm_routes(app, deps):
 
 
     def _sync_cninfo_irm_stock(code, stock_name=None, max_pages=2, stop_on_duplicate=True):
-        session = requests.Session()
+        session = new_session()
         org_id = _irm_fetch_org_id(session, code)
         if not org_id:
             return {"code": code, "inserted": 0, "skipped": 0, "message": "未找到互动易组织代码"}
@@ -301,7 +301,7 @@ def register_irm_routes(app, deps):
 
 
     def _sync_sse_irm_stock(code, stock_name=None, max_pages=2, stop_on_duplicate=True):
-        session = requests.Session()
+        session = new_session()
         headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://sns.sseinfo.com/qa.do"}
         resp = session.post(
             "https://sns.sseinfo.com/ajax/getCompany.do",

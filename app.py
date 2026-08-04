@@ -4,7 +4,6 @@ from flask import Flask, jsonify, has_request_context, request
 import sys
 import re
 import time
-import requests
 import json
 import os
 import shutil
@@ -12,6 +11,7 @@ import subprocess
 import tempfile
 import threading
 from datetime import datetime
+from services.http_client import get_json
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
@@ -293,12 +293,7 @@ def _exchange_rate_to_cny(currency):
 
     if currency == "HKD":
         try:
-            resp = requests.get(
-                "https://api.frankfurter.dev/v2/rate/HKD/CNY",
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=8,
-            )
-            data = resp.json()
+            data = get_json("https://api.frankfurter.dev/v2/rate/HKD/CNY", timeout=8)
             rate = float(data.get("rate"))
             payload = {
                 "rate": rate,

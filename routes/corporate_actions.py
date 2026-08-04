@@ -1,7 +1,8 @@
 """Dividend and financing routes for stock detail pages."""
 
-import requests
 from flask import jsonify, request
+
+from services.providers.eastmoney import bonus_financing
 
 
 def register_corporate_action_routes(app, deps):
@@ -52,17 +53,7 @@ def register_corporate_action_routes(app, deps):
 
         secu_code = eastmoney_secu_code(code, stock.get("market"))
         try:
-            resp = requests.get(
-                "https://emweb.securities.eastmoney.com/PC_HSF10/BonusFinancing/PageAjax",
-                params={"code": secu_code},
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": f"https://emweb.securities.eastmoney.com/PC_HSF10/BonusFinancing/Index?code={stock.get('market', '')}{code}&type=web",
-                },
-                timeout=12,
-            )
-            resp.raise_for_status()
-            payload = resp.json()
+            payload = bonus_financing(secu_code, referer_code=f"{stock.get('market', '')}{code}", timeout=12)
         except Exception as e:
             return jsonify({"error": "融资数据获取失败: " + str(e)}), 502
 

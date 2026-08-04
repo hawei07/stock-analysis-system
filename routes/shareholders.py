@@ -1,9 +1,13 @@
 """Shareholder routes for stock detail pages."""
 
-import requests
 from flask import jsonify, request
 
 from services.background_jobs import start_endpoint_stock_batch
+from services.providers.eastmoney import (
+    shareholder_freeholders,
+    shareholder_research_detail,
+    shareholder_research_index,
+)
 
 
 def register_shareholder_routes(app, deps):
@@ -60,44 +64,12 @@ def register_shareholder_routes(app, deps):
         source = "东方财富数据中心 十大股东"
 
         try:
-            params = {
-                "sortColumns": "END_DATE,HOLDER_RANK",
-                "sortTypes": "-1,1",
-                "pageSize": "1000",
-                "pageNumber": "1",
-                "reportName": "RPT_F10_EH_FREEHOLDERS",
-                "columns": "ALL",
-                "source": "WEB",
-                "client": "WEB",
-                "filter": f'(SECURITY_CODE="{code}")',
-            }
-            resp = requests.get(
-                "https://datacenter-web.eastmoney.com/api/data/v1/get",
-                params=params,
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": "https://data.eastmoney.com/gdfx/HoldingAnalyse.html",
-                },
-                timeout=12,
-            )
-            resp.raise_for_status()
-            payload = resp.json()
+            payload = shareholder_freeholders(code, timeout=12)
             result = payload.get("result") or {}
             rows = _as_list(result.get("data"))
             pages = int(result.get("pages") or 1)
             for page_number in range(2, min(pages, 5) + 1):
-                params["pageNumber"] = str(page_number)
-                page_resp = requests.get(
-                    "https://datacenter-web.eastmoney.com/api/data/v1/get",
-                    params=params,
-                    headers={
-                        "User-Agent": "Mozilla/5.0",
-                        "Referer": "https://data.eastmoney.com/gdfx/HoldingAnalyse.html",
-                    },
-                    timeout=12,
-                )
-                page_resp.raise_for_status()
-                page_payload = page_resp.json()
+                page_payload = shareholder_freeholders(code, page_number=page_number, timeout=12)
                 rows.extend(_as_list((page_payload.get("result") or {}).get("data")))
         except Exception as e:
             app.logger.warning("datacenter shareholder fetch failed for %s: %s", code, e)
@@ -129,17 +101,7 @@ def register_shareholder_routes(app, deps):
         if not rows_by_date:
             web_code = _eastmoney_web_code(code, stock.get("market"))
             try:
-                resp = requests.get(
-                    "https://emweb.securities.eastmoney.com/PC_HSF10/ShareholderResearch/PageAjax",
-                    params={"code": secu_code},
-                    headers={
-                        "User-Agent": "Mozilla/5.0",
-                        "Referer": f"https://emweb.securities.eastmoney.com/PC_HSF10/ShareholderResearch/Index?code={web_code}&type=web",
-                    },
-                    timeout=12,
-                )
-                resp.raise_for_status()
-                payload = resp.json()
+                payload = shareholder_research_index(secu_code, referer_code=web_code, timeout=12)
                 report_dates = {
                     _date_only(row.get("END_DATE")): str(row.get("IS_REPORTDATE") or "") == "1"
                     for row in _as_list(payload.get("sdgd_date"))
@@ -147,17 +109,7 @@ def register_shareholder_routes(app, deps):
                 }
                 source = "东方财富 F10 股东研究"
                 for date in list(report_dates.keys())[:40]:
-                    detail_resp = requests.get(
-                        "https://emweb.securities.eastmoney.com/PC_HSF10/ShareholderResearch/PageSDGD",
-                        params={"code": web_code, "date": date},
-                        headers={
-                            "User-Agent": "Mozilla/5.0",
-                            "Referer": f"https://emweb.securities.eastmoney.com/PC_HSF10/ShareholderResearch/Index?code={web_code}&type=web",
-                        },
-                        timeout=8,
-                    )
-                    detail_resp.raise_for_status()
-                    detail_payload = detail_resp.json()
+                    detail_payload = shareholder_research_detail(web_code, date, timeout=8)
                     for row in _as_list(detail_payload.get("sdgd")):
                         rank = int(_money_yuan(row.get("HOLDER_RANK")) or 0)
                         if rank < 1 or rank > 10:

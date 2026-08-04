@@ -2,10 +2,11 @@
 
 import re
 
-import requests
 from flask import jsonify, request
 
 from services.stock_delete_service import delete_stock_sticky_notes, delete_stock_with_related_data
+from services.providers.eastmoney import stock_suggest, stock_snapshot_web
+from services.providers.tencent import quote_text
 
 
 def register_stock_basic_routes(app, deps):
@@ -33,10 +34,7 @@ def register_stock_basic_routes(app, deps):
             # 获取实时行情：股价、PE(TTM)、PB、市值
             realtime = {"price": None, "pe_ttm": None, "pb": None, "market_cap": None}
             try:
-                url = f"https://qt.gtimg.cn/q={quote_symbol(code, stock.get('market'))}"
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-                resp.encoding = "gbk"
-                text = resp.text
+                text = quote_text(quote_symbol(code, stock.get('market')), timeout=8)
                 if text.startswith("v_"):
                     parts = text.split("~")
                     if len(parts) >= 4:
@@ -95,9 +93,7 @@ def register_stock_basic_routes(app, deps):
                 return jsonify([hk])
         # 本地无结果，尝试东方财富搜索
         try:
-            url = "https://searchadapter.eastmoney.com/api/suggest/get?type=14&input=" + keyword
-            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-            data = resp.json()
+            data = stock_suggest(keyword, timeout=8)
             ext = data.get("QuotationCodeTable", {}).get("Data", [])
             for r in ext[:8]:
                 code = r.get("Code", "")
@@ -132,9 +128,7 @@ def register_stock_basic_routes(app, deps):
         industry = None
         for sec_market, our_market in markets_to_try:
             try:
-                url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={sec_market}.{code}&fields=f57,f58,f127,f300"
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                data = resp.json()
+                data = stock_snapshot_web(f"{sec_market}.{code}", "f57,f58,f127,f300", timeout=10)
                 if data.get("data") and data["data"].get("f58"):
                     name = data["data"]["f58"]
                     market = our_market
@@ -172,9 +166,7 @@ def register_stock_basic_routes(app, deps):
             markets_to_try = [("1", "SH"), ("0", "SZ")] if code.startswith(("6", "5", "9")) else [("0", "SZ"), ("1", "SH")]
             for sec_market, our_market in markets_to_try:
                 try:
-                    url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={sec_market}.{code}&fields=f57,f58"
-                    resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                    resp_data = resp.json()
+                    resp_data = stock_snapshot_web(f"{sec_market}.{code}", "f57,f58", timeout=10)
                     if resp_data.get("data") and resp_data["data"].get("f58"):
                         if not name:
                             name = resp_data["data"]["f58"]

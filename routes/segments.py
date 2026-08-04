@@ -3,10 +3,10 @@
 import re
 import time
 
-import requests
 from flask import jsonify, request
 
 from services.background_jobs import start_endpoint_stock_batch
+from services.providers.eastmoney import segment_report
 
 
 def register_segment_routes(app, deps):
@@ -370,22 +370,7 @@ def register_segment_routes(app, deps):
         for s in stocks:
             stock_code = s["code"]
             try:
-                url = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
-                resp = requests.get(
-                    url,
-                    params={
-                        "reportName": "RPT_F10_FN_MAINOP",
-                        "columns": "ALL",
-                        "filter": f'(SECURITY_CODE="{stock_code}")',
-                        "pageNumber": 1,
-                        "pageSize": 500,
-                        "sortColumns": "REPORT_DATE",
-                        "sortTypes": -1,
-                    },
-                    headers={"User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/"},
-                    timeout=15,
-                )
-                records = _parse_eastmoney_segments(resp.json())
+                records = _parse_eastmoney_segments(segment_report(stock_code, timeout=15))
                 if not records:
                     errors.append(f"{stock_code}: 未解析到业务构成数据")
                     continue

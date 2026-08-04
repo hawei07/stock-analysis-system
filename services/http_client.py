@@ -33,6 +33,14 @@ def get(url: str, *, timeout: int | float = DEFAULT_TIMEOUT, headers: dict[str, 
     return request("GET", url, timeout=timeout, headers=headers, **kwargs)
 
 
+def session() -> requests.Session:
+    return _SESSION
+
+
+def new_session() -> requests.Session:
+    return requests.Session()
+
+
 def get_text(url: str, *, encoding: str | None = None, timeout: int | float = DEFAULT_TIMEOUT, headers: dict[str, str] | None = None, **kwargs: Any) -> str:
     resp = get(url, timeout=timeout, headers=headers, **kwargs)
     if encoding:
