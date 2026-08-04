@@ -721,6 +721,12 @@ async function updateFinancials() {
       body: JSON.stringify({ mode: 'incremental' })
     });
     const data = await res.json();
+    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    if (data.background) {
+      statusEl.textContent = data.message || '已转入后台任务';
+      statusEl.style.color = '#1890ff';
+      return;
+    }
     if (data.success) {
       statusEl.textContent = `更新完成: ${data.records_updated} 条记录 (${data.stocks_processed} 只股票)`;
       statusEl.style.color = '#52c41a';
@@ -822,6 +828,11 @@ async function updateSegments() {
       body: JSON.stringify({ code })
     });
     const data = await res.json();
+    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    if (data.background) {
+      status.textContent = data.message || '已转入后台任务';
+      return;
+    }
     if (data.success) {
       showToast('营收构成更新完成: ' + (data.records_updated || 0) + ' 条', 'success');
       await loadSegments();
@@ -1797,6 +1808,12 @@ async function updateBalanceSheet() {
       body: JSON.stringify({ mode: 'incremental' })
     });
     const data = await res.json();
+    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    if (data.background) {
+      statusEl.textContent = data.message || '已转入后台任务';
+      statusEl.style.color = '#1890ff';
+      return;
+    }
     if (data.success) {
       statusEl.textContent = `更新完成: ${data.records_updated} 条记录 (${data.stocks_processed} 只股票)`;
       statusEl.style.color = '#52c41a';
@@ -2460,6 +2477,12 @@ async function updateFinanceTable(prefix, apiUrl) {
   try {
     const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'incremental' }) });
     const data = await res.json();
+    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
+    if (data.background) {
+      statusEl.textContent = data.message || '已转入后台任务';
+      statusEl.style.color = '#1890ff';
+      return;
+    }
     if (data.success) { statusEl.textContent = `更新完成: ${data.records_updated} 条`; statusEl.style.color = '#52c41a'; loadFinanceTable(prefix); }
     else { statusEl.textContent = '更新失败'; statusEl.style.color = '#ff4d4f'; }
   } catch (e) { statusEl.textContent = '请求失败: ' + e.message; statusEl.style.color = '#ff4d4f'; }

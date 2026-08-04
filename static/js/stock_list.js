@@ -524,6 +524,7 @@ async function syncAddedStockDetails(code) {
         body: JSON.stringify({ code, mode: 'incremental' })
       });
       const data = await res.json();
+      if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: false });
       if (!data.success) failed += 1;
     } catch (e) {
       failed += 1;

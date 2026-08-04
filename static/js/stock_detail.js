@@ -1293,7 +1293,9 @@ async function startIrmAutoSync() {
   if (irmAutoSyncStarted) return;
   irmAutoSyncStarted = true;
   try {
-    await fetch('/api/irm/sync', { method: 'POST' });
+    const res = await fetch('/api/irm/sync', { method: 'POST' });
+    const data = await res.json();
+    if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: false });
     pollIrmStatus();
   } catch (e) {
     // 自动抓取静默失败，不影响正常打开系统。

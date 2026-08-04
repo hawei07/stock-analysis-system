@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <script src="/static/js/theme.js"></script>
 <link rel="stylesheet" href="/static/css/cloud_backup.css">
+<link rel="stylesheet" href="/static/css/background_jobs.css">
 <link rel="stylesheet" href="/static/css/index.css">
 </head>
 <body>
@@ -794,14 +795,14 @@ async function doUpdateAll(mode) {
     try {
       const res = await fetch(api.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
       const data = await res.json();
+      if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
       if (data.success) msgs.push(api.name + ': ' + (data.records_updated || data.message || 'OK'));
       else msgs.push(api.name + ': 失败');
     } catch (e) {
       msgs.push(api.name + ': 网络错误');
     }
   }
-  const backupMsg = ' | 云备份已自动安排';
-  showToast(label + '更新完成: ' + msgs.join(' | ') + backupMsg, 'success');
+  showToast(label + '更新任务已提交: ' + msgs.join(' | '), 'success');
   btn.disabled = false;
   btn.textContent = '\u27f3 更新数据';
 }
@@ -898,6 +899,7 @@ async function saveSettings() {
 <script src="/static/js/notes_chat.js"></script>
 <script src="/static/js/cloud_backup.js"></script>
 <script src="/static/js/local_settings.js"></script>
+<script src="/static/js/background_jobs.js"></script>
 </body>
 </html>
 

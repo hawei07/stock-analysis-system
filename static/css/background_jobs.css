@@ -1,0 +1,280 @@
+.job-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1200;
+  width: min(420px, calc(100vw - 28px));
+  color: #1f2937;
+  font-size: 13px;
+}
+
+.job-dock.is-empty {
+  pointer-events: none;
+}
+
+.job-dock.is-empty .job-dock-panel {
+  pointer-events: auto;
+}
+
+.job-dock-toggle {
+  display: none;
+  width: 100%;
+  border: 1px solid rgba(37, 99, 235, .22);
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .16);
+  padding: 10px 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.job-dock.has-jobs .job-dock-toggle {
+  display: flex;
+}
+
+.job-dock-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+}
+
+.job-dock-title strong,
+.job-item-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-dock-title span {
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.job-dock-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.job-dock-panel {
+  display: none;
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, .35);
+  border-radius: 8px;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, .18);
+  overflow: hidden;
+}
+
+.job-dock.is-open .job-dock-panel {
+  display: block;
+}
+
+.job-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.job-panel-head strong {
+  font-size: 14px;
+}
+
+.job-panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.job-icon-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  border-radius: 6px;
+  color: #374151;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.job-icon-btn:hover {
+  background: #f3f4f6;
+}
+
+.job-list {
+  max-height: 430px;
+  overflow: auto;
+}
+
+.job-empty {
+  padding: 24px 14px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.job-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.job-item:last-child {
+  border-bottom: none;
+}
+
+.job-item-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.job-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.job-status-running,
+.job-status-queued {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.job-status-done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.job-status-partial,
+.job-status-cancelled {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.job-status-failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.job-item-message {
+  color: #64748b;
+  margin-top: 5px;
+  line-height: 1.45;
+}
+
+.job-progress {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.job-progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #2563eb, #14b8a6);
+}
+
+.job-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 7px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.job-item-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.job-action-btn {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.job-action-btn:hover {
+  background: #f8fafc;
+}
+
+.job-action-danger {
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.job-log {
+  display: none;
+  margin-top: 8px;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.job-log.is-open {
+  display: block;
+}
+
+.job-log-line {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 8px;
+  padding: 4px 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.job-log-level-error {
+  color: #b91c1c;
+}
+
+.job-log-level-warning {
+  color: #b45309;
+}
+
+html[data-theme="dark"] .job-dock {
+  color: #e5e7eb;
+}
+
+html[data-theme="dark"] .job-dock-toggle,
+html[data-theme="dark"] .job-dock-panel,
+html[data-theme="dark"] .job-icon-btn,
+html[data-theme="dark"] .job-action-btn {
+  background: #111827;
+  color: #e5e7eb;
+  border-color: #374151;
+}
+
+html[data-theme="dark"] .job-panel-head,
+html[data-theme="dark"] .job-item {
+  border-color: #263244;
+}
+
+html[data-theme="dark"] .job-log {
+  background: #0f172a;
+}

@@ -1068,6 +1068,7 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 - 任务日志记录到 `background_job_logs`，用于前端展示每只股票的开始、完成、失败和取消原因。
 - 任务支持重试；默认从错误日志中提取失败股票代码并只重试失败股票，提取不到失败股票时使用原请求参数重跑。
 - 重试会创建新任务，不会复活或覆盖旧任务；旧任务日志会记录新任务编号。
+- 前端通过 `static/js/background_jobs.js` 和 `static/css/background_jobs.css` 提供全局任务浮窗，可展示进度、日志，并支持取消/重试。
 
 当前已接入的任务类型：
 
