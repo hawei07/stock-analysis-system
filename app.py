@@ -97,6 +97,7 @@ from routes.stocks import register_stock_routes
 from routes.system import register_system_routes
 from routes.dashboard import register_dashboard_routes
 from routes.compare_dashboard import register_compare_dashboard_routes
+from routes.capital_allocation import register_capital_allocation_routes
 from routes.custom_financials import register_custom_financial_routes
 from routes.balance_sheet import register_balance_sheet_routes
 from routes.statements import register_statement_routes
@@ -983,6 +984,10 @@ register_compare_dashboard_routes(app, {
     "execute_query": execute_query,
     "enrich_stock_list_metrics": _enrich_stock_list_metrics,
     "normalize_stock_code": _normalize_stock_code,
+})
+
+register_capital_allocation_routes(app, {
+    "execute_query": execute_query,
 })
 
 register_system_routes(app, {
