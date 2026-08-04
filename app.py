@@ -12,7 +12,6 @@ import subprocess
 import tempfile
 import threading
 from datetime import datetime
-from decimal import Decimal
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
@@ -78,6 +77,7 @@ from services import stock_metrics_service
 from services.shareholder_schema import ensure_shareholders_table
 from services import portfolio_audit
 from services import portfolio_cash
+from services import portfolio_fees
 from services import portfolio_money
 from services import portfolio_nav
 from services import portfolio_positions
@@ -826,36 +826,11 @@ def _execute_insert_id(sql, params=None):
 
 
 def _portfolio_fee_config():
-    rows = execute_query(
-        """SELECT commission_rate, min_commission, stamp_tax_rate, transfer_fee_rate
-           FROM portfolio_fee_config
-           WHERE id=1"""
-    )
-    if not rows:
-        return {
-            "commission_rate": Decimal("0.000250"),
-            "min_commission": Decimal("5.00"),
-            "stamp_tax_rate": Decimal("0.000500"),
-            "transfer_fee_rate": Decimal("0.000010"),
-        }
-    row = rows[0]
-    return {
-        "commission_rate": _decimal_value(row.get("commission_rate")),
-        "min_commission": _decimal_value(row.get("min_commission")),
-        "stamp_tax_rate": _decimal_value(row.get("stamp_tax_rate")),
-        "transfer_fee_rate": _decimal_value(row.get("transfer_fee_rate")),
-    }
+    return portfolio_fees.fee_config(execute_query)
 
 
 def _portfolio_fee_config_payload():
-    _ensure_portfolio_tables()
-    config = _portfolio_fee_config()
-    return {
-        "commission_rate": float(config["commission_rate"]),
-        "min_commission": float(config["min_commission"]),
-        "stamp_tax_rate": float(config["stamp_tax_rate"]),
-        "transfer_fee_rate": float(config["transfer_fee_rate"]),
-    }
+    return portfolio_fees.fee_config_payload(execute_query, _ensure_portfolio_tables)
 
 
 def _is_domestic_market(market):
