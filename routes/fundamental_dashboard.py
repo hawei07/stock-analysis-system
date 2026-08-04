@@ -1,4 +1,4 @@
-"""Dashboard and comparison routes for stock detail pages."""
+"""Fundamental dashboard route for stock detail pages."""
 
 from flask import jsonify, request
 
@@ -20,7 +20,7 @@ from services.financial_periods import (
 )
 
 
-def register_dashboard_routes(app, deps):
+def register_fundamental_dashboard_routes(app, deps):
     execute_query = deps["execute_query"]
     _enrich_stock_list_metrics = deps["enrich_stock_list_metrics"]
     _normalize_stock_code = deps["normalize_stock_code"]

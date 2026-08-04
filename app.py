@@ -95,7 +95,7 @@ from routes.notes_chat import register_notes_chat_routes
 from routes.stock_basic import register_stock_basic_routes
 from routes.stocks import register_stock_routes
 from routes.system import register_system_routes
-from routes.dashboard import register_dashboard_routes
+from routes.fundamental_dashboard import register_fundamental_dashboard_routes
 from routes.compare_dashboard import register_compare_dashboard_routes
 from routes.capital_allocation import register_capital_allocation_routes
 from routes.custom_financials import register_custom_financial_routes
@@ -974,7 +974,7 @@ register_portfolio_routes(app, {
 })
 
 
-register_dashboard_routes(app, {
+register_fundamental_dashboard_routes(app, {
     "execute_query": execute_query,
     "enrich_stock_list_metrics": _enrich_stock_list_metrics,
     "normalize_stock_code": _normalize_stock_code,

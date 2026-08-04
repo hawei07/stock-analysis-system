@@ -69,7 +69,9 @@ MySQL stock_analysis
 | `routes/pages.py` | 页面入口路由：`/`、`/stock/<code>` |
 | `routes/stocks.py` | 首页股票列表、实时行情列表、年初至今涨跌幅、首页排序、Graham 估值参数接口 |
 | `routes/stock_basic.py` | 股票详情、搜索、添加、修改、删除、统计等股票基础接口 |
-| `routes/dashboard.py` | 基本面驾驶舱、对比、资本配置接口 |
+| `routes/fundamental_dashboard.py` | 基本面驾驶舱接口 |
+| `routes/compare_dashboard.py` | 多股票指标对比接口 |
+| `routes/capital_allocation.py` | 资本配置分析接口 |
 | `routes/custom_financials.py` | 自定义财报/财务摘要查询与更新 |
 | `routes/balance_sheet.py` | 资产负债表查询与更新 |
 | `routes/statements.py` | 利润表、现金流量表查询与更新 |
@@ -1012,7 +1014,9 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 
 - `routes/pages.py`：页面入口
 - `routes/stocks.py`、`routes/stock_basic.py`：股票列表与股票基础 CRUD
-- `routes/dashboard.py`：基本面驾驶舱、对比、资本配置
+- `routes/fundamental_dashboard.py`：基本面驾驶舱
+- `routes/compare_dashboard.py`：对比页
+- `routes/capital_allocation.py`：资本配置
 - `routes/custom_financials.py`、`routes/balance_sheet.py`、`routes/statements.py`：财报摘要、资产负债表、利润表、现金流量表
 - `routes/segments.py`：营收构成
 - `routes/market_charts.py`：估值、走势/K 线
