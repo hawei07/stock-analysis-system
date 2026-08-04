@@ -12,10 +12,6 @@
   pointer-events: none;
 }
 
-.job-dock.is-empty .job-dock-panel {
-  pointer-events: auto;
-}
-
 .job-dock-toggle {
   display: none;
   width: 100%;
@@ -75,7 +71,7 @@
   overflow: hidden;
 }
 
-.job-dock.is-open .job-dock-panel {
+.job-dock.is-open.has-jobs .job-dock-panel {
   display: block;
 }
 

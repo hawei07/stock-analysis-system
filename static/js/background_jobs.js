@@ -82,15 +82,14 @@
   function render() {
     const dock = ensureDock();
     const jobs = state.jobs || [];
-    const activeJobs = jobs.filter(job => ACTIVE.has(job.status));
     dock.classList.toggle('is-empty', jobs.length === 0);
     dock.classList.toggle('has-jobs', jobs.length > 0);
     dock.classList.toggle('is-open', state.open);
 
-    const top = activeJobs[0] || jobs[0];
+    const top = jobs[0];
     document.getElementById('jobDockTitle').textContent = top ? labelJob(top) : '后台任务';
     document.getElementById('jobDockSub').textContent = top ? `${statusText(top.status)} ${progressText(top)}` : '暂无任务';
-    document.getElementById('jobDockBadge').textContent = activeJobs.length || jobs.length;
+    document.getElementById('jobDockBadge').textContent = jobs.length;
 
     const list = document.getElementById('jobList');
     if (!jobs.length) {
@@ -180,9 +179,10 @@
     try {
       const res = await fetch('/api/jobs?limit=20');
       const data = await res.json();
-      state.jobs = data.jobs || [];
-      const hasActive = state.jobs.some(job => ACTIVE.has(job.status));
+      state.jobs = (data.jobs || []).filter(job => ACTIVE.has(job.status));
+      const hasActive = state.jobs.length > 0;
       if (openOnActive && hasActive) state.open = true;
+      if (!hasActive) state.open = false;
       render();
       schedule(hasActive);
     } catch (e) {
