@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import threading
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
@@ -76,6 +76,7 @@ from services.sticky_notes_service import (
 )
 from services import stock_metrics_service
 from services.shareholder_schema import ensure_shareholders_table
+from services import portfolio_money
 from services.portfolio_schema import ensure_portfolio_tables
 from services.market_data import (
     fetch_realtime_prices as market_fetch_realtime_prices,
@@ -796,19 +797,15 @@ def _ensure_portfolio_tables():
     return ensure_portfolio_tables(execute_query, _sync_portfolio_cost_basis_from_trades)
 
 def _decimal_value(value, default="0"):
-    if value is None:
-        value = default
-    return Decimal(str(value))
+    return portfolio_money.decimal_value(value, default)
 
 
 def _quantize(value, scale="0.0001"):
-    return _decimal_value(value).quantize(Decimal(scale), rounding=ROUND_HALF_UP)
+    return portfolio_money.quantize(value, scale)
 
 
 def _decimal_equal(left, right, scale="0.0001"):
-    if left is None or right is None:
-        return left is None and right is None
-    return _quantize(left, scale) == _quantize(right, scale)
+    return portfolio_money.decimal_equal(left, right, scale)
 
 
 def _execute_insert_id(sql, params=None):
@@ -857,36 +854,11 @@ def _portfolio_fee_config_payload():
 
 
 def _is_domestic_market(market):
-    return str(market or "").upper() in {"SH", "SZ", "BJ"}
+    return portfolio_money.is_domestic_market(market)
 
 
 def _calculate_portfolio_trade_fees(amount, trade_type, market, config=None):
-    amount = _decimal_value(amount)
-    if not _is_domestic_market(market):
-        return {
-            "commission": Decimal("0.00"),
-            "stamp_tax": Decimal("0.00"),
-            "transfer_fee": Decimal("0.00"),
-            "total_fee": Decimal("0.00"),
-        }
-
-    config = config or _portfolio_fee_config()
-    commission_rate = config["commission_rate"]
-    min_commission = config["min_commission"]
-    commission = amount * commission_rate
-    if commission > 0 and commission < min_commission:
-        commission = min_commission
-    stamp_tax = amount * config["stamp_tax_rate"] if trade_type == "sell" else Decimal("0")
-    transfer_fee = amount * config["transfer_fee_rate"]
-    commission = _quantize(commission, "0.01")
-    stamp_tax = _quantize(stamp_tax, "0.01")
-    transfer_fee = _quantize(transfer_fee, "0.01")
-    return {
-        "commission": commission,
-        "stamp_tax": stamp_tax,
-        "transfer_fee": transfer_fee,
-        "total_fee": commission + stamp_tax + transfer_fee,
-    }
+    return portfolio_money.calculate_trade_fees(amount, trade_type, market, config or _portfolio_fee_config())
 
 
 def _sync_portfolio_cost_basis_from_trades():

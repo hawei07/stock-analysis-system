@@ -1,16 +1,6 @@
 """Portfolio table schema and compatibility helpers."""
 
-from decimal import Decimal, ROUND_HALF_UP
-
-
-def _decimal_value(value, default="0"):
-    if value is None:
-        value = default
-    return Decimal(str(value))
-
-
-def _quantize(value, scale="0.0001"):
-    return _decimal_value(value).quantize(Decimal(scale), rounding=ROUND_HALF_UP)
+from services.portfolio_money import decimal_value, quantize
 
 
 def _add_column_if_missing(execute_query, table_name, column_name, column_def):
@@ -200,10 +190,10 @@ def ensure_portfolio_tables(execute_query, sync_cost_basis=None):
         rows = execute_query("SELECT amount, base_amount FROM portfolio_cash WHERE id=1")
         if rows and rows[0].get("base_amount") is None:
             flow_rows = execute_query("SELECT COALESCE(SUM(amount), 0) AS total FROM portfolio_cash_flows WHERE is_void=0")
-            base_amount = _decimal_value(rows[0]["amount"]) - _decimal_value(flow_rows[0]["total"] if flow_rows else 0)
+            base_amount = decimal_value(rows[0]["amount"]) - decimal_value(flow_rows[0]["total"] if flow_rows else 0)
             execute_query(
                 "UPDATE portfolio_cash SET base_amount=%s WHERE id=1",
-                (_quantize(base_amount, "0.01"),),
+                (quantize(base_amount, "0.01"),),
                 fetch=False,
             )
     except Exception:
