@@ -3,6 +3,7 @@
 from flask import jsonify, render_template, request
 from services import portfolio_actions
 from services import portfolio_cash
+from services import portfolio_fees
 from services import portfolio_nav
 from services import portfolio_position_detail
 from services import portfolio_trades
@@ -46,35 +47,17 @@ def register_portfolio_routes(app, deps):
 
     @app.route("/api/portfolio/fee-config", methods=["PUT"])
     def api_portfolio_update_fee_config():
-        _ensure_portfolio_tables()
         data = request.get_json(force=True)
-        values = {}
-        for key in ("commission_rate", "min_commission", "stamp_tax_rate", "transfer_fee_rate"):
-            try:
-                value = _decimal_value(data.get(key))
-            except Exception:
-                return jsonify({"error": "费率配置必须是数字"}), 400
-            if value < 0:
-                return jsonify({"error": "费率配置不能小于 0"}), 400
-            values[key] = value
-        execute_query(
-            """UPDATE portfolio_fee_config
-               SET commission_rate=%s, min_commission=%s, stamp_tax_rate=%s, transfer_fee_rate=%s
-               WHERE id=1""",
-            (
-                values["commission_rate"],
-                values["min_commission"],
-                values["stamp_tax_rate"],
-                values["transfer_fee_rate"],
-            ),
-            fetch=False,
-        )
+        try:
+            portfolio_fees.update_fee_config(execute_query, _ensure_portfolio_tables, data)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
         return jsonify({"ok": True, **_portfolio_fee_config_payload()})
 
 
     @app.route("/api/portfolio/positions", methods=["POST"])
     def api_portfolio_save_position():
-        return jsonify({"error": "持仓只能通过买入/卖出交易变动，不能直接录入或修改"}), 400
+        return jsonify({"error": "\u6301\u4ed3\u53ea\u80fd\u901a\u8fc7\u4e70\u5165/\u5356\u51fa\u4ea4\u6613\u53d8\u52a8\uff0c\u4e0d\u80fd\u76f4\u63a5\u5f55\u5165\u6216\u4fee\u6539"}), 400
 
 
     @app.route("/api/portfolio/positions/<code>", methods=["GET"])
@@ -90,7 +73,7 @@ def register_portfolio_routes(app, deps):
 
     @app.route("/api/portfolio/positions/<code>", methods=["DELETE"])
     def api_portfolio_delete_position(code):
-        return jsonify({"error": "持仓只能通过买入/卖出交易变动，不能直接删除"}), 400
+        return jsonify({"error": "\u6301\u4ed3\u53ea\u80fd\u901a\u8fc7\u4e70\u5165/\u5356\u51fa\u4ea4\u6613\u53d8\u52a8\uff0c\u4e0d\u80fd\u76f4\u63a5\u5220\u9664"}), 400
 
 
     @app.route("/api/portfolio/trades", methods=["GET"])
@@ -242,7 +225,7 @@ def register_portfolio_routes(app, deps):
 
     @app.route("/api/portfolio/cash", methods=["PUT"])
     def api_portfolio_update_cash():
-        return jsonify({"error": "现金只能通过资金流水入金/出金变动"}), 400
+        return jsonify({"error": "\u73b0\u91d1\u53ea\u80fd\u901a\u8fc7\u8d44\u91d1\u6d41\u6c34\u5165\u91d1/\u51fa\u91d1\u53d8\u52a8"}), 400
 
 
     @app.route("/api/portfolio/flows", methods=["GET"])
