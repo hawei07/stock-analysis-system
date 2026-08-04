@@ -314,7 +314,7 @@ def run_in_thread(execute_query, job_id, target, *args, **kwargs):
 def response_payload(response):
     if isinstance(response, tuple):
         response = response[0]
-    if isinstance(response, Response):
+    if isinstance(response, Response) or hasattr(response, "get_json"):
         try:
             return response.get_json(silent=True) or {}
         except Exception:
@@ -380,7 +380,8 @@ def start_endpoint_stock_batch(
                     return
                 processed += 1
                 code = stock["code"]
-                stock_payload = {**payload, "code": code}
+                stock_payload = {**payload, "code": code, "background": False}
+                stock_payload.pop("codes", None)
                 add_job_log(execute_query, job_id, f"开始更新 {code}", stock_code=code)
                 update_job(
                     execute_query,

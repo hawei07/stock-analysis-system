@@ -170,7 +170,7 @@ def register_balance_sheet_routes(app, deps):
 
         try:
             stocks = _get_update_stocks(payload)
-            if len(stocks) > 1:
+            if len(stocks) > 1 or (payload.get("background") and stocks):
                 return jsonify(start_endpoint_stock_batch(
                     app,
                     get_connection,

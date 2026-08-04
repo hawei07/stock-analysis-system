@@ -1093,6 +1093,16 @@ register_irm_routes(app, {
 
 register_job_routes(app, {
     "execute_query": execute_query,
+    "retry_endpoints": {
+        "irm_sync_all": "/api/irm/sync",
+        "update_financials": "/api/update-financials",
+        "update_dividends": "/api/update-dividends",
+        "update_balance_sheet": "/api/update-balance-sheet",
+        "update_income": "/api/update-income",
+        "update_cashflow": "/api/update-cashflow",
+        "update_segments": "/api/update-segments",
+        "update_shareholders": "/api/update-shareholders",
+    },
 })
 
 def _ensure_financials_columns():
@@ -1120,6 +1130,18 @@ def _get_update_stocks(payload=None, include_name_market=False):
     """Return all active stocks, or one explicit stock when code is provided."""
     payload = payload or {}
     query_code = request.args.get("code") if has_request_context() else ""
+    raw_codes = payload.get("codes")
+    if raw_codes:
+        if isinstance(raw_codes, str):
+            raw_codes = [item.strip() for item in raw_codes.split(",") if item.strip()]
+        codes = [_normalize_stock_code(str(item).strip()) for item in raw_codes if str(item).strip()]
+        if codes:
+            columns = "code, name, market" if include_name_market else "code"
+            placeholders = ", ".join(["%s"] * len(codes))
+            return execute_query(
+                f"SELECT {columns} FROM stocks WHERE code IN ({placeholders}) ORDER BY FIELD(code, {placeholders})",
+                tuple(codes + codes),
+            )
     code = (payload.get("code") or query_code or "").strip()
     columns = "code, name, market" if include_name_market else "code"
     if code:

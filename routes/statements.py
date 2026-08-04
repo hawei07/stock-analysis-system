@@ -333,7 +333,7 @@ def register_statement_routes(app, deps):
         payload = {**payload, "mode": mode}
 
         stocks = _get_update_stocks(payload)
-        if len(stocks) > 1:
+        if len(stocks) > 1 or (payload.get("background") and stocks):
             return jsonify(start_endpoint_stock_batch(
                 app,
                 get_connection,
@@ -416,7 +416,7 @@ def register_statement_routes(app, deps):
         payload = {**payload, "mode": mode}
 
         stocks = _get_update_stocks(payload)
-        if len(stocks) > 1:
+        if len(stocks) > 1 or (payload.get("background") and stocks):
             return jsonify(start_endpoint_stock_batch(
                 app,
                 get_connection,

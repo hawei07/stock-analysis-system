@@ -358,7 +358,7 @@ def register_shareholder_routes(app, deps):
     def api_update_shareholders():
         payload = request.get_json(silent=True) if request.is_json else {}
         stocks = _get_update_stocks(payload, include_name_market=True)
-        if len(stocks) > 1:
+        if len(stocks) > 1 or (payload.get("background") and stocks):
             return jsonify(start_endpoint_stock_batch(
                 app,
                 get_connection,
