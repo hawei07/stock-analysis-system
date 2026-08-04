@@ -12,6 +12,7 @@ from services.background_jobs import start_endpoint_stock_batch
 def register_segment_routes(app, deps):
     execute_query = deps["execute_query"]
     get_connection = deps["get_connection"]
+    _schedule_auto_cloud_backup = deps.get("schedule_auto_cloud_backup")
     _get_update_stocks = deps["get_update_stocks"]
 
     SEGMENT_DIMENSIONS = {
@@ -335,6 +336,7 @@ def register_segment_routes(app, deps):
                 stocks,
                 api_update_segments,
                 "/api/update-segments",
+                on_finish=lambda result: _schedule_auto_cloud_backup and _schedule_auto_cloud_backup("segments-update"),
             ))
 
         updated = 0

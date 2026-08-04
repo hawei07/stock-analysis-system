@@ -520,10 +520,18 @@ AUTO_CLOUD_BACKUP_ENDPOINTS = {
 
 @app.after_request
 def schedule_auto_cloud_backup_after_change(response):
+    is_background_job_start = False
+    if response.is_json:
+        try:
+            body = response.get_json(silent=True) or {}
+            is_background_job_start = bool(body.get("background") and body.get("job_id"))
+        except Exception:
+            is_background_job_start = False
     if (
         request.method in ("POST", "PUT", "DELETE")
         and response.status_code < 400
         and request.endpoint in AUTO_CLOUD_BACKUP_ENDPOINTS
+        and not is_background_job_start
     ):
         if request.endpoint in {
             "api_update_stock",
@@ -1125,6 +1133,7 @@ register_shareholder_routes(app, {
     "execute_query": execute_query,
     "get_connection": get_connection,
     "get_update_stocks": _get_update_stocks,
+    "schedule_auto_cloud_backup": _schedule_auto_cloud_backup,
     "ensure_shareholders_table": _ensure_shareholders_table,
     "eastmoney_secu_code": _eastmoney_secu_code,
     "eastmoney_web_code": _eastmoney_web_code,
@@ -1138,6 +1147,7 @@ register_shareholder_routes(app, {
 register_dividend_update_routes(app, {
     "execute_query": execute_query,
     "get_connection": get_connection,
+    "schedule_auto_cloud_backup": _schedule_auto_cloud_backup,
     "get_update_stocks": _get_update_stocks,
     "quote_symbol": _quote_symbol,
 })
@@ -1146,6 +1156,7 @@ register_dividend_update_routes(app, {
 register_custom_financial_routes(app, {
     "execute_query": execute_query,
     "get_connection": get_connection,
+    "schedule_auto_cloud_backup": _schedule_auto_cloud_backup,
     "ensure_financials_columns": _ensure_financials_columns,
     "get_update_stocks": _get_update_stocks,
     "quote_symbol": _quote_symbol,
@@ -1155,6 +1166,7 @@ register_custom_financial_routes(app, {
 register_balance_sheet_routes(app, {
     "execute_query": execute_query,
     "get_connection": get_connection,
+    "schedule_auto_cloud_backup": _schedule_auto_cloud_backup,
     "get_update_stocks": _get_update_stocks,
 })
 
@@ -1170,6 +1182,7 @@ register_market_chart_routes(app, {
 _ensure_segments_table = register_segment_routes(app, {
     "execute_query": execute_query,
     "get_connection": get_connection,
+    "schedule_auto_cloud_backup": _schedule_auto_cloud_backup,
     "get_update_stocks": _get_update_stocks,
 })
 
@@ -1177,6 +1190,7 @@ _ensure_segments_table = register_segment_routes(app, {
 register_statement_routes(app, {
     "execute_query": execute_query,
     "get_connection": get_connection,
+    "schedule_auto_cloud_backup": _schedule_auto_cloud_backup,
     "get_update_stocks": _get_update_stocks,
 })
 

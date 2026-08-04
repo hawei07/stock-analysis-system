@@ -11,6 +11,7 @@ def register_shareholder_routes(app, deps):
     execute_query = deps["execute_query"]
     get_connection = deps["get_connection"]
     _get_update_stocks = deps["get_update_stocks"]
+    _schedule_auto_cloud_backup = deps.get("schedule_auto_cloud_backup")
     _ensure_shareholders_table = deps["ensure_shareholders_table"]
     _eastmoney_secu_code = deps["eastmoney_secu_code"]
     _eastmoney_web_code = deps["eastmoney_web_code"]
@@ -368,6 +369,7 @@ def register_shareholder_routes(app, deps):
                 stocks,
                 api_update_shareholders,
                 "/api/update-shareholders",
+                on_finish=lambda result: _schedule_auto_cloud_backup and _schedule_auto_cloud_backup("shareholders-update"),
             ))
 
         saved_count = 0

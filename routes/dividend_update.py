@@ -12,6 +12,7 @@ from services.background_jobs import start_endpoint_stock_batch
 def register_dividend_update_routes(app, deps):
     execute_query = deps["execute_query"]
     get_connection = deps["get_connection"]
+    _schedule_auto_cloud_backup = deps.get("schedule_auto_cloud_backup")
     _get_update_stocks = deps["get_update_stocks"]
     _quote_symbol = deps["quote_symbol"]
 
@@ -39,6 +40,7 @@ def register_dividend_update_routes(app, deps):
                     stocks,
                     api_update_dividends,
                     "/api/update-dividends",
+                    on_finish=lambda result: _schedule_auto_cloud_backup and _schedule_auto_cloud_backup("dividends-update"),
                 ))
             updated_count = 0
             errors = []

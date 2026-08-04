@@ -8,6 +8,7 @@ from datetime import datetime
 from flask import Response
 
 
+ACTIVE_STATUSES = {"queued", "running"}
 TERMINAL_STATUSES = {"done", "partial", "failed", "cancelled"}
 
 
@@ -75,6 +76,25 @@ def create_job(get_connection, execute_query, job_type, title=None, stock_code=N
         if cursor:
             cursor.close()
         conn.close()
+
+
+def active_job(execute_query, job_type, stock_code=None):
+    ensure_background_jobs_table(execute_query)
+    if stock_code:
+        rows = execute_query(
+            """SELECT * FROM background_jobs
+               WHERE job_type=%s AND stock_code=%s AND status IN ('queued', 'running')
+               ORDER BY id DESC LIMIT 1""",
+            (job_type, stock_code),
+        )
+    else:
+        rows = execute_query(
+            """SELECT * FROM background_jobs
+               WHERE job_type=%s AND stock_code IS NULL AND status IN ('queued', 'running')
+               ORDER BY id DESC LIMIT 1""",
+            (job_type,),
+        )
+    return job_payload(rows[0]) if rows else None
 
 
 def start_job(execute_query, job_id, message=None):
@@ -224,9 +244,23 @@ def start_endpoint_stock_batch(
     stocks,
     endpoint_func,
     endpoint_path,
+    on_finish=None,
 ):
     payload = dict(payload or {})
     stocks = list(stocks or [])
+    if not payload.get("force"):
+        running_job = active_job(execute_query, job_type)
+        if running_job:
+            return {
+                "success": True,
+                "already_running": True,
+                "background": True,
+                "job_id": running_job["id"],
+                "job_type": job_type,
+                "stocks_processed": running_job.get("progress_current") or 0,
+                "stocks_total": running_job.get("progress_total") or len(stocks),
+                "message": running_job.get("message") or f"{title}正在后台执行",
+            }
     job_id = create_job(
         get_connection,
         execute_query,
@@ -284,6 +318,15 @@ def start_endpoint_stock_batch(
                 message=message,
                 result={"stocks_processed": processed, "records_updated": updated, "errors": errors[:20]},
             )
+            if on_finish and updated > 0:
+                on_finish({
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "status": status,
+                    "stocks_processed": processed,
+                    "records_updated": updated,
+                    "errors": errors[:20],
+                })
         except Exception:
             fail_job(execute_query, job_id, traceback.format_exc(), message=f"{title}失败")
 

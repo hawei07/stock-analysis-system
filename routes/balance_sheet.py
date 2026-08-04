@@ -11,6 +11,7 @@ from services.background_jobs import start_endpoint_stock_batch
 def register_balance_sheet_routes(app, deps):
     execute_query = deps["execute_query"]
     get_connection = deps["get_connection"]
+    _schedule_auto_cloud_backup = deps.get("schedule_auto_cloud_backup")
     _get_update_stocks = deps["get_update_stocks"]
 
     # 新浪资产负债表 → 数据库字段映射 (中文行名 → DB column)
@@ -180,6 +181,7 @@ def register_balance_sheet_routes(app, deps):
                     stocks,
                     api_update_balance_sheet,
                     "/api/update-balance-sheet",
+                    on_finish=lambda result: _schedule_auto_cloud_backup and _schedule_auto_cloud_backup("balance-sheet-update"),
                 ))
             updated_count = 0
             errors = []

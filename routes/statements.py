@@ -12,6 +12,7 @@ from services.background_jobs import start_endpoint_stock_batch
 def register_statement_routes(app, deps):
     execute_query = deps["execute_query"]
     get_connection = deps["get_connection"]
+    _schedule_auto_cloud_backup = deps.get("schedule_auto_cloud_backup")
     _get_update_stocks = deps["get_update_stocks"]
 
     INCOME_ROW_MAP = [
@@ -343,6 +344,7 @@ def register_statement_routes(app, deps):
                 stocks,
                 api_update_income,
                 "/api/update-income",
+                on_finish=lambda result: _schedule_auto_cloud_backup and _schedule_auto_cloud_backup("income-update"),
             ))
         updated = 0
         errors = []
@@ -425,6 +427,7 @@ def register_statement_routes(app, deps):
                 stocks,
                 api_update_cashflow,
                 "/api/update-cashflow",
+                on_finish=lambda result: _schedule_auto_cloud_backup and _schedule_auto_cloud_backup("cashflow-update"),
             ))
         updated = 0
         errors = []
