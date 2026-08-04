@@ -106,6 +106,7 @@ from routes.market_charts import register_market_chart_routes
 from routes.shareholders import register_shareholder_routes
 from routes.irm import register_irm_routes
 from routes.dividend_update import register_dividend_update_routes
+from routes.jobs import register_job_routes
 from routes.pages import register_page_routes
 
 app = Flask(__name__)
@@ -1088,9 +1089,14 @@ register_shareholder_routes(app, {
 register_irm_routes(app, {
     "Stock": Stock,
     "execute_query": execute_query,
+    "get_connection": get_connection,
     "as_list": _as_list,
     "money_yuan": _money_yuan,
     "to_float": _to_float,
+})
+
+register_job_routes(app, {
+    "execute_query": execute_query,
 })
 
 def _ensure_financials_columns():

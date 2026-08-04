@@ -81,6 +81,7 @@ MySQL stock_analysis
 | `routes/dividend_update.py` | 分红数据更新接口 |
 | `routes/shareholders.py` | 股东数据查询、抓取、缓存 |
 | `routes/irm.py` | 互动易/上证 e 互动查询与增量抓取 |
+| `routes/jobs.py` | 后台任务列表、详情、最近任务状态接口 |
 | `routes/portfolio.py` | 我的持仓、交易、资金流水、净值、快照、手续费配置 |
 | `routes/system.py` | 配置、云备份、云恢复、迁移状态、本机设置 |
 | `routes/notes_chat.py` | 便利贴、图片附件、对话芒格 |
@@ -94,6 +95,7 @@ MySQL stock_analysis
 | `services/stock_metrics_service.py` | 首页股票指标增强、Graham 合理估值、合理股价、PB 扣商誉、实时列表指标 |
 | `services/sticky_notes_service.py` | 便利贴 JSON 存储、base64 图片落盘、关联图片清理 |
 | `services/shareholder_schema.py` | 股东缓存表结构确保 |
+| `services/background_jobs.py` | 后台任务表结构、任务创建、进度更新、完成/失败状态落库 |
 | `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、备份管理弹窗 |
 | `templates/portfolio.html` | 我的持仓页面，含持仓、现金、资金流水、净值曲线 |
 | `static/css/index.css` | 首页和股票详情页样式 |

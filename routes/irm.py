@@ -10,10 +10,19 @@ from datetime import datetime
 import requests
 from flask import jsonify
 
+from services.background_jobs import (
+    create_job,
+    fail_job,
+    finish_job,
+    start_job,
+    update_job,
+)
+
 _irm_sync_lock = threading.Lock()
 _irm_sync_running = False
 _irm_sync_started_at = None
 _irm_sync_finished_at = None
+_irm_sync_job_id = None
 _irm_sync_last_result = {
     "status": "idle",
     "message": "\u5c1a\u672a\u6293\u53d6\u4e92\u52a8\u6613",
@@ -29,6 +38,7 @@ _irm_sync_last_result = {
 def register_irm_routes(app, deps):
     Stock = deps["Stock"]
     execute_query = deps["execute_query"]
+    get_connection = deps["get_connection"]
     _as_list = deps["as_list"]
     _money_yuan = deps["money_yuan"]
     _to_float = deps["to_float"]
@@ -352,8 +362,8 @@ def register_irm_routes(app, deps):
         return _sync_cninfo_irm_stock(code, stock_name, max_pages=max_pages, stop_on_duplicate=stop_on_duplicate)
 
 
-    def _sync_irm_all_background(max_pages=2):
-        global _irm_sync_running, _irm_sync_started_at, _irm_sync_finished_at, _irm_sync_last_result
+    def _sync_irm_all_background(max_pages=2, job_id=None):
+        global _irm_sync_running, _irm_sync_started_at, _irm_sync_finished_at, _irm_sync_job_id, _irm_sync_last_result
         total = 0
         inserted = 0
         skipped = 0
@@ -364,19 +374,26 @@ def register_irm_routes(app, deps):
             _irm_sync_running = True
             _irm_sync_started_at = datetime.now().isoformat(timespec="seconds")
             _irm_sync_finished_at = None
+            _irm_sync_job_id = job_id
             _irm_sync_last_result = {
                 "status": "running",
                 "message": "正在抓取互动易",
                 "updated_at": _irm_sync_started_at,
                 "scope": "all",
+                "job_id": job_id,
                 "total": 0,
                 "inserted": 0,
                 "skipped": 0,
                 "errors": [],
             }
+        if job_id:
+            start_job(execute_query, job_id, "正在抓取互动易")
 
         try:
             stocks = execute_query("SELECT code, name, market FROM stocks WHERE status='正常' ORDER BY display_order IS NULL, display_order, code")
+            eligible_total = len([stock for stock in stocks if (stock.get("market") or "").upper() in {"SZ", "SH"}])
+            if job_id:
+                update_job(execute_query, job_id, progress_total=eligible_total, message=f"准备抓取 {eligible_total} 只股票的互动易")
             for stock in stocks:
                 code = stock["code"]
                 market = (stock.get("market") or "").upper()
@@ -384,30 +401,63 @@ def register_irm_routes(app, deps):
                     skipped += 1
                     continue
                 total += 1
+                if job_id:
+                    update_job(
+                        execute_query,
+                        job_id,
+                        progress_current=total - 1,
+                        progress_total=eligible_total,
+                        message=f"正在抓取 {code} {stock.get('name') or ''}".strip(),
+                        result={"total": total, "inserted": inserted, "skipped": skipped, "errors": errors[:20]},
+                    )
                 try:
                     result = _sync_irm_stock(code, stock.get("name"), market=market, max_pages=max_pages)
                     inserted += result.get("inserted", 0)
                     skipped += result.get("skipped", 0)
                 except Exception as e:
                     errors.append(f"{code}: {e}")
+                if job_id:
+                    update_job(
+                        execute_query,
+                        job_id,
+                        progress_current=total,
+                        progress_total=eligible_total,
+                        message=f"已抓取 {total}/{eligible_total}，新增 {inserted} 条",
+                        result={"total": total, "inserted": inserted, "skipped": skipped, "errors": errors[:20]},
+                    )
                 time.sleep(0.25)
         except Exception as e:
             errors.append(str(e))
         finally:
             finished_at = datetime.now().isoformat(timespec="seconds")
+            status = "done" if not errors else "partial"
+            message = f"互动易抓取完成，新增 {inserted} 条" if not errors else f"互动易抓取部分完成，新增 {inserted} 条，失败 {len(errors)} 只"
+            result_payload = {
+                "scope": "all",
+                "total": total,
+                "inserted": inserted,
+                "skipped": skipped,
+                "errors": errors[:20],
+            }
             with _irm_sync_lock:
                 _irm_sync_running = False
                 _irm_sync_finished_at = finished_at
                 _irm_sync_last_result = {
-                    "status": "done" if not errors else "partial",
-                    "message": f"互动易抓取完成，新增 {inserted} 条" if not errors else f"互动易抓取部分完成，新增 {inserted} 条，失败 {len(errors)} 只",
+                    "status": status,
+                    "message": message,
                     "updated_at": finished_at,
                     "scope": "all",
+                    "job_id": job_id,
                     "total": total,
                     "inserted": inserted,
                     "skipped": skipped,
                     "errors": errors[:20],
                 }
+            if job_id:
+                if errors and total == 0:
+                    fail_job(execute_query, job_id, "\n".join(errors[:20]), message=message, result=result_payload)
+                else:
+                    finish_job(execute_query, job_id, status=status, message=message, result=result_payload)
 
 
     def _irm_status():
@@ -417,6 +467,7 @@ def register_irm_routes(app, deps):
                 "running": _irm_sync_running,
                 "started_at": _irm_sync_started_at,
                 "finished_at": _irm_sync_finished_at,
+                "job_id": _irm_sync_job_id,
             }
 
 
@@ -429,9 +480,16 @@ def register_irm_routes(app, deps):
     def api_irm_sync_all():
         if _irm_status().get("running"):
             return jsonify({"ok": True, "already_running": True, **_irm_status()})
-        thread = threading.Thread(target=_sync_irm_all_background, kwargs={"max_pages": 2}, daemon=True)
+        job_id = create_job(
+            get_connection,
+            execute_query,
+            "irm_sync_all",
+            title="互动易全量增量抓取",
+            message="等待开始抓取互动易",
+        )
+        thread = threading.Thread(target=_sync_irm_all_background, kwargs={"max_pages": 2, "job_id": job_id}, daemon=True)
         thread.start()
-        return jsonify({"ok": True, "started": True, **_irm_status()})
+        return jsonify({**_irm_status(), "ok": True, "started": True, "job_id": job_id})
 
 
     @app.route("/api/stock/<code>/irm")
