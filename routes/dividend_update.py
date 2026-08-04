@@ -6,9 +6,12 @@ import time
 import requests
 from flask import jsonify, request
 
+from services.background_jobs import start_endpoint_stock_batch
+
 
 def register_dividend_update_routes(app, deps):
     execute_query = deps["execute_query"]
+    get_connection = deps["get_connection"]
     _get_update_stocks = deps["get_update_stocks"]
     _quote_symbol = deps["quote_symbol"]
 
@@ -21,9 +24,22 @@ def register_dividend_update_routes(app, deps):
         mode = payload.get("mode", "full") if request.is_json else "full"
         if request.args.get("mode"):
             mode = request.args["mode"]
+        payload = {**payload, "mode": mode}
 
         try:
             stocks = _get_update_stocks(payload, include_name_market=True)
+            if len(stocks) > 1:
+                return jsonify(start_endpoint_stock_batch(
+                    app,
+                    get_connection,
+                    execute_query,
+                    "update_dividends",
+                    "分红数据更新",
+                    payload,
+                    stocks,
+                    api_update_dividends,
+                    "/api/update-dividends",
+                ))
             updated_count = 0
             errors = []
 

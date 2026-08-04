@@ -6,9 +6,12 @@ import time
 import requests
 from flask import jsonify, request
 
+from services.background_jobs import start_endpoint_stock_batch
+
 
 def register_statement_routes(app, deps):
     execute_query = deps["execute_query"]
+    get_connection = deps["get_connection"]
     _get_update_stocks = deps["get_update_stocks"]
 
     INCOME_ROW_MAP = [
@@ -326,8 +329,21 @@ def register_statement_routes(app, deps):
         mode = payload.get("mode", "full") if request.is_json else "full"
         if request.args.get("mode"):
             mode = request.args["mode"]
+        payload = {**payload, "mode": mode}
 
         stocks = _get_update_stocks(payload)
+        if len(stocks) > 1:
+            return jsonify(start_endpoint_stock_batch(
+                app,
+                get_connection,
+                execute_query,
+                "update_income",
+                "利润表更新",
+                payload,
+                stocks,
+                api_update_income,
+                "/api/update-income",
+            ))
         updated = 0
         errors = []
 
@@ -395,8 +411,21 @@ def register_statement_routes(app, deps):
         mode = payload.get("mode", "full") if request.is_json else "full"
         if request.args.get("mode"):
             mode = request.args["mode"]
+        payload = {**payload, "mode": mode}
 
         stocks = _get_update_stocks(payload)
+        if len(stocks) > 1:
+            return jsonify(start_endpoint_stock_batch(
+                app,
+                get_connection,
+                execute_query,
+                "update_cashflow",
+                "现金流量表更新",
+                payload,
+                stocks,
+                api_update_cashflow,
+                "/api/update-cashflow",
+            ))
         updated = 0
         errors = []
 

@@ -3,11 +3,14 @@
 import requests
 from flask import jsonify, request
 
+from services.background_jobs import start_endpoint_stock_batch
+
 
 def register_shareholder_routes(app, deps):
     Stock = deps["Stock"]
     execute_query = deps["execute_query"]
     get_connection = deps["get_connection"]
+    _get_update_stocks = deps["get_update_stocks"]
     _ensure_shareholders_table = deps["ensure_shareholders_table"]
     _eastmoney_secu_code = deps["eastmoney_secu_code"]
     _eastmoney_web_code = deps["eastmoney_web_code"]
@@ -347,6 +350,46 @@ def register_shareholder_routes(app, deps):
             "cached": False,
             "saved_count": saved_count,
             "periods": periods,
+        })
+
+
+    @app.route("/api/update-shareholders", methods=["POST"])
+    def api_update_shareholders():
+        payload = request.get_json(silent=True) if request.is_json else {}
+        stocks = _get_update_stocks(payload, include_name_market=True)
+        if len(stocks) > 1:
+            return jsonify(start_endpoint_stock_batch(
+                app,
+                get_connection,
+                execute_query,
+                "update_shareholders",
+                "股东数据更新",
+                payload,
+                stocks,
+                api_update_shareholders,
+                "/api/update-shareholders",
+            ))
+
+        saved_count = 0
+        processed = 0
+        errors = []
+        for stock in stocks:
+            code = stock["code"]
+            processed += 1
+            if (stock.get("market") or "").upper() == "HK":
+                continue
+            try:
+                periods, source = _fetch_shareholder_periods_from_eastmoney(code, stock)
+                saved_count += _save_shareholder_periods_to_db(code, periods, source)
+            except Exception as e:
+                errors.append(f"{code}: {e}")
+
+        return jsonify({
+            "success": len(errors) == 0 or saved_count > 0,
+            "stocks_processed": processed,
+            "saved_count": saved_count,
+            "records_updated": saved_count,
+            "errors": errors[:5] if errors else [],
         })
 
 

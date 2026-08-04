@@ -6,9 +6,12 @@ import time
 import requests
 from flask import jsonify, request
 
+from services.background_jobs import start_endpoint_stock_batch
+
 
 def register_segment_routes(app, deps):
     execute_query = deps["execute_query"]
+    get_connection = deps["get_connection"]
     _get_update_stocks = deps["get_update_stocks"]
 
     SEGMENT_DIMENSIONS = {
@@ -321,6 +324,18 @@ def register_segment_routes(app, deps):
         _ensure_segments_table()
         payload = request.get_json(silent=True) or {}
         stocks = _get_update_stocks(payload)
+        if len(stocks) > 1:
+            return jsonify(start_endpoint_stock_batch(
+                app,
+                get_connection,
+                execute_query,
+                "update_segments",
+                "营收构成更新",
+                payload,
+                stocks,
+                api_update_segments,
+                "/api/update-segments",
+            ))
 
         updated = 0
         errors = []

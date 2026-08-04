@@ -5,6 +5,8 @@ import threading
 import traceback
 from datetime import datetime
 
+from flask import Response
+
 
 TERMINAL_STATUSES = {"done", "partial", "failed", "cancelled"}
 
@@ -199,3 +201,100 @@ def run_in_thread(execute_query, job_id, target, *args, **kwargs):
     thread = threading.Thread(target=runner, daemon=True)
     thread.start()
     return thread
+
+
+def response_payload(response):
+    if isinstance(response, tuple):
+        response = response[0]
+    if isinstance(response, Response):
+        try:
+            return response.get_json(silent=True) or {}
+        except Exception:
+            return {}
+    return response if isinstance(response, dict) else {}
+
+
+def start_endpoint_stock_batch(
+    app,
+    get_connection,
+    execute_query,
+    job_type,
+    title,
+    payload,
+    stocks,
+    endpoint_func,
+    endpoint_path,
+):
+    payload = dict(payload or {})
+    stocks = list(stocks or [])
+    job_id = create_job(
+        get_connection,
+        execute_query,
+        job_type,
+        title=title,
+        progress_total=len(stocks),
+        message="等待开始",
+    )
+
+    def runner():
+        updated = 0
+        processed = 0
+        errors = []
+        start_job(execute_query, job_id, "后台任务已开始")
+        try:
+            for stock in stocks:
+                processed += 1
+                code = stock["code"]
+                stock_payload = {**payload, "code": code}
+                update_job(
+                    execute_query,
+                    job_id,
+                    progress_current=processed - 1,
+                    progress_total=len(stocks),
+                    message=f"正在更新 {code}",
+                    result={"stocks_processed": processed - 1, "records_updated": updated, "errors": errors[:20]},
+                )
+                try:
+                    with app.test_request_context(endpoint_path, method="POST", json=stock_payload):
+                        result = response_payload(endpoint_func())
+                    if result.get("records_updated") is not None:
+                        updated += int(result.get("records_updated") or 0)
+                    elif result.get("saved_count") is not None:
+                        updated += int(result.get("saved_count") or 0)
+                    if result.get("errors"):
+                        errors.extend(f"{code}: {err}" for err in result.get("errors")[:5])
+                    if result.get("success") is False:
+                        errors.append(f"{code}: {result.get('error') or result.get('message') or '更新失败'}")
+                except Exception as exc:
+                    errors.append(f"{code}: {exc}")
+                update_job(
+                    execute_query,
+                    job_id,
+                    progress_current=processed,
+                    progress_total=len(stocks),
+                    message=f"已更新 {processed}/{len(stocks)}",
+                    result={"stocks_processed": processed, "records_updated": updated, "errors": errors[:20]},
+                )
+            status = "done" if not errors else "partial"
+            message = f"{title}完成" if not errors else f"{title}部分完成，失败 {len(errors)} 项"
+            finish_job(
+                execute_query,
+                job_id,
+                status=status,
+                message=message,
+                result={"stocks_processed": processed, "records_updated": updated, "errors": errors[:20]},
+            )
+        except Exception:
+            fail_job(execute_query, job_id, traceback.format_exc(), message=f"{title}失败")
+
+    threading.Thread(target=runner, daemon=True).start()
+    return {
+        "success": True,
+        "started": True,
+        "background": True,
+        "job_id": job_id,
+        "job_type": job_type,
+        "stocks_processed": 0,
+        "stocks_total": len(stocks),
+        "message": f"{title}已转入后台任务",
+    }

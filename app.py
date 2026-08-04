@@ -1,6 +1,6 @@
 """stock - Web 服务"""
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, has_request_context, request
 import sys
 import re
 import time
@@ -495,6 +495,7 @@ AUTO_CLOUD_BACKUP_ENDPOINTS = {
     "api_update_financials": "financials-update",
     "api_update_balance_sheet": "balance-sheet-update",
     "api_update_segments": "segments-update",
+    "api_update_shareholders": "shareholders-update",
     "api_update_income": "income-update",
     "api_update_cashflow": "cashflow-update",
     "api_portfolio_save_position": "portfolio-position-save",
@@ -1073,19 +1074,6 @@ register_corporate_action_routes(app, {
 })
 
 
-register_shareholder_routes(app, {
-    "Stock": Stock,
-    "execute_query": execute_query,
-    "get_connection": get_connection,
-    "ensure_shareholders_table": _ensure_shareholders_table,
-    "eastmoney_secu_code": _eastmoney_secu_code,
-    "eastmoney_web_code": _eastmoney_web_code,
-    "as_list": _as_list,
-    "date_only": _date_only,
-    "money_yuan": _money_yuan,
-    "to_float": _to_float,
-})
-
 register_irm_routes(app, {
     "Stock": Stock,
     "execute_query": execute_query,
@@ -1123,7 +1111,8 @@ def _ensure_financials_columns():
 def _get_update_stocks(payload=None, include_name_market=False):
     """Return all active stocks, or one explicit stock when code is provided."""
     payload = payload or {}
-    code = (payload.get("code") or request.args.get("code") or "").strip()
+    query_code = request.args.get("code") if has_request_context() else ""
+    code = (payload.get("code") or query_code or "").strip()
     columns = "code, name, market" if include_name_market else "code"
     if code:
         code = _normalize_stock_code(code)
@@ -1131,8 +1120,24 @@ def _get_update_stocks(payload=None, include_name_market=False):
     return execute_query(f"SELECT {columns} FROM stocks WHERE status='正常'")
 
 
+register_shareholder_routes(app, {
+    "Stock": Stock,
+    "execute_query": execute_query,
+    "get_connection": get_connection,
+    "get_update_stocks": _get_update_stocks,
+    "ensure_shareholders_table": _ensure_shareholders_table,
+    "eastmoney_secu_code": _eastmoney_secu_code,
+    "eastmoney_web_code": _eastmoney_web_code,
+    "as_list": _as_list,
+    "date_only": _date_only,
+    "money_yuan": _money_yuan,
+    "to_float": _to_float,
+})
+
+
 register_dividend_update_routes(app, {
     "execute_query": execute_query,
+    "get_connection": get_connection,
     "get_update_stocks": _get_update_stocks,
     "quote_symbol": _quote_symbol,
 })
@@ -1140,6 +1145,7 @@ register_dividend_update_routes(app, {
 
 register_custom_financial_routes(app, {
     "execute_query": execute_query,
+    "get_connection": get_connection,
     "ensure_financials_columns": _ensure_financials_columns,
     "get_update_stocks": _get_update_stocks,
     "quote_symbol": _quote_symbol,
@@ -1148,6 +1154,7 @@ register_custom_financial_routes(app, {
 
 register_balance_sheet_routes(app, {
     "execute_query": execute_query,
+    "get_connection": get_connection,
     "get_update_stocks": _get_update_stocks,
 })
 
@@ -1162,12 +1169,14 @@ register_market_chart_routes(app, {
 
 _ensure_segments_table = register_segment_routes(app, {
     "execute_query": execute_query,
+    "get_connection": get_connection,
     "get_update_stocks": _get_update_stocks,
 })
 
 
 register_statement_routes(app, {
     "execute_query": execute_query,
+    "get_connection": get_connection,
     "get_update_stocks": _get_update_stocks,
 })
 

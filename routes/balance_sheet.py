@@ -5,9 +5,12 @@ import time
 import requests
 from flask import jsonify, request
 
+from services.background_jobs import start_endpoint_stock_batch
+
 
 def register_balance_sheet_routes(app, deps):
     execute_query = deps["execute_query"]
+    get_connection = deps["get_connection"]
     _get_update_stocks = deps["get_update_stocks"]
 
     # 新浪资产负债表 → 数据库字段映射 (中文行名 → DB column)
@@ -162,9 +165,22 @@ def register_balance_sheet_routes(app, deps):
             mode = payload.get("mode", "full")
         if request.args.get("mode"):
             mode = request.args["mode"]
+        payload = {**payload, "mode": mode}
 
         try:
             stocks = _get_update_stocks(payload)
+            if len(stocks) > 1:
+                return jsonify(start_endpoint_stock_batch(
+                    app,
+                    get_connection,
+                    execute_query,
+                    "update_balance_sheet",
+                    "资产负债表更新",
+                    payload,
+                    stocks,
+                    api_update_balance_sheet,
+                    "/api/update-balance-sheet",
+                ))
             updated_count = 0
             errors = []
 

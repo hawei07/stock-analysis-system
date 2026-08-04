@@ -684,6 +684,7 @@ GET /api/db/migrations
 | `POST` | `/api/update-cashflow` | 更新现金流量表 |
 | `GET` | `/api/stock/<code>/segments` | 查询营收构成 |
 | `POST` | `/api/update-segments` | 更新营收构成 |
+| `POST` | `/api/update-shareholders` | 批量刷新股东缓存 |
 | `GET` | `/api/stock/<code>/valuation` | 查询估值数据 |
 | `GET` | `/api/stock/<code>/kline` | 查询 K 线 |
 | `GET` | `/api/stock/<code>/graham-valuation` | 查询格雷厄姆估值参数 |
@@ -1040,10 +1041,26 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 - `services/stock_metrics_service.py`：首页股票列表指标增强、Graham 合理估值、合理股价、PB 扣商誉等。
 - `services/sticky_notes_service.py`：便利贴 JSON 存储和图片附件处理。
 - `services/shareholder_schema.py`：股东缓存表结构确保。
+- `services/background_jobs.py`：后台任务表、任务创建、状态/进度更新、批量股票后台执行器。
+
+### 14.3 后台任务系统
+
+长耗时的批量更新接口已开始迁入统一后台任务系统。批量请求会立即返回 `job_id`，任务状态可通过 `/api/jobs/<job_id>` 查询。
+
+当前已接入的任务类型：
+
+- `irm_sync_all`：互动易/上证 e 互动全量增量抓取。
+- `update_financials`：自定义财报/财务摘要更新。
+- `update_dividends`：分红数据更新。
+- `update_balance_sheet`：资产负债表更新。
+- `update_income`：利润表更新。
+- `update_cashflow`：现金流量表更新。
+- `update_segments`：营收构成更新。
+- `update_shareholders`：股东数据缓存刷新。
 
 后续如果继续拆分，优先方向是把 `app.py` 中剩余的持仓 helper、云备份 helper、表结构确保逻辑进一步迁入 `services/`。
 
-### 14.3 对比页期间选择修正
+### 14.4 对比页期间选择修正
 
 对比页 `/api/stock/<code>/compare-dashboard` 已调整报告期选择逻辑：
 

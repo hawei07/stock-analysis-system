@@ -5,9 +5,12 @@ import time
 import requests
 from flask import jsonify, request
 
+from services.background_jobs import start_endpoint_stock_batch
+
 
 def register_custom_financial_routes(app, deps):
     execute_query = deps["execute_query"]
+    get_connection = deps["get_connection"]
     _ensure_financials_columns = deps["ensure_financials_columns"]
     _get_update_stocks = deps["get_update_stocks"]
     _quote_symbol = deps["quote_symbol"]
@@ -24,6 +27,7 @@ def register_custom_financial_routes(app, deps):
             mode = payload.get("mode", "full")
         if request.args.get("mode"):
             mode = request.args["mode"]
+        payload = {**payload, "mode": mode}
 
         # 确保新字段列存在
         _ensure_financials_columns()
@@ -33,6 +37,18 @@ def register_custom_financial_routes(app, deps):
 
         try:
             stocks = _get_update_stocks(payload)
+            if len(stocks) > 1:
+                return jsonify(start_endpoint_stock_batch(
+                    app,
+                    get_connection,
+                    execute_query,
+                    "update_financials",
+                    "财报摘要更新",
+                    payload,
+                    stocks,
+                    api_update_financials,
+                    "/api/update-financials",
+                ))
             updated_count = 0
             stocks_processed = 0
             errors = []
