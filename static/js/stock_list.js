@@ -521,10 +521,10 @@ async function syncAddedStockDetails(code) {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, mode: 'incremental' })
+        body: JSON.stringify({ code, mode: 'incremental', background: true })
       });
       const data = await res.json();
-      if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: false });
+      if (window.BackgroundJobs) BackgroundJobs.watchResponse(data, { open: true });
       if (!data.success) failed += 1;
     } catch (e) {
       failed += 1;
@@ -533,7 +533,7 @@ async function syncAddedStockDetails(code) {
   if (failed) {
     showToast('新增股票已添加，部分详情数据补全失败', 'error');
   } else {
-    showToast('新增股票详情数据已补全', 'success');
+    showToast('新增股票详情数据补全任务已提交', 'success');
   }
 }
 
