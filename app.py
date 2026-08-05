@@ -17,7 +17,16 @@ if APP_DIR not in sys.path:
 
 
 from models import Stock
-from db import execute_insert, execute_many, execute_query, execute_update, get_connection, transaction
+from db import (
+    database_stats,
+    execute_insert,
+    execute_many,
+    execute_query,
+    execute_update,
+    get_connection,
+    reset_database_stats,
+    transaction,
+)
 from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
@@ -832,6 +841,8 @@ register_system_routes(app, {
     "db_config": DB_CONFIG,
     "cloud_latest_sql": CLOUD_LATEST_SQL,
     "migration_status": migration_status,
+    "database_stats": database_stats,
+    "reset_database_stats": reset_database_stats,
     "cloud_latest_path": _cloud_latest_path,
     "read_cloud_state": _read_cloud_state,
     "read_local_cloud_state": _read_local_cloud_state,

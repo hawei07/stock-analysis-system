@@ -25,6 +25,8 @@ def register_system_routes(app, deps):
     db_config = deps["db_config"]
     cloud_latest_sql = deps["cloud_latest_sql"]
     migration_status = deps["migration_status"]
+    database_stats = deps["database_stats"]
+    reset_database_stats = deps["reset_database_stats"]
     cloud_latest_path = deps["cloud_latest_path"]
     read_cloud_state = deps["read_cloud_state"]
     read_local_cloud_state = deps["read_local_cloud_state"]
@@ -255,6 +257,17 @@ def register_system_routes(app, deps):
             return jsonify(migration_status())
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/db/stats")
+    def api_db_stats():
+        return jsonify({"ok": True, "stats": database_stats()})
+
+
+    @app.route("/api/db/stats/reset", methods=["POST"])
+    def api_db_stats_reset():
+        reset_database_stats()
+        return jsonify({"ok": True, "stats": database_stats()})
 
 
     @app.route("/api/cloud-backup/status")
