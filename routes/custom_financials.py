@@ -5,6 +5,15 @@ import time
 from flask import jsonify, request
 
 from services.background_jobs import start_endpoint_stock_batch
+from services.financial_metrics import (
+    debt_ratio as financial_debt_ratio,
+    dividend_payout_ratio,
+    dividend_yield,
+    free_cashflow,
+    goodwill_to_parent_equity,
+    income_gross_margin_from_aliases,
+    summary_profitability_metrics,
+)
 from services.providers.eastmoney import finance_web_report
 from services.providers.tencent import quote_text
 
@@ -111,7 +120,7 @@ def register_custom_financial_routes(app, deps):
                         te_raw = item.get("TOTAL_EQUITY_PK", 0)
                         ta_val = round(ta_raw / 1e8, 4) if ta_raw else None
                         te_val = round(te_raw / 1e8, 4) if te_raw else None
-                        debt_ratio_val = round((ta_raw - te_raw) / ta_raw * 100, 2) if (ta_raw and te_raw and ta_raw > 0) else None
+                        debt_ratio_val = financial_debt_ratio(ta_raw, te_raw)
 
                         idr_raw = item.get("INTEREST_DEBT_RATIO")
                         interest_bearing_debt_ratio_val = round(float(idr_raw), 4) if idr_raw else None
@@ -282,10 +291,7 @@ def register_custom_financial_routes(app, deps):
             ts = float(r["total_shares"]) if r["total_shares"] else 0
             basic_eps = float(r["basic_eps"]) if r.get("basic_eps") else None
             debt_ratio_raw = float(r["debt_ratio"]) if r.get("debt_ratio") else None
-            debt_ratio = (
-                debt_ratio_raw if debt_ratio_raw is not None
-                else (round((ta - te) / ta * 100, 2) if ta > 0 else None)
-            )
+            debt_ratio = financial_debt_ratio(ta, te, debt_ratio_raw)
             short_borrow = float(r["short_borrow"]) if r.get("short_borrow") else None
             ncl_due1y = float(r["noncurrent_liab_due1y"]) if r.get("noncurrent_liab_due1y") else None
             long_borrow = float(r["long_borrow"]) if r.get("long_borrow") else None
@@ -293,67 +299,23 @@ def register_custom_financial_routes(app, deps):
             dividend_amount = float(r["dividend_amount"]) if r.get("dividend_amount") else None
             dividend_per_share = float(r["dividend_per_share"]) if r.get("dividend_per_share") else None
 
-            def income_alias_value(field):
-                value = r.get(f"inc_{field}")
-                return float(value) if value is not None else 0
-
-            def positive_income_alias_value(field):
-                return max(income_alias_value(field), 0)
-
-            def income_revenue_value():
-                return income_alias_value("total_revenue") or income_alias_value("operating_revenue")
-
-            def income_finance_expense_before_interest_income_value():
-                finance_expense = income_alias_value("finance_expense")
-                finance_interest_income = positive_income_alias_value("finance_interest_income")
-                if finance_interest_income > 0:
-                    return max(finance_expense + finance_interest_income, 0)
-                return max(finance_expense, 0)
-
-            def income_period_expense_value():
-                return (
-                    positive_income_alias_value("selling_expense")
-                    + positive_income_alias_value("admin_expense")
-                    + positive_income_alias_value("rd_expense")
-                    + income_finance_expense_before_interest_income_value()
-                )
-
-            def income_gross_value():
-                return max(
-                    income_revenue_value()
-                    - positive_income_alias_value("cost_of_revenue")
-                    - positive_income_alias_value("interest_expense")
-                    - positive_income_alias_value("fee_commission_expense"),
-                    0,
-                )
-
-            income_has_core_fields = any(
-                r.get(f"inc_{field}") is not None
-                for field in (
-                    "total_revenue", "operating_revenue", "cost_of_revenue",
-                    "selling_expense", "admin_expense", "finance_expense", "rd_expense",
-                )
+            profitability = summary_profitability_metrics(
+                revenue=rev,
+                operate_profit=op,
+                parent_profit=pp,
+                operate_cashflow=ocf,
+                source_row=r,
             )
-            if income_has_core_fields:
-                op = income_gross_value() - income_period_expense_value() - positive_income_alias_value("tax_surcharge")
-                core_profit_rate = round(op / income_revenue_value() * 100, 2) if income_revenue_value() else None
-            else:
-                core_profit_rate = round(op / rev * 100, 2) if rev else None
-            net_profit_rate = round(pp / rev * 100, 2) if rev else None
-            cashflow_to_profit = round(ocf / pp * 100, 2) if pp and pp > 0 else None
-            dividend_payout_ratio = (
-                round(dividend_amount / pp * 100, 2)
-                if (dividend_amount is not None and pp and pp > 0) else None
-            )
+            op = profitability["operate_profit"] if profitability["operate_profit"] is not None else op
+            core_profit_rate = profitability["core_profit_rate"]
+            net_profit_rate = profitability["net_profit_rate"]
+            cashflow_to_profit = profitability["cashflow_to_profit"]
+            payout_ratio = dividend_payout_ratio(dividend_amount, pp)
             interest_bearing_debt_ratio = (
                 round(float(r["interest_bearing_debt_ratio"]), 2)
                 if r.get("interest_bearing_debt_ratio") else None
             )
-            dividend_yield_fin = (
-                round(dividend_per_share / cur_price * 100, 2)
-                if (dividend_per_share is not None and dividend_per_share > 0
-                    and cur_price and cur_price > 0) else None
-            )
+            dividend_yield_fin = dividend_yield(dividend_per_share, cur_price)
 
             def extra_val(prefix, field):
                 value = r.get(f"{prefix}_{field}")
@@ -367,21 +329,14 @@ def register_custom_financial_routes(app, deps):
             for field in cashflow_extra_fields:
                 extras[f"cf_{field}"] = extra_val("cf", field)
 
-            inc_revenue = extras.get("inc_operating_revenue") or extras.get("inc_total_revenue")
-            inc_cost = extras.get("inc_cost_of_revenue")
-            if inc_cost is None:
-                inc_cost = extras.get("inc_operating_cost")
-            extras["inc_gross_margin"] = (
-                round((inc_revenue - inc_cost) / inc_revenue * 100, 2)
-                if inc_revenue and inc_cost is not None else None
+            extras["inc_gross_margin"] = income_gross_margin_from_aliases(extras, prefix="inc_")
+            extras["bs_goodwill_to_parent_equity"] = goodwill_to_parent_equity(
+                extras.get("bs_goodwill"),
+                extras.get("bs_parent_equity"),
             )
-            extras["bs_goodwill_to_parent_equity"] = (
-                round(extras.get("bs_goodwill") / extras.get("bs_parent_equity") * 100, 2)
-                if extras.get("bs_goodwill") is not None and extras.get("bs_parent_equity") else None
-            )
-            extras["cf_free_cashflow"] = (
-                round(extras.get("cf_cf_oper_net") - extras.get("cf_cf_buy_assets"), 4)
-                if extras.get("cf_cf_oper_net") is not None and extras.get("cf_cf_buy_assets") is not None else None
+            extras["cf_free_cashflow"] = free_cashflow(
+                extras.get("cf_cf_oper_net"),
+                extras.get("cf_cf_buy_assets"),
             )
 
             return {
@@ -395,7 +350,7 @@ def register_custom_financial_routes(app, deps):
                 "cashflow_to_profit": cashflow_to_profit,
                 "basic_eps": basic_eps, "debt_ratio": debt_ratio,
                 "dividend_amount": dividend_amount, "dividend_per_share": dividend_per_share,
-                "dividend_payout_ratio": dividend_payout_ratio,
+                "dividend_payout_ratio": payout_ratio,
                 "interest_bearing_debt_ratio": interest_bearing_debt_ratio,
                 "dividend_yield_fin": dividend_yield_fin,
                 **extras,
@@ -438,22 +393,22 @@ def register_custom_financial_routes(app, deps):
                 pp_s = single.get("parent_profit") or 0
                 ocf_s = single.get("operate_cashflow") or 0
                 da_s = single.get("dividend_amount")
-                core_revenue_s = single.get("inc_total_revenue") or single.get("inc_operating_revenue") or rev_s
-                single["core_profit_rate"] = round(op_s / core_revenue_s * 100, 2) if core_revenue_s else None
-                single["net_profit_rate"] = round(pp_s / rev_s * 100, 2) if rev_s else None
-                single["cashflow_to_profit"] = round(ocf_s / pp_s * 100, 2) if pp_s and pp_s > 0 else None
-                single["dividend_payout_ratio"] = round(da_s / pp_s * 100, 2) if (da_s is not None and pp_s and pp_s > 0) else None
-                inc_rev_s = single.get("inc_operating_revenue") or single.get("inc_total_revenue")
-                inc_cost_s = single.get("inc_cost_of_revenue")
-                if inc_cost_s is None:
-                    inc_cost_s = single.get("inc_operating_cost")
-                single["inc_gross_margin"] = (
-                    round((inc_rev_s - inc_cost_s) / inc_rev_s * 100, 2)
-                    if inc_rev_s and inc_cost_s is not None else None
+                profitability = summary_profitability_metrics(
+                    revenue=rev_s,
+                    operate_profit=op_s,
+                    parent_profit=pp_s,
+                    operate_cashflow=ocf_s,
+                    source_row=single,
                 )
-                single["cf_free_cashflow"] = (
-                    round(single.get("cf_cf_oper_net") - single.get("cf_cf_buy_assets"), 4)
-                    if single.get("cf_cf_oper_net") is not None and single.get("cf_cf_buy_assets") is not None else None
+                single["operate_profit"] = profitability["operate_profit"]
+                single["core_profit_rate"] = profitability["core_profit_rate"]
+                single["net_profit_rate"] = profitability["net_profit_rate"]
+                single["cashflow_to_profit"] = profitability["cashflow_to_profit"]
+                single["dividend_payout_ratio"] = dividend_payout_ratio(da_s, pp_s)
+                single["inc_gross_margin"] = income_gross_margin_from_aliases(single, prefix="inc_")
+                single["cf_free_cashflow"] = free_cashflow(
+                    single.get("cf_cf_oper_net"),
+                    single.get("cf_cf_buy_assets"),
                 )
                 result.append(single)
             # 过滤到请求的报告期

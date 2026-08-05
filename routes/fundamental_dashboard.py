@@ -6,6 +6,7 @@ from services.financial_metrics import (
     avg as financial_avg,
     cagr as financial_cagr,
     enrich_financial_summary_item,
+    goodwill_to_parent_equity as financial_goodwill_to_parent_equity,
     pct_change,
     round_or_none as financial_round_or_none,
     to_float,
@@ -208,7 +209,7 @@ def register_fundamental_dashboard_routes(app, deps):
             )
             parent_equity = to_float(balance[0]["parent_equity"]) if balance else latest.get("total_equity")
             goodwill = to_float(balance[0]["goodwill"]) if balance and balance[0].get("goodwill") is not None else 0
-            goodwill_to_equity = goodwill / parent_equity * 100 if parent_equity and parent_equity > 0 else None
+            goodwill_to_equity = financial_goodwill_to_parent_equity(goodwill, parent_equity)
 
             pe_ttm = to_float(market_metrics.get("pe_ttm"))
             dividend_yield = to_float(market_metrics.get("dividend_yield"))
