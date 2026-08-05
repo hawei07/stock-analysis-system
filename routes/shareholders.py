@@ -13,6 +13,7 @@ from services.providers.eastmoney import (
 def register_shareholder_routes(app, deps):
     Stock = deps["Stock"]
     execute_query = deps["execute_query"]
+    execute_many = deps["execute_many"]
     get_connection = deps["get_connection"]
     _get_update_stocks = deps["get_update_stocks"]
     _schedule_auto_cloud_backup = deps.get("schedule_auto_cloud_backup")
@@ -230,11 +231,7 @@ def register_shareholder_routes(app, deps):
         if not values:
             return 0
 
-        conn = get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.executemany(
-                """INSERT INTO stock_shareholders (
+        sql = """INSERT INTO stock_shareholders (
                        stock_code, report_date, holder_rank, holder_name, shares_type,
                        hold_num, hold_ratio, hold_change_label, hold_change_num,
                        change_ratio, change_type, is_report_date, source, fetched_at
@@ -251,14 +248,9 @@ def register_shareholder_routes(app, deps):
                        is_report_date = VALUES(is_report_date),
                        source = VALUES(source),
                        fetched_at = NOW(),
-                       updated_at = CURRENT_TIMESTAMP""",
-                values,
-            )
-            conn.commit()
-            return len(values)
-        finally:
-            cursor.close()
-            conn.close()
+                       updated_at = CURRENT_TIMESTAMP"""
+        execute_many(sql, values)
+        return len(values)
 
 
     @app.route("/api/stock/<code>/shareholders")

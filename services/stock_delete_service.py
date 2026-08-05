@@ -58,55 +58,48 @@ def _has_portfolio_refs(cursor, code):
     return False
 
 
-def delete_stock_with_related_data(get_connection, code):
+def delete_stock_with_related_data(transaction, code):
     """Clear stock detail data and remove the stock from the watchlist.
 
     Portfolio tables are intentionally kept. If portfolio records reference this
     stock, the stocks row is kept with is_watchlist=0 to avoid FK cascades and to
     preserve display metadata for holdings.
     """
-    conn = get_connection()
-    cursor = None
     deleted = {}
-    try:
-        cursor = conn.cursor(dictionary=True)
-        _ensure_watchlist_column(cursor)
-        cursor.execute("SELECT code, name FROM stocks WHERE code=%s LIMIT 1", (code,))
-        stock = cursor.fetchone()
-        if not stock:
-            return {"deleted_stock": 0, "hidden_stock": 0, "deleted": {}}
+    with transaction(dictionary=True) as cursor:
+        return _delete_stock_with_related_data(cursor, code, deleted)
 
-        for table in _stock_code_tables(cursor):
-            if table in EXCLUDED_STOCK_CODE_TABLES:
-                continue
-            count = _delete_from_table(cursor, table, code)
-            if count:
-                deleted[table] = deleted.get(table, 0) + count
 
-        has_portfolio_refs = _has_portfolio_refs(cursor, code)
-        if has_portfolio_refs:
-            cursor.execute("UPDATE stocks SET is_watchlist=0 WHERE code=%s", (code,))
-            deleted_stock = 0
-            hidden_stock = cursor.rowcount
-        else:
-            cursor.execute("DELETE FROM stocks WHERE code=%s", (code,))
-            deleted_stock = cursor.rowcount
-            hidden_stock = 0
-        conn.commit()
-        return {
-            "deleted_stock": deleted_stock,
-            "hidden_stock": hidden_stock,
-            "portfolio_preserved": has_portfolio_refs,
-            "stock": stock,
-            "deleted": deleted,
-        }
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        if cursor:
-            cursor.close()
-        conn.close()
+def _delete_stock_with_related_data(cursor, code, deleted):
+    _ensure_watchlist_column(cursor)
+    cursor.execute("SELECT code, name FROM stocks WHERE code=%s LIMIT 1", (code,))
+    stock = cursor.fetchone()
+    if not stock:
+        return {"deleted_stock": 0, "hidden_stock": 0, "deleted": {}}
+
+    for table in _stock_code_tables(cursor):
+        if table in EXCLUDED_STOCK_CODE_TABLES:
+            continue
+        count = _delete_from_table(cursor, table, code)
+        if count:
+            deleted[table] = deleted.get(table, 0) + count
+
+    has_portfolio_refs = _has_portfolio_refs(cursor, code)
+    if has_portfolio_refs:
+        cursor.execute("UPDATE stocks SET is_watchlist=0 WHERE code=%s", (code,))
+        deleted_stock = 0
+        hidden_stock = cursor.rowcount
+    else:
+        cursor.execute("DELETE FROM stocks WHERE code=%s", (code,))
+        deleted_stock = cursor.rowcount
+        hidden_stock = 0
+    return {
+        "deleted_stock": deleted_stock,
+        "hidden_stock": hidden_stock,
+        "portfolio_preserved": has_portfolio_refs,
+        "stock": stock,
+        "deleted": deleted,
+    }
 
 
 def delete_stock_sticky_notes(load_notes, save_notes, cleanup_images, code):

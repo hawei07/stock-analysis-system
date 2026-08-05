@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from db import get_connection, execute_query
+from db import transaction
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -60,16 +60,11 @@ def _split_sql(sql_text):
 
 def migration_status():
     """Return applied and pending migrations without executing pending files."""
-    conn = get_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
+    with transaction(dictionary=True) as cursor:
         _ensure_migration_table(cursor)
         cursor.execute("SELECT version, name, checksum, applied_at FROM schema_migrations ORDER BY version")
         applied_rows = cursor.fetchall()
         applied = {row["version"]: row for row in applied_rows}
-    finally:
-        cursor.close()
-        conn.close()
 
     files = []
     for path in _migration_files():
@@ -87,22 +82,21 @@ def migration_status():
 def run_migrations():
     """Apply pending SQL migrations and return a summary."""
     applied_now = []
-    conn = get_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
+    with transaction(dictionary=True) as cursor:
         _ensure_migration_table(cursor)
         cursor.execute("SELECT version, checksum FROM schema_migrations")
         applied = {row["version"]: row["checksum"] for row in cursor.fetchall()}
 
-        for path in _migration_files():
-            version = path.stem
-            sql_text = path.read_text(encoding="utf-8")
-            checksum = _checksum(sql_text)
-            if version in applied:
-                if applied[version] != checksum:
-                    raise RuntimeError(f"Migration checksum changed after apply: {path.name}")
-                continue
+    for path in _migration_files():
+        version = path.stem
+        sql_text = path.read_text(encoding="utf-8")
+        checksum = _checksum(sql_text)
+        if version in applied:
+            if applied[version] != checksum:
+                raise RuntimeError(f"Migration checksum changed after apply: {path.name}")
+            continue
 
+        with transaction(dictionary=True) as cursor:
             for statement in _split_sql(sql_text):
                 cursor.execute(statement)
 
@@ -110,12 +104,5 @@ def run_migrations():
                 "INSERT INTO schema_migrations (version, name, checksum) VALUES (%s, %s, %s)",
                 (version, path.name, checksum),
             )
-            conn.commit()
-            applied_now.append(path.name)
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        cursor.close()
-        conn.close()
+        applied_now.append(path.name)
     return {"applied": applied_now, "count": len(applied_now)}

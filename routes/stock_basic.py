@@ -11,7 +11,7 @@ from services.providers.tencent import quote_text
 
 def register_stock_basic_routes(app, deps):
     Stock = deps["Stock"]
-    get_connection = deps["get_connection"]
+    transaction = deps["transaction"]
     execute_query = deps["execute_query"]
     quote_symbol = deps["quote_symbol"]
     normalize_stock_code = deps["normalize_stock_code"]
@@ -215,7 +215,7 @@ def register_stock_basic_routes(app, deps):
     def api_delete_stock(code):
         code = normalize_stock_code(code)
         try:
-            result = delete_stock_with_related_data(get_connection, code)
+            result = delete_stock_with_related_data(transaction, code)
             if result.get("deleted_stock") or result.get("hidden_stock"):
                 result["sticky_json_deleted"] = delete_stock_sticky_notes(load_notes, save_notes, cleanup_images, code)
                 return jsonify({"success": True, "message": "删除成功，详情数据已清理，持仓数据已保留", **result})

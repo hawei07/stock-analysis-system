@@ -17,7 +17,7 @@ if APP_DIR not in sys.path:
 
 
 from models import Stock
-from db import get_connection, execute_insert, execute_query, execute_update
+from db import execute_insert, execute_many, execute_query, execute_update, get_connection, transaction
 from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
@@ -862,7 +862,7 @@ register_stock_routes(app, {
 
 register_stock_basic_routes(app, {
     "Stock": Stock,
-    "get_connection": get_connection,
+    "transaction": transaction,
     "execute_query": execute_query,
     "quote_symbol": _quote_symbol,
     "normalize_stock_code": _normalize_stock_code,
@@ -974,6 +974,7 @@ def _get_update_stocks(payload=None, include_name_market=False):
 register_shareholder_routes(app, {
     "Stock": Stock,
     "execute_query": execute_query,
+    "execute_many": execute_many,
     "get_connection": get_connection,
     "get_update_stocks": _get_update_stocks,
     "schedule_auto_cloud_backup": _schedule_auto_cloud_backup,
