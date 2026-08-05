@@ -1,7 +1,7 @@
 # stock - 架构与业务说明
 
-> 当前版本：v3.2
-> 更新日期：2026-08-01
+> 当前版本：v3.3
+> 更新日期：2026-08-05
 > 技术栈：Python Flask + MySQL + 原生 HTML/CSS/JavaScript  
 > 默认访问地址：`http://127.0.0.1:5002`
 
@@ -13,11 +13,11 @@
 
 当前系统已经覆盖：
 
-- 股票池管理：新增、修改、删除、搜索、分页、筛选、拖拽排序。
-- 财务数据分析：分红、财报摘要、资产负债表、利润表、现金流量表、营收构成。
-- 估值分析：PE/PB、格雷厄姆估值参数、合理估值和合理价格。
-- 持仓管理：持仓数量、现金、资金流水、预计分红、净值快照。
-- 辅助分析：对话芒格、便利贴、图片附件、K 线图。
+- 股票池管理：新增、修改、删除、搜索、分页、筛选、拖拽排序；新增股票后自动补全股票详情页数据。
+- 财务数据分析：自定义财报、分红、融资、资产负债表、利润表、现金流量表、营收构成、股东、估值、走势、互动易。
+- 估值分析：PE/PB、股息率、格雷厄姆估值参数、合理估值、合理价格、PB 扣商誉。
+- 持仓管理：买入/卖出、手续费配置、印花税、现金入金/出金、公司行为、持仓成本重算、预计分红、净值快照和净值明细。
+- 辅助分析：基本面驾驶舱、对比页、资本配置、对话芒格、便利贴、图片附件、K 线图。
 - 跨电脑使用：本机配置文件 `local_settings.json` + Dropbox/OneDrive 等同步盘云备份。
 - 数据安全：手动云备份、延迟自动云备份、恢复前备份、历史版本恢复。
 
@@ -28,22 +28,50 @@
 ```text
 浏览器
   |
-  | HTTP
+  | HTTP / JSON
   v
 Flask Web 服务 app.py
   |
-  | 调用业务函数、数据抓取、备份恢复
+  | 创建应用、读取配置、注入 deps、注册 routes
   v
-Python 服务模块
-  |-- models.py              股票基础模型
-  |-- db.py                  MySQL 连接池
-  |-- config_manager.py      系统配置
-  |-- munger.py              对话芒格
-  |-- stock_list.py          命令行导入/维护
+routes/
+  |-- pages.py                 页面入口
+  |-- stocks.py                首页列表、行情、估值参数
+  |-- stock_basic.py           股票基础 CRUD、搜索、删除清理
+  |-- custom_financials.py     自定义财报/财务摘要
+  |-- balance_sheet.py         资产负债表
+  |-- statements.py            利润表、现金流量表
+  |-- segments.py              营收构成
+  |-- corporate_actions.py     分红、融资
+  |-- shareholders.py          股东缓存与查询
+  |-- irm.py                   互动易/上证 e 互动
+  |-- portfolio.py             我的持仓、交易、现金、净值
+  |-- jobs.py                  后台任务
+  |-- system.py                配置、云备份、数据库状态
   |
-  | mysql-connector-python
+  | 调用业务服务
+  v
+services/
+  |-- database.py              统一数据库访问实现
+  |-- background_jobs.py       长耗时任务与日志
+  |-- financial_periods.py     财报期间选择
+  |-- financial_metrics.py     财务公式
+  |-- stock_identity.py        股票代码/市场/行业识别
+  |-- market_data.py           行情数据
+  |-- portfolio_*.py           持仓、交易、现金、净值、费用
+  |-- cloud_backup_*.py        云备份存储与策略
+  |-- providers/               东方财富、新浪、腾讯等数据源适配
+  |
+  | db.py 门面 -> mysql-connector-python
   v
 MySQL stock_analysis
+
+前端静态资源
+  |-- static/js/core/           API 和通用格式化
+  |-- static/js/detail/         股票详情页各 Tab
+  |-- static/js/financial/      财务表格/公式/偏好
+  |-- static/js/portfolio/      我的持仓页面模块
+  |-- static/js/background_jobs.js
 
 本地文件
   |-- local_settings.json        本机私有配置，不提交 Git
@@ -87,28 +115,45 @@ MySQL stock_analysis
 | `routes/notes_chat.py` | 便利贴、图片附件、对话芒格 |
 | `migrations.py` | 轻量数据库迁移执行器，按顺序执行 `migrations/*.sql` 并写入 `schema_migrations` |
 | `migrations/001_current_schema.sql` | 当前数据库结构基线迁移，覆盖股票、财务、持仓、芒格、配置等核心表 |
+| `services/app_settings.py` | 应用设置读取与本机配置 helper |
 | `services/cloud_backup_service.py` | 云备份保留策略、自动备份延迟策略、SQL 备份文件校验 |
+| `services/cloud_backup_storage.py` | 云备份文件、状态文件、备份目录等存储层操作 |
+| `services/database.py` | 数据库连接池、统一查询门面、事务、慢 SQL 统计 |
+| `services/exchange_rates.py` | 港币等汇率获取与缓存 |
 | `services/financial_periods.py` | 财务报告期 helper：可用期间过滤、最新期间、去年同期、年报序列、CAGR 起点 |
 | `services/financial_metrics.py` | 财务指标 helper：数字转换、同比、CAGR、核心利润口径、财务摘要派生指标 |
+| `services/http_client.py` | 外部 HTTP 请求统一封装 |
+| `services/mysql_tools.py` | MySQL dump/import、可执行文件探测等工具 |
 | `services/stock_identity.py` | 股票代码规范化、市场识别、腾讯行情 symbol、东方财富编码、港股识别、行业获取 |
 | `services/market_data.py` | 腾讯实时行情、实时价格、年初至今涨跌幅 |
 | `services/stock_metrics_service.py` | 首页股票指标增强、Graham 合理估值、合理股价、PB 扣商誉、实时列表指标 |
+| `services/portfolio_*.py` | 我的持仓服务族：交易、现金、净值、费用、公司行为、持仓重算、审计 |
+| `services/providers/*.py` | 东方财富、新浪、腾讯等数据源适配 |
 | `services/sticky_notes_service.py` | 便利贴 JSON 存储、base64 图片落盘、关联图片清理 |
 | `services/shareholder_schema.py` | 股东缓存表结构确保 |
 | `services/background_jobs.py` | 后台任务表结构、任务创建、进度更新、完成/失败状态落库 |
+| `services/stock_delete_service.py` | 删除自选股时清理股票详情页相关本地数据，保留持仓数据 |
+| `services/ui_preferences.py` | 前端偏好与自定义财报指标配置存储 |
 | `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、备份管理弹窗 |
 | `templates/portfolio.html` | 我的持仓页面，含持仓、现金、资金流水、净值曲线 |
 | `static/css/index.css` | 首页和股票详情页样式 |
 | `static/css/portfolio.css` | 我的持仓页样式 |
 | `static/css/cloud_backup.css` | 云备份、云恢复、备份管理公共样式 |
+| `static/css/background_jobs.css` | 后台任务全局浮窗样式 |
 | `static/js/theme.js` | 深色模式和 ECharts 主题适配 |
 | `static/js/ui_utils.js` | Toast、HTML 转义、图片查看器等公共 UI 工具 |
+| `static/js/core/api.js` | 通用 fetch 封装和 `StockApi` 请求方法 |
+| `static/js/core/formatters.js` | 金额、百分比、日期、空值等通用格式化 |
 | `static/js/stock_list.js` | 股票列表、搜索、排序、添加编辑删除、默认顺序、格雷厄姆参数 |
-| `static/js/stock_detail.js` | 股票详情、K 线、分红、PE/PB/股息率估值图、详情页持仓卡片 |
-| `static/js/financial_tables.js` | 财务表格、营收构成、指标趋势图 |
+| `static/js/stock_detail.js` | 股票详情页主入口、Tab 切换、详情页持仓卡片 |
+| `static/js/detail/*.js` | 股票详情页各 Tab：驾驶舱、分红、融资、股东、估值、走势、互动易、对比、资本配置 |
+| `static/js/financial/*.js` | 财务模块：自定义财报、三张表、营收构成、指标偏好、前端展示公式 |
+| `static/js/financial_tables.js` | 财务模块兼容入口，逐步保留为桥接层 |
 | `static/js/notes_chat.js` | 便利贴、图片粘贴、对话芒格 |
 | `static/js/cloud_backup.js` | 云备份、云恢复、备份管理、历史版本恢复 |
+| `static/js/background_jobs.js` | 后台任务浮窗、轮询、日志、取消、重试 |
 | `static/js/local_settings.js` | 本机环境配置读取、测试、保存 |
+| `static/js/portfolio/*.js` | 我的持仓页模块：API、状态、布局、持仓、交易、资金流水、净值 |
 | `models.py` | `Stock` 模型，封装股票基础 CRUD |
 | `db.py` | MySQL 连接池和统一查询入口 |
 | `config.py` | 默认数据库连接参数 |
@@ -332,15 +377,19 @@ templates/index.html
 - 股票列表、搜索、分页、市场/状态筛选
 - 指标排序和拖拽保存默认顺序
 - 股票新增、编辑、删除
-- 股票详情页 Tab
-- 分红图表
-- 自定义财报表格
+- 股票详情页 Tab，当前顺序为：自定义财报、分红、营收构成、资产负债表、利润表、现金流量表、融资、股东、估值、走势、互动易、便利贴、对话芒格
+- 基本面驾驶舱、对比页、资本配置等详情页分析模块
+- 分红图表，柱状图展示金额、折线节点展示分红比例
+- 自定义财报表格，支持指标选择和顺序保存，并参与云同步恢复
 - 营收构成
 - 资产负债表
-- 利润表
+- 利润表，含核心利润、核心利润率、毛利率和桑基图
 - 现金流量表
-- 估值分析
-- K 线图
+- 融资分析，含历年累计融资与累计分红对比
+- 股东页面，默认最近 3 年并横向滚动到最新数据
+- 估值分析，默认最近 3 年
+- 走势/K 线图
+- 互动易/上证 e 互动问答，只抓有答复内容并按天增量更新
 - 对话芒格
 - 便利贴
 - 云备份、云恢复、备份管理、历史版本恢复
@@ -357,17 +406,15 @@ templates/portfolio.html
 
 功能：
 
-- 持仓列表
-- 股票市值
-- 现金
-- 总资产
-- 预计分红
-- 股息率
+- 持仓列表，持仓明细只展示持仓股数和查看持仓入口
+- 买入、卖出、交易作废、公司行为记录和持仓重算
+- 券商手续费配置，买卖时考虑国内印花税等税费
+- 现金通过入金、出金、买入、卖出等流水变化，不再直接修改现金金额
+- 净值模块展示净值、总资产、持仓市值、现金、仓位、当日收益、累计收益、累计入金、累计出金
+- 净值明细按日期倒序展示净值、涨跌幅、总市值、仓位百分比，支持日期筛选、分页和 Excel 导出
+- 预计分红和股息率，其中股息率按预期分红除以总市值
 - 港股持仓按自动获取的 `HKD -> CNY` 汇率折算进人民币总资产
-- 自定义每股分红
-- 资金流水
-- 每日净值快照
-- 净值曲线
+- 自定义每股分红，输入保留 2 位小数，历史最新分红展示到 3 位小数
 - 启动时检测云端更新
 
 ---
@@ -545,7 +592,8 @@ stock_code + fiscal_year + report_period + dimension_type + segment_name
 | 字段 | 说明 |
 |---|---|
 | `stock_code` | 股票代码，唯一 |
-| `shares` | 持股数量 |
+| `shares` | 当前持股数量，由交易和公司行为重算 |
+| `cost_price` | 当前成本价，由系统按买卖记录重算，不在持仓明细直接编辑 |
 | `custom_dividend_per_share` | 自定义每股分红 |
 | `created_at` / `updated_at` | 时间戳 |
 
@@ -558,7 +606,7 @@ stock_code + fiscal_year + report_period + dimension_type + segment_name
 | 字段 | 说明 |
 |---|---|
 | `id` | 固定为 `1` |
-| `amount` | 现金金额 |
+| `amount` | 当前现金金额，由入金/出金/买入/卖出等流水更新，不再直接手工修改 |
 | `updated_at` | 更新时间 |
 
 ### 7.11 portfolio_cash_flows
@@ -570,6 +618,8 @@ stock_code + fiscal_year + report_period + dimension_type + segment_name
 | 字段 | 说明 |
 |---|---|
 | `flow_date` | 流水日期 |
+| `flow_source` | `external` / `trade` / `corporate_action` 等流水来源 |
+| `source_type` / `source_id` | 关联来源类型和来源记录 ID |
 | `amount` | 金额，流入为正、流出为负 |
 | `note` | 备注 |
 | `created_at` | 创建时间 |
@@ -589,6 +639,8 @@ stock_code + fiscal_year + report_period + dimension_type + segment_name
 | `total_asset_value` | 总资产 |
 | `positions_json` | 当日持仓 JSON |
 | `created_at` / `updated_at` | 时间戳 |
+
+`nav_index`、`nav_change_pct`、仓位、当日收益、累计收益、累计入金和累计出金由 `services/portfolio_nav.py` 查询快照和资金流水后动态计算返回。
 
 ### 7.13 munger_chats
 
@@ -642,6 +694,69 @@ migrations/001_current_schema.sql
 GET /api/db/migrations
 ```
 
+### 7.16 portfolio_trades
+
+持仓交易记录表。买入、卖出都必须通过该表记录，系统据此重算剩余股数、成本价、现金和盈亏。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `stock_code` | 股票代码 |
+| `trade_type` | `buy` / `sell` |
+| `trade_date` | 成交日期 |
+| `shares` | 成交股数 |
+| `price` | 成交价 |
+| `amount` | 成交金额 |
+| `commission` / `stamp_tax` / `transfer_fee` / `total_fee` | 佣金、印花税、过户费、总费用 |
+| `cash_delta` | 对现金的影响，买入为负，卖出为正 |
+| `shares_before` / `shares_after` | 交易前后股数 |
+| `cost_price_before` / `cost_price_after` | 交易前后成本价 |
+| `is_void` / `voided_at` / `void_note` | 作废状态和原因 |
+
+### 7.17 portfolio_fee_config
+
+持仓交易费用配置表，固定 `id=1`。
+
+| 字段 | 说明 |
+|---|---|
+| `commission_rate` | 券商佣金率 |
+| `min_commission` | 最低佣金 |
+| `stamp_tax_rate` | 印花税率，当前卖出时计入 |
+| `transfer_fee_rate` | 过户费率 |
+
+### 7.18 portfolio_corporate_actions
+
+持仓公司行为记录表，当前用于记录分红等会影响现金和成本的事件。分红按系统约定摊薄持仓成本，并计入现金。
+
+关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `stock_code` | 股票代码 |
+| `action_type` | 公司行为类型，例如 `dividend` |
+| `action_date` | 发生日期 |
+| `shares` | 对应股数 |
+| `cash_amount` | 现金影响金额 |
+| `cost_price_before` / `cost_price_after` | 公司行为前后成本价 |
+| `is_void` / `voided_at` / `void_note` | 作废状态和原因 |
+
+### 7.19 background_jobs / background_job_logs
+
+后台任务和任务日志表，由 `services/background_jobs.py` 确保结构。用于批量更新财报、分红、三张表、营收构成、股东和互动易等长耗时任务。
+
+### 7.20 irm_interactions
+
+互动易/上证 e 互动问答缓存表。只保存有答复的问答，按 `question_id` 去重，增量抓取时不会重复写入。
+
+### 7.21 stock_shareholders
+
+前十大股东缓存表。按 `stock_code + report_date + holder_rank` 唯一，股东页默认展示最近 3 年并使用本地缓存加速加载。
+
+### 7.22 ui_preferences
+
+用户界面偏好表。用于保存自定义财报指标选择、指标顺序等可跨电脑同步恢复的设置。
+
 ---
 
 ## 8. REST API 总览
@@ -659,11 +774,13 @@ GET /api/db/migrations
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/stocks` | 股票列表，支持分页、筛选、关键字、指标排序 |
+| `GET` | `/api/stocks/realtime` | 自选股实时行情列表 |
+| `GET` | `/api/stocks/ytd` | 自选股年初至今涨跌幅 |
 | `POST` | `/api/stocks/reorder` | 保存默认顺序 |
 | `GET` | `/api/stock/<code>` | 股票详情 |
 | `POST` | `/api/stock` | 添加股票，支持自动获取名称/市场 |
 | `PUT` | `/api/stock/<code>` | 修改股票 |
-| `DELETE` | `/api/stock/<code>` | 删除股票，并清理该股票所有本地股票维度数据 |
+| `DELETE` | `/api/stock/<code>` | 删除自选股，并清理详情页研究数据；如存在持仓/交易则保留持仓数据 |
 | `GET` | `/api/stats` | 统计概览 |
 | `GET` | `/api/stock-search` | 本地 + 东方财富搜索 |
 | `GET` | `/api/stock-info/<code>` | 东方财富获取股票名称和市场 |
@@ -685,6 +802,15 @@ GET /api/db/migrations
 | `GET` | `/api/stock/<code>/segments` | 查询营收构成 |
 | `POST` | `/api/update-segments` | 更新营收构成 |
 | `POST` | `/api/update-shareholders` | 批量刷新股东缓存 |
+| `GET` | `/api/stock/<code>/shareholders` | 查询前十大股东缓存 |
+| `GET` | `/api/stock/<code>/financing` | 查询融资数据 |
+| `GET` | `/api/stock/<code>/irm` | 查询互动易/上证 e 互动问答 |
+| `POST` | `/api/stock/<code>/irm/sync` | 单只股票增量同步互动问答 |
+| `GET` | `/api/irm/status` | 查询互动问答同步状态 |
+| `POST` | `/api/irm/sync` | 全部股票互动问答增量同步，后台任务执行 |
+| `GET` | `/api/stock/<code>/fundamental-dashboard` | 基本面驾驶舱 |
+| `GET` | `/api/stock/<code>/compare-dashboard` | 对比页指标数据 |
+| `GET` | `/api/stock/<code>/capital-allocation` | 资本配置分析 |
 | `GET` | `/api/stock/<code>/valuation` | 查询估值数据 |
 | `GET` | `/api/stock/<code>/kline` | 查询 K 线 |
 | `GET` | `/api/stock/<code>/graham-valuation` | 查询格雷厄姆估值参数 |
@@ -695,16 +821,27 @@ GET /api/db/migrations
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/portfolio` | 当前持仓汇总 |
-| `POST` | `/api/portfolio/positions` | 新增/修改持仓 |
-| `DELETE` | `/api/portfolio/positions/<code>` | 删除持仓 |
+| `GET` | `/api/portfolio/fee-config` | 查询券商手续费、印花税、过户费配置 |
+| `PUT` | `/api/portfolio/fee-config` | 保存交易费用配置 |
+| `POST` | `/api/portfolio/positions` | 历史兼容接口，当前返回错误：持仓只能通过买入/卖出变动 |
+| `POST` | `/api/portfolio/trades` | 新增买入/卖出交易并自动更新持仓和现金 |
+| `GET` | `/api/portfolio/trades` | 查询交易记录 |
+| `POST` | `/api/portfolio/trades/<id>/void` | 作废交易并重算持仓 |
+| `POST` | `/api/portfolio/actions` | 新增公司行为，例如分红 |
+| `GET` | `/api/portfolio/actions` | 查询公司行为记录 |
+| `POST` | `/api/portfolio/actions/<id>/void` | 作废公司行为并重算持仓 |
+| `GET` | `/api/portfolio/positions/<code>` | 查询单只持仓详情 |
+| `DELETE` | `/api/portfolio/positions/<code>` | 历史兼容接口，当前返回错误：不能直接删除持仓 |
+| `GET` | `/api/portfolio/audit` | 持仓/现金审计 |
+| `POST` | `/api/portfolio/rebuild` | 根据交易和公司行为重算持仓 |
 | `PUT` | `/api/portfolio/positions/<code>/dividend` | 保存自定义每股分红 |
 | `POST` | `/api/portfolio/positions/<code>/dividend/reset` | 重置每股分红 |
-| `PUT` | `/api/portfolio/cash` | 修改现金 |
+| `PUT` | `/api/portfolio/cash` | 历史兼容接口，不建议直接修改现金 |
 | `GET` | `/api/portfolio/flows` | 资金流水 |
 | `POST` | `/api/portfolio/flows` | 新增资金流水 |
 | `DELETE` | `/api/portfolio/flows/<id>` | 删除资金流水 |
 | `POST` | `/api/portfolio/snapshot` | 记录今日快照 |
-| `GET` | `/api/portfolio/nav` | 净值曲线 |
+| `GET` | `/api/portfolio/nav` | 净值曲线和净值明细，支持 `live=1` 进入页面时刷新一次 |
 
 ### 8.5 云同步
 
@@ -735,6 +872,13 @@ GET /api/db/migrations
 | `GET` | `/api/config` | 读取系统配置 |
 | `PUT` | `/api/config` | 修改系统配置 |
 | `GET` | `/api/db/migrations` | 查询数据库迁移状态 |
+| `GET` | `/api/db/stats` | 查询数据库访问统计和慢 SQL |
+| `POST` | `/api/db/stats/reset` | 重置数据库访问统计 |
+| `GET` | `/api/preferences/financial-indicators` | 查询自定义财报指标偏好 |
+| `PUT` | `/api/preferences/financial-indicators` | 保存自定义财报指标偏好 |
+| `GET` | `/api/local-settings` | 查询本机设置 |
+| `PUT` | `/api/local-settings` | 保存本机设置 |
+| `POST` | `/api/local-settings/test` | 测试本机设置 |
 | `GET` | `/api/stock/<code>/munger-chat` | 读取对话历史 |
 | `POST` | `/api/stock/<code>/munger-chat` | 发送对话 |
 | `DELETE` | `/api/stock/<code>/munger-chat` | 删除单条或清空对话 |
@@ -756,12 +900,18 @@ GET /api/db/migrations
 | K 线 | 腾讯 K 线接口 |
 | 港币人民币汇率 | Frankfurter API，缓存到 `data/exchange_rates.json` |
 | 分红 | 东方财富 datacenter-web |
+| 融资 | 东方财富/公开 F10 融资相关数据接口，落库后按年度累计展示 |
 | 净利润辅助 | 东方财富 datacenter-web |
 | 财务摘要 | 东方财富 datacenter-web |
 | 资产负债表 | 新浪财经 HTML |
 | 利润表 | 新浪财经 HTML |
 | 现金流量表 | 新浪财经 HTML |
 | 营收构成 | 东方财富 F10 主营构成接口 |
+| 股东 | 东方财富股东研究/前十大股东数据，写入本地缓存 |
+| 互动易 | 深交所互动易 `irm.cninfo.com.cn`，只抓有答复问答 |
+| 上证 e 互动 | 上交所 e 互动公开问答，支持上证股票 |
+| 后台任务 | 本地 MySQL `background_jobs` / `background_job_logs` |
+| 用户偏好 | 本地 MySQL `ui_preferences`，随数据库云备份同步 |
 | 对话芒格搜索 | 搜索引擎 + 网页抓取 + LLM |
 
 ---
@@ -865,27 +1015,36 @@ JavaScript 按功能模块拆分：
 
 | 文件 | 职责 |
 |---|---|
+| `static/js/core/api.js` | 通用 fetch、JSON 请求、错误处理和 `StockApi` |
+| `static/js/core/formatters.js` | 金额、百分比、日期、空值等通用格式化 |
 | `static/js/theme.js` | 深色模式、ECharts 主题适配 |
 | `static/js/ui_utils.js` | Toast、HTML 转义、图片查看器等公共 UI 工具 |
-| `static/js/stock_list.js` | 股票列表、搜索、排序、添加、编辑、删除、默认顺序、格雷厄姆参数 |
-| `static/js/stock_detail.js` | 股票详情、路由切换、K 线、分红、PE/PB/股息率估值图、详情页持仓卡片 |
-| `static/js/financial_tables.js` | 自定义财报、资产负债表、利润表、现金流量表、营收构成、指标趋势图 |
+| `static/js/stock_list.js` | 首页股票列表、搜索、排序、添加、编辑、删除、默认顺序、格雷厄姆参数 |
+| `static/js/stock_detail.js` | 股票详情页主入口、Tab 路由、股票切换、详情页持仓卡片 |
+| `static/js/detail/*.js` | 股票详情页业务 Tab：驾驶舱、分红、融资、股东、估值、走势、互动易、对比、资本配置 |
+| `static/js/financial/*.js` | 自定义财报、三张表、营收构成、财务公式、指标偏好 |
+| `static/js/financial_tables.js` | 财务旧入口兼容层，新增财务能力优先放到 `static/js/financial/` |
+| `static/js/portfolio/*.js` | 我的持仓页面：API、状态、布局、持仓、交易、流水、净值 |
+| `static/js/background_jobs.js` | 后台任务浮窗、轮询、日志、取消、重试 |
 | `static/js/notes_chat.js` | 便利贴、图片粘贴、对话芒格 |
 | `static/js/cloud_backup.js` | 云备份、云恢复、备份管理、历史版本恢复、云端更新提示 |
 | `static/js/local_settings.js` | 本机环境配置读取、测试、保存 |
 
 新增功能放置规则：
 
+- 新增接口请求优先挂到 `StockApi` 或页面自己的语义化 API 包装，不要在多个模块散写 `fetch`。
 - 新增股票列表相关能力，优先放入 `stock_list.js`，样式放入 `index.css`。
-- 新增股票详情、行情、估值、图表能力，优先放入 `stock_detail.js`。
-- 新增财务表格、指标、报表、营收构成能力，优先放入 `financial_tables.js`。
+- 新增股票详情页 Tab 能力，优先新增或维护 `static/js/detail/*.js`，不要继续扩大 `stock_detail.js`。
+- 新增财务表格、指标、报表、营收构成能力，优先放入 `static/js/financial/`。
+- 新增持仓能力，优先放入 `static/js/portfolio/` 对应模块。
+- 新增长耗时更新的前端进度展示，优先复用 `background_jobs.js`，不要每个按钮单独写一套轮询。
 - 新增便利贴或对话芒格能力，优先放入 `notes_chat.js`。
 - 新增云备份/恢复/同步提示能力，优先放入 `cloud_backup.js`。
 - 新增本机环境配置能力，优先放入 `local_settings.js`，后端配置项同步维护 `local_settings.example.json`。
-- 多个页面都会用的工具函数放入 `ui_utils.js` 或 `theme.js`，不要在页面内重复定义。
+- 多个页面都会用的工具函数放入 `ui_utils.js`、`theme.js`、`core/api.js` 或 `core/formatters.js`，不要在页面内重复定义。
 - 页面专属样式放入对应页面 CSS；跨页面样式才抽到公共 CSS。
 
-当前前端仍采用原生 HTML/CSS/JavaScript 和普通 `<script>` 引用方式，未引入打包器。短期内保持这种低门槛结构，避免增加启动复杂度；如果后续前端复杂度继续上升，再考虑升级为 ES Modules 或 Vite。
+当前前端仍采用原生 HTML/CSS/JavaScript 和普通 `<script>` 引用方式，未引入打包器。短期内保持这种低门槛结构，但共享脚本要严格维护加载顺序；如果后续前端复杂度继续上升，再考虑升级为 ES Modules 或 Vite。
 
 ---
 
