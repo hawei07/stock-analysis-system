@@ -1,6 +1,6 @@
 async function saveSnapshot() {
   try {
-    const data = await StockApi.postJson('/api/portfolio/snapshot');
+    const data = await PortfolioApi.saveSnapshot();
     if (data.error) throw new Error(data.error || '记录失败');
     setPortfolioData(data);
     renderSummary(data.summary);
@@ -13,7 +13,7 @@ async function saveSnapshot() {
 }
 
 async function loadNav(live = false) {
-  const rows = await StockApi.getJson('/api/portfolio/nav' + (live ? '?live=1' : ''));
+  const rows = await PortfolioApi.loadNav(live);
   renderNav(rows || []);
   setNavHistoryRows(rows);
   renderNavHistoryTable();

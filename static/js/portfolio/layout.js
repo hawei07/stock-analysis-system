@@ -39,7 +39,7 @@ function fillFeeConfigForm() {
 
 async function loadFeeConfig() {
   try {
-    const data = await StockApi.getJson('/api/portfolio/fee-config');
+    const data = await PortfolioApi.loadFeeConfig();
     if (data.error) throw new Error(data.error || '加载费率失败');
     setFeeConfig(data);
   } catch (e) {
@@ -55,7 +55,7 @@ async function saveFeeConfig() {
     transfer_fee_rate: Number(document.getElementById('transferFeeRateInput').value || 0) / 100
   };
   try {
-    const data = await StockApi.putJson('/api/portfolio/fee-config', payload);
+    const data = await PortfolioApi.saveFeeConfig(payload);
     if (data.error) throw new Error(data.error || '保存费率失败');
     setFeeConfig(data);
     closeFeeConfigModal();

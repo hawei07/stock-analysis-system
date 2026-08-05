@@ -70,6 +70,10 @@ project adopts a bundler or framework.
     and privacy mode.
   - State writes should go through helpers such as `setPortfolioData`,
     `setFeeConfig`, `setTradesRows`, and `setNavHistoryRows` when one exists.
+- `static/js/portfolio/api.js`
+  - Portfolio API semantic wrapper.
+  - Portfolio feature modules should call `PortfolioApi.*` instead of writing
+    `StockApi.*` URLs directly.
 - `static/js/portfolio/layout.js`
   - Portfolio layout helpers, modal open/close helpers, fee configuration,
     allocation pie chart, privacy toggle, and portfolio-specific formatting.
@@ -97,13 +101,14 @@ Scripts are loaded in `templates/index.html` in this order:
 Scripts are loaded in `templates/portfolio.html` in this order:
 
 1. Core utilities: `core/api.js`, `core/formatters.js`.
-2. Portfolio state and startup wiring.
-3. Portfolio layout helpers and portfolio-compatible formatter wrappers.
-4. Positions.
-5. Trades and corporate actions.
-6. Ledger/cash-flow maintenance.
-7. NAV chart and NAV history.
-8. Shared cloud backup and background job scripts.
+2. Portfolio API wrapper.
+3. Portfolio state and startup wiring.
+4. Portfolio layout helpers and portfolio-compatible formatter wrappers.
+5. Positions.
+6. Trades and corporate actions.
+7. Ledger/cash-flow maintenance.
+8. NAV chart and NAV history.
+9. Shared cloud backup and background job scripts.
 
 New modules must not depend on files loaded after them. If a helper is needed by
 multiple modules, move it into `static/js/core/` or a clearly named shared module

@@ -99,7 +99,7 @@ async function saveAction() {
     note: document.getElementById('actionNoteInput').value.trim()
   };
   try {
-    const data = await StockApi.postJson('/api/portfolio/actions', payload);
+    const data = await PortfolioApi.saveAction(payload);
     if (data.error) throw new Error(data.error || '保存权益失败');
     setPortfolioData(data);
     closeActionModal();
@@ -128,7 +128,7 @@ async function saveTrade() {
     if (tradeType === 'sell' && !(PortfolioState.portfolioData.positions || []).some(p => String(p.code) === String(code))) {
       throw new Error('卖出必须从当前持仓股票后方进入');
     }
-    const data = await StockApi.postJson('/api/portfolio/trades', {trade_date: tradeDate, trade_type: tradeType, code, shares, price, note});
+    const data = await PortfolioApi.saveTrade({trade_date: tradeDate, trade_type: tradeType, code, shares, price, note});
     if (data.error) throw new Error(data.error || '保存交易失败');
     setPortfolioData(data);
     document.getElementById('tradeCodeInput').value = '';
@@ -152,7 +152,7 @@ async function saveTrade() {
 async function resolveStockCode(identifier) {
   if (/^\d{5,6}$/.test(identifier)) return identifier;
   if (/^hk\d{1,5}$/i.test(identifier)) return identifier.replace(/^hk/i, '').padStart(5, '0');
-  const list = await StockApi.getJson('/api/stock-search?keyword=' + encodeURIComponent(identifier));
+  const list = await PortfolioApi.searchStock(identifier);
   if (!Array.isArray(list) || !list.length) {
     throw new Error('未找到匹配的股票，请输入代码或更准确的名称');
   }
@@ -162,7 +162,7 @@ async function resolveStockCode(identifier) {
 
 async function loadFlows() {
   try {
-    const rows = await StockApi.getJson('/api/portfolio/flows');
+    const rows = await PortfolioApi.loadFlows();
     renderFlows(Array.isArray(rows) ? rows : []);
   } catch (e) {
     showToast('加载资金流水失败', 'error');
@@ -171,7 +171,7 @@ async function loadFlows() {
 
 async function loadTrades() {
   try {
-    const rows = await StockApi.getJson('/api/portfolio/trades');
+    const rows = await PortfolioApi.loadTrades();
     resetTradesPage();
     PortfolioState.trades.loaded = true;
     renderTrades(Array.isArray(rows) ? rows : []);
@@ -195,7 +195,7 @@ async function toggleTradesPanel() {
 
 async function loadActions() {
   try {
-    const rows = await StockApi.getJson('/api/portfolio/actions');
+    const rows = await PortfolioApi.loadActions();
     renderActions(Array.isArray(rows) ? rows : []);
   } catch (e) {
     showToast('加载权益记录失败', 'error');

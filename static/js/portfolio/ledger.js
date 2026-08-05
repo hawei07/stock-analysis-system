@@ -35,7 +35,7 @@ async function saveFlow() {
   const amount = type === 'out' ? -Math.abs(rawAmount) : Math.abs(rawAmount);
   const note = document.getElementById('flowNote').value.trim();
   try {
-    const data = await StockApi.postJson('/api/portfolio/flows', {flow_date: flowDate, amount, note});
+    const data = await PortfolioApi.saveFlow({flow_date: flowDate, amount, note});
     if (data.error) throw new Error(data.error || '保存失败');
     setPortfolioData(data);
     document.getElementById('flowAmount').value = '';
@@ -53,7 +53,7 @@ async function saveFlow() {
 async function deleteFlow(id) {
   if (!confirm('确定作废这笔资金流水吗？作废后会同步回滚现金。')) return;
   try {
-    const data = await StockApi.deleteJson('/api/portfolio/flows/' + id);
+    const data = await PortfolioApi.deleteFlow(id);
     if (data.error) throw new Error(data.error || '作废失败');
     setPortfolioData(data);
     renderSummary(data.summary);
@@ -79,7 +79,7 @@ async function voidTrade(id) {
   const note = prompt('作废原因', '录入错误') || '作废交易';
   if (!confirm('确定作废这笔交易吗？相关现金流水会一起作废，持仓成本会按账本重算。')) return;
   try {
-    const data = await StockApi.postJson('/api/portfolio/trades/' + id + '/void', {void_note: note});
+    const data = await PortfolioApi.voidTrade(id, note);
     if (data.error) throw new Error(data.error || '作废交易失败');
     applyPortfolioState(data);
     await loadNav();
@@ -93,7 +93,7 @@ async function voidAction(id) {
   const note = prompt('作废原因', '录入错误') || '作废权益事件';
   if (!confirm('确定作废这笔权益记录吗？相关现金流水会一起作废，持仓成本会按账本重算。')) return;
   try {
-    const data = await StockApi.postJson('/api/portfolio/actions/' + id + '/void', {void_note: note});
+    const data = await PortfolioApi.voidAction(id, note);
     if (data.error) throw new Error(data.error || '作废权益记录失败');
     applyPortfolioState(data);
     await loadNav();
@@ -105,7 +105,7 @@ async function voidAction(id) {
 
 async function runPortfolioAudit() {
   try {
-    const data = await StockApi.getJson('/api/portfolio/audit');
+    const data = await PortfolioApi.audit();
     if (data.error) throw new Error(data.error || '账本检查失败');
     if (data.ok) {
       showToast('账本一致：现金、流水、持仓都对得上', 'success');
@@ -122,7 +122,7 @@ async function runPortfolioAudit() {
 
 async function rebuildPortfolioLedger() {
   try {
-    const data = await StockApi.postJson('/api/portfolio/rebuild');
+    const data = await PortfolioApi.rebuild();
     if (data.error) throw new Error(data.error || '账本重算失败');
     applyPortfolioState(data);
     await loadNav();
@@ -138,7 +138,7 @@ async function saveCustomDividend(code) {
   const rawValue = input ? input.value : '';
   const value = rawValue === '' ? '' : Number(rawValue).toFixed(2);
   try {
-    const data = await StockApi.putJson('/api/portfolio/positions/' + encodeURIComponent(code) + '/dividend', {dividend_per_share: value});
+    const data = await PortfolioApi.saveDividend(code, value);
     if (data.error) throw new Error(data.error || '保存失败');
     setPortfolioData(data);
     renderSummary(data.summary);
@@ -152,7 +152,7 @@ async function saveCustomDividend(code) {
 
 async function resetDividendAuto(code) {
   try {
-    const data = await StockApi.postJson('/api/portfolio/positions/' + encodeURIComponent(code) + '/dividend/reset');
+    const data = await PortfolioApi.resetDividend(code);
     if (data.error) throw new Error(data.error || '重置失败');
     setPortfolioData(data);
     renderSummary(data.summary);

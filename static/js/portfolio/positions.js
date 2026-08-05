@@ -1,6 +1,6 @@
 async function loadPortfolio() {
   try {
-    const data = await StockApi.getJson('/api/portfolio');
+    const data = await PortfolioApi.loadPortfolio();
     if (data.error) throw new Error(data.error || '加载失败');
     setPortfolioData(data);
     renderSummary(data.summary);
