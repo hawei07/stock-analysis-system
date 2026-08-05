@@ -86,8 +86,16 @@ def ensure_background_jobs_table(execute_query):
     )
 
 
-def create_job(get_connection, execute_query, job_type, title=None, stock_code=None, progress_total=0, message=None, request_payload=None):
+def create_job(get_connection, execute_query, job_type, title=None, stock_code=None, progress_total=0, message=None, request_payload=None, execute_insert=None):
     ensure_background_jobs_table(execute_query)
+    if execute_insert:
+        return execute_insert(
+            """INSERT INTO background_jobs
+               (job_type, status, stock_code, title, progress_total, message, request_json)
+               VALUES (%s, 'queued', %s, %s, %s, %s, %s)""",
+            (job_type, stock_code, title, int(progress_total or 0), message, _json_dumps(request_payload)),
+        )
+
     conn = get_connection()
     cursor = None
     try:

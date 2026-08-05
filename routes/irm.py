@@ -40,6 +40,7 @@ _irm_sync_last_result = {
 def register_irm_routes(app, deps):
     Stock = deps["Stock"]
     execute_query = deps["execute_query"]
+    execute_insert = deps.get("execute_insert")
     get_connection = deps["get_connection"]
     _as_list = deps["as_list"]
     _money_yuan = deps["money_yuan"]
@@ -528,6 +529,7 @@ def register_irm_routes(app, deps):
             get_connection,
             execute_query,
             "irm_sync_all",
+            execute_insert=execute_insert,
             title="互动易全量增量抓取",
             message="等待开始抓取互动易",
         )

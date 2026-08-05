@@ -1,6 +1,6 @@
 """数据模型 — 股票基础信息"""
 
-from db import execute_query, execute_update
+from db import execute_many, execute_query, execute_update
 
 
 class Stock:
@@ -103,14 +103,4 @@ class Stock:
                  VALUES (%s, %s, %s, %s, %s, %s)
                  ON DUPLICATE KEY UPDATE name=VALUES(name), market=VALUES(market),
                  industry=VALUES(industry), list_date=VALUES(list_date), status=VALUES(status)"""
-        conn = None
-        try:
-            from db import get_connection
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.executemany(sql, stocks_list)
-            conn.commit()
-            return cursor.rowcount
-        finally:
-            if conn:
-                conn.close()
+        return execute_many(sql, stocks_list)

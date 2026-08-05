@@ -17,7 +17,7 @@ if APP_DIR not in sys.path:
 
 
 from models import Stock
-from db import get_connection, execute_query, execute_update
+from db import get_connection, execute_insert, execute_query, execute_update
 from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
 from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
@@ -651,15 +651,7 @@ def _decimal_equal(left, right, scale="0.0001"):
 
 
 def _execute_insert_id(sql, params=None):
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    try:
-        cursor.execute(sql, params or ())
-        conn.commit()
-        return cursor.lastrowid
-    finally:
-        cursor.close()
-        conn.close()
+    return execute_insert(sql, params)
 
 
 def _portfolio_fee_config():
@@ -913,6 +905,7 @@ register_corporate_action_routes(app, {
 register_irm_routes(app, {
     "Stock": Stock,
     "execute_query": execute_query,
+    "execute_insert": execute_insert,
     "get_connection": get_connection,
     "as_list": _as_list,
     "money_yuan": _money_yuan,
