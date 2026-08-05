@@ -29,6 +29,8 @@ from services.cloud_backup_service import (
     validate_sql_backup_file,
 )
 from services import app_settings
+from services import cloud_backup_storage
+from services import mysql_tools
 from services.stock_identity import (
     eastmoney_secu_code as _eastmoney_secu_code,
     eastmoney_web_code as _eastmoney_web_code,
@@ -138,120 +140,51 @@ for _key, _value in _db_overrides.items():
 
 
 def _mysql_tool_path(name):
-    exe = f"{name}.exe" if os.name == "nt" else name
-    candidates = []
-    if MYSQL_BIN_DIR:
-        candidates.append(os.path.join(MYSQL_BIN_DIR, exe))
-
-    resolved = shutil.which(exe)
-    if resolved:
-        candidates.append(resolved)
-
-    if os.name == "nt":
-        candidates.extend([
-            os.path.join(r"E:\MySQL\bin", exe),
-            os.path.join(r"D:\MySQL\bin", exe),
-            os.path.join(r"D:\mysql\bin", exe),
-            os.path.join(r"D:\dvptool\mysql\bin", exe),
-            os.path.join(r"C:\Program Files\MySQL\MySQL Server 8.4\bin", exe),
-            os.path.join(r"C:\Program Files\MySQL\MySQL Server 8.0\bin", exe),
-        ])
-
-    for path in candidates:
-        if path and os.path.exists(path):
-            return path
-    return exe
+    return mysql_tools.tool_path(name, MYSQL_BIN_DIR)
 
 
 def _cloud_backup_dir():
-    os.makedirs(CLOUD_SYNC_DIR, exist_ok=True)
-    return CLOUD_SYNC_DIR
+    return cloud_backup_storage.backup_dir(CLOUD_SYNC_DIR)
 
 
 def _cloud_state_path():
-    return os.path.join(_cloud_backup_dir(), CLOUD_STATE_JSON)
+    return cloud_backup_storage.state_path(CLOUD_SYNC_DIR, CLOUD_STATE_JSON)
 
 
 def _cloud_latest_path():
-    return os.path.join(_cloud_backup_dir(), CLOUD_LATEST_SQL)
-
-
-def _backup_file_payload(path):
-    stat = os.stat(path)
-    return {
-        "name": os.path.basename(path),
-        "path": path,
-        "size": stat.st_size,
-        "mtime": stat.st_mtime,
-        "mtime_iso": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
-    }
+    return cloud_backup_storage.latest_path(CLOUD_SYNC_DIR, CLOUD_LATEST_SQL)
 
 
 def _cloud_backup_files():
-    backup_dir = _cloud_backup_dir()
-    _cleanup_cloud_backup_files(backup_dir)
-    files = []
-    for name in os.listdir(backup_dir):
-        path = os.path.join(backup_dir, name)
-        if os.path.isfile(path) and name.lower().endswith(".sql"):
-            files.append(_backup_file_payload(path))
-    return sorted(files, key=lambda item: item["mtime"], reverse=True)
+    return cloud_backup_storage.backup_files(
+        CLOUD_SYNC_DIR,
+        backup_file_groups,
+        CLOUD_BACKUP_RETAIN_COUNT,
+    )
 
 
 def _cleanup_cloud_backup_files(backup_dir=None, retain_count=CLOUD_BACKUP_RETAIN_COUNT):
-    backup_dir = backup_dir or _cloud_backup_dir()
-    groups = backup_file_groups()
-    deleted = []
-
-    for group_name, pattern in groups.items():
-        files = []
-        for name in os.listdir(backup_dir):
-            if not pattern.match(name):
-                continue
-            path = os.path.join(backup_dir, name)
-            if os.path.isfile(path):
-                files.append((os.path.getmtime(path), name, path))
-
-        files.sort(reverse=True)
-        for _, name, path in files[retain_count:]:
-            try:
-                os.remove(path)
-                deleted.append({"type": group_name, "name": name})
-            except OSError:
-                pass
-
-    return deleted
+    return cloud_backup_storage.cleanup_backup_files(
+        backup_dir or CLOUD_SYNC_DIR,
+        backup_file_groups,
+        retain_count,
+    )
 
 
 def _resolve_backup_file(filename):
-    if not filename or os.path.basename(filename) != filename or not filename.lower().endswith(".sql"):
-        raise ValueError("Invalid backup filename")
-    path = os.path.abspath(os.path.join(_cloud_backup_dir(), filename))
-    backup_dir = os.path.abspath(_cloud_backup_dir())
-    if os.path.commonpath([backup_dir, path]) != backup_dir or not os.path.exists(path):
-        raise FileNotFoundError(filename)
-    return path
+    return cloud_backup_storage.resolve_backup_file(CLOUD_SYNC_DIR, filename)
 
 
 def _read_local_cloud_state():
-    if not os.path.exists(LOCAL_CLOUD_STATE_JSON):
-        return {}
-    try:
-        with open(LOCAL_CLOUD_STATE_JSON, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    return cloud_backup_storage.read_json_file(LOCAL_CLOUD_STATE_JSON)
 
 
 def _write_local_cloud_state(payload):
-    os.makedirs(os.path.dirname(LOCAL_CLOUD_STATE_JSON), exist_ok=True)
-    with open(LOCAL_CLOUD_STATE_JSON, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return cloud_backup_storage.write_json_file(LOCAL_CLOUD_STATE_JSON, payload)
 
 
 def _cloud_latest_mtime():
-    path = _cloud_latest_path()
-    return os.path.getmtime(path) if os.path.exists(path) else None
+    return cloud_backup_storage.latest_mtime(CLOUD_SYNC_DIR, CLOUD_LATEST_SQL)
 
 
 def _to_float(value):
@@ -293,19 +226,11 @@ def _mark_local_dirty(reason):
 
 
 def _read_cloud_state():
-    path = _cloud_state_path()
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    return cloud_backup_storage.read_json_file(_cloud_state_path())
 
 
 def _write_cloud_state(payload):
-    with open(_cloud_state_path(), "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return cloud_backup_storage.write_json_file(_cloud_state_path(), payload)
 
 
 def _write_auto_backup_log(message):
