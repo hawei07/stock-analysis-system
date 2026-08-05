@@ -1,28 +1,72 @@
-let navChart = null;
-let allocationChart = null;
-let latestPortfolioData = {positions: [], summary: {}};
-let latestFeeConfig = {commission_rate: 0.00025, min_commission: 5, stamp_tax_rate: 0.0005, transfer_fee_rate: 0.00001};
-let amountPrivacyMode = localStorage.getItem('portfolioAmountPrivacy') === 'hidden';
-let tradeRows = [];
-let tradesPage = 1;
-let tradesCollapsed = true;
-let tradesLoaded = false;
-const TRADES_PAGE_SIZE = 5;
-let positionSortKey = localStorage.getItem('portfolioPositionSortKey') || 'market_value';
-let positionSortDir = localStorage.getItem('portfolioPositionSortDir') || 'desc';
-let navHistoryRows = [];
-let navHistoryPage = 1;
-const NAV_HISTORY_PAGE_SIZE = 20;
+const PortfolioState = {
+  charts: {
+    nav: null,
+    allocation: null
+  },
+  portfolioData: {
+    positions: [],
+    summary: {}
+  },
+  feeConfig: {
+    commission_rate: 0.00025,
+    min_commission: 5,
+    stamp_tax_rate: 0.0005,
+    transfer_fee_rate: 0.00001
+  },
+  amountPrivacyMode: localStorage.getItem('portfolioAmountPrivacy') === 'hidden',
+  trades: {
+    rows: [],
+    page: 1,
+    collapsed: true,
+    loaded: false,
+    pageSize: 5
+  },
+  positions: {
+    sortKey: localStorage.getItem('portfolioPositionSortKey') || 'market_value',
+    sortDir: localStorage.getItem('portfolioPositionSortDir') || 'desc'
+  },
+  navHistory: {
+    rows: [],
+    page: 1,
+    pageSize: 20
+  }
+};
+
+function setPortfolioData(data) {
+  PortfolioState.portfolioData = data || {positions: [], summary: {}};
+  if (data?.fee_config) setFeeConfig(data.fee_config);
+  return PortfolioState.portfolioData;
+}
+
+function setFeeConfig(config) {
+  if (config) PortfolioState.feeConfig = config;
+  return PortfolioState.feeConfig;
+}
+
+function resetTradesPage() {
+  PortfolioState.trades.page = 1;
+}
+
+function setTradesRows(rows) {
+  PortfolioState.trades.rows = Array.isArray(rows) ? rows : [];
+  PortfolioState.trades.loaded = true;
+  return PortfolioState.trades.rows;
+}
+
+function setNavHistoryRows(rows) {
+  PortfolioState.navHistory.rows = Array.isArray(rows) ? rows : [];
+  return PortfolioState.navHistory.rows;
+}
 
 window.onThemeChanged = function() {
-  if (allocationChart) {
-    allocationChart.dispose();
-    allocationChart = null;
+  if (PortfolioState.charts.allocation) {
+    PortfolioState.charts.allocation.dispose();
+    PortfolioState.charts.allocation = null;
     if (document.getElementById('allocationModalOverlay')?.classList.contains('active')) renderAllocationPie();
   }
-  if (navChart) {
-    navChart.dispose();
-    navChart = null;
+  if (PortfolioState.charts.nav) {
+    PortfolioState.charts.nav.dispose();
+    PortfolioState.charts.nav = null;
     loadNav();
   }
 };

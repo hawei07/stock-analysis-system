@@ -37,7 +37,7 @@ async function saveFlow() {
   try {
     const data = await StockApi.postJson('/api/portfolio/flows', {flow_date: flowDate, amount, note});
     if (data.error) throw new Error(data.error || '保存失败');
-    latestPortfolioData = data;
+    setPortfolioData(data);
     document.getElementById('flowAmount').value = '';
     document.getElementById('flowNote').value = '';
     renderSummary(data.summary);
@@ -55,7 +55,7 @@ async function deleteFlow(id) {
   try {
     const data = await StockApi.deleteJson('/api/portfolio/flows/' + id);
     if (data.error) throw new Error(data.error || '作废失败');
-    latestPortfolioData = data;
+    setPortfolioData(data);
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     renderFlows(data.flows || []);
@@ -67,8 +67,7 @@ async function deleteFlow(id) {
 }
 
 function applyPortfolioState(data) {
-  latestPortfolioData = data;
-  if (data.fee_config) latestFeeConfig = data.fee_config;
+  setPortfolioData(data);
   renderSummary(data.summary || {});
   renderPositions(data.positions || []);
   if (data.trades) renderTrades(data.trades || []);
@@ -141,7 +140,7 @@ async function saveCustomDividend(code) {
   try {
     const data = await StockApi.putJson('/api/portfolio/positions/' + encodeURIComponent(code) + '/dividend', {dividend_per_share: value});
     if (data.error) throw new Error(data.error || '保存失败');
-    latestPortfolioData = data;
+    setPortfolioData(data);
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     await loadNav();
@@ -155,7 +154,7 @@ async function resetDividendAuto(code) {
   try {
     const data = await StockApi.postJson('/api/portfolio/positions/' + encodeURIComponent(code) + '/dividend/reset');
     if (data.error) throw new Error(data.error || '重置失败');
-    latestPortfolioData = data;
+    setPortfolioData(data);
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     await loadNav();

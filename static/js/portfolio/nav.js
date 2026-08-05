@@ -2,7 +2,7 @@ async function saveSnapshot() {
   try {
     const data = await StockApi.postJson('/api/portfolio/snapshot');
     if (data.error) throw new Error(data.error || '记录失败');
-    latestPortfolioData = data;
+    setPortfolioData(data);
     renderSummary(data.summary);
     renderPositions(data.positions || []);
     await loadNav();
@@ -15,15 +15,15 @@ async function saveSnapshot() {
 async function loadNav(live = false) {
   const rows = await StockApi.getJson('/api/portfolio/nav' + (live ? '?live=1' : ''));
   renderNav(rows || []);
-  navHistoryRows = Array.isArray(rows) ? rows : [];
+  setNavHistoryRows(rows);
   renderNavHistoryTable();
 }
 
 function renderNav(rows) {
   const el = document.getElementById('navChart');
-  if (!navChart) navChart = echarts.init(el);
+  if (!PortfolioState.charts.nav) PortfolioState.charts.nav = echarts.init(el);
   if (!rows.length) {
-    navChart.setOption({
+    PortfolioState.charts.nav.setOption({
       title: {text: '暂无净值快照', left: 'center', top: 'center', textStyle: {fontSize: 14, color: '#999'}},
       xAxis: {show: false},
       yAxis: {show: false},
@@ -37,7 +37,7 @@ function renderNav(rows) {
     const stockValue = Number(r.stock_market_value || r.total_market_value || 0);
     return Math.max(totalAsset - stockValue, 0);
   });
-  navChart.setOption({
+  PortfolioState.charts.nav.setOption({
     tooltip: {
       trigger: 'axis',
       formatter(params) {
@@ -74,7 +74,7 @@ function renderNav(rows) {
       {name: '现金/空仓', type: 'bar', stack: 'asset', yAxisIndex: 1, data: cashValues, itemStyle: {color: '#c8d6e8'}}
     ]
   }, true);
-  navChart.setOption({
+  PortfolioState.charts.nav.setOption({
     yAxis: [
       {
         splitNumber: 4,
@@ -108,7 +108,7 @@ function navPositionPct(row) {
 function navHistoryFilteredRows() {
   const from = document.getElementById('navFromDate')?.value || '';
   const to = document.getElementById('navToDate')?.value || '';
-  return navHistoryRows
+  return PortfolioState.navHistory.rows
     .filter(row => {
       const date = String(row.date || '');
       if (from && date < from) return false;
@@ -127,10 +127,10 @@ function renderNavHistoryTable() {
   if (!body || !empty || !totalEl || !pagination) return;
 
   const filtered = navHistoryFilteredRows();
-  const totalPages = Math.max(1, Math.ceil(filtered.length / NAV_HISTORY_PAGE_SIZE));
-  if (navHistoryPage > totalPages) navHistoryPage = totalPages;
-  const start = (navHistoryPage - 1) * NAV_HISTORY_PAGE_SIZE;
-  const pageRows = filtered.slice(start, start + NAV_HISTORY_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PortfolioState.navHistory.pageSize));
+  if (PortfolioState.navHistory.page > totalPages) PortfolioState.navHistory.page = totalPages;
+  const start = (PortfolioState.navHistory.page - 1) * PortfolioState.navHistory.pageSize;
+  const pageRows = filtered.slice(start, start + PortfolioState.navHistory.pageSize);
 
   empty.style.display = filtered.length ? 'none' : 'block';
   body.innerHTML = pageRows.map(row => {
@@ -157,32 +157,32 @@ function renderNavHistoryTable() {
 }
 
 function renderNavHistoryPagination(totalPages) {
-  const disabledPrev = navHistoryPage <= 1 ? ' disabled' : '';
-  const disabledNext = navHistoryPage >= totalPages ? ' disabled' : '';
+  const disabledPrev = PortfolioState.navHistory.page <= 1 ? ' disabled' : '';
+  const disabledNext = PortfolioState.navHistory.page >= totalPages ? ' disabled' : '';
   const pages = [];
-  const start = Math.max(1, navHistoryPage - 2);
-  const end = Math.min(totalPages, navHistoryPage + 2);
+  const start = Math.max(1, PortfolioState.navHistory.page - 2);
+  const end = Math.min(totalPages, PortfolioState.navHistory.page + 2);
   for (let page = start; page <= end; page++) {
-    pages.push(`<button class="page-btn${page === navHistoryPage ? ' active' : ''}" type="button" onclick="setNavHistoryPage(${page})">${page}</button>`);
+    pages.push(`<button class="page-btn${page === PortfolioState.navHistory.page ? ' active' : ''}" type="button" onclick="setNavHistoryPage(${page})">${page}</button>`);
   }
   return `
-    <button class="page-btn"${disabledPrev} type="button" onclick="setNavHistoryPage(${navHistoryPage - 1})">上一页</button>
+    <button class="page-btn"${disabledPrev} type="button" onclick="setNavHistoryPage(${PortfolioState.navHistory.page - 1})">上一页</button>
     ${start > 1 ? '<span class="page-ellipsis">...</span>' : ''}
     ${pages.join('')}
     ${end < totalPages ? '<span class="page-ellipsis">...</span>' : ''}
-    <button class="page-btn"${disabledNext} type="button" onclick="setNavHistoryPage(${navHistoryPage + 1})">下一页</button>
+    <button class="page-btn"${disabledNext} type="button" onclick="setNavHistoryPage(${PortfolioState.navHistory.page + 1})">下一页</button>
   `;
 }
 
 function setNavHistoryPage(page) {
   const filtered = navHistoryFilteredRows();
-  const totalPages = Math.max(1, Math.ceil(filtered.length / NAV_HISTORY_PAGE_SIZE));
-  navHistoryPage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PortfolioState.navHistory.pageSize));
+  PortfolioState.navHistory.page = Math.min(Math.max(1, Number(page) || 1), totalPages);
   renderNavHistoryTable();
 }
 
 function applyNavHistoryFilter() {
-  navHistoryPage = 1;
+  PortfolioState.navHistory.page = 1;
   renderNavHistoryTable();
 }
 
@@ -243,8 +243,8 @@ function exportNavHistoryExcel() {
 }
 
 window.addEventListener('resize', () => {
-  navChart && navChart.resize();
-  allocationChart && allocationChart.resize();
+  PortfolioState.charts.nav && PortfolioState.charts.nav.resize();
+  PortfolioState.charts.allocation && PortfolioState.charts.allocation.resize();
 });
 
 function showToast(text, type) {

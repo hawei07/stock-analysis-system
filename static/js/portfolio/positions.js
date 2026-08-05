@@ -2,8 +2,7 @@ async function loadPortfolio() {
   try {
     const data = await StockApi.getJson('/api/portfolio');
     if (data.error) throw new Error(data.error || '加载失败');
-    latestPortfolioData = data;
-    if (data.fee_config) latestFeeConfig = data.fee_config;
+    setPortfolioData(data);
     renderSummary(data.summary);
     renderPositions(data.positions || []);
   } catch (e) {
@@ -47,12 +46,12 @@ function renderSummary(summary) {
 
 function sortedPositions(rows) {
   const result = [...(Array.isArray(rows) ? rows : [])];
-  const dir = positionSortDir === 'asc' ? 1 : -1;
+  const dir = PortfolioState.positions.sortDir === 'asc' ? 1 : -1;
   result.sort((a, b) => {
-    const av = Number(a?.[positionSortKey]);
-    const bv = Number(b?.[positionSortKey]);
-    const an = Number.isFinite(av) ? av : (positionSortDir === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
-    const bn = Number.isFinite(bv) ? bv : (positionSortDir === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+    const av = Number(a?.[PortfolioState.positions.sortKey]);
+    const bv = Number(b?.[PortfolioState.positions.sortKey]);
+    const an = Number.isFinite(av) ? av : (PortfolioState.positions.sortDir === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+    const bn = Number.isFinite(bv) ? bv : (PortfolioState.positions.sortDir === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
     if (an === bn) return String(a.code || '').localeCompare(String(b.code || ''));
     return (an - bn) * dir;
   });
@@ -62,20 +61,20 @@ function sortedPositions(rows) {
 function refreshPositionSortIcons() {
   document.querySelectorAll('[data-sort-icon]').forEach(el => {
     const key = el.getAttribute('data-sort-icon');
-    el.textContent = key === positionSortKey ? (positionSortDir === 'asc' ? '↑' : '↓') : '';
+    el.textContent = key === PortfolioState.positions.sortKey ? (PortfolioState.positions.sortDir === 'asc' ? '↑' : '↓') : '';
   });
 }
 
 function setPositionSort(key) {
-  if (positionSortKey === key) {
-    positionSortDir = positionSortDir === 'asc' ? 'desc' : 'asc';
+  if (PortfolioState.positions.sortKey === key) {
+    PortfolioState.positions.sortDir = PortfolioState.positions.sortDir === 'asc' ? 'desc' : 'asc';
   } else {
-    positionSortKey = key;
-    positionSortDir = 'desc';
+    PortfolioState.positions.sortKey = key;
+    PortfolioState.positions.sortDir = 'desc';
   }
-  localStorage.setItem('portfolioPositionSortKey', positionSortKey);
-  localStorage.setItem('portfolioPositionSortDir', positionSortDir);
-  renderPositions(latestPortfolioData.positions || []);
+  localStorage.setItem('portfolioPositionSortKey', PortfolioState.positions.sortKey);
+  localStorage.setItem('portfolioPositionSortDir', PortfolioState.positions.sortDir);
+  renderPositions(PortfolioState.portfolioData.positions || []);
 }
 
 function renderPositions(rows) {

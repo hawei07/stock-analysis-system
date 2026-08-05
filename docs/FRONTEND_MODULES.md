@@ -65,6 +65,11 @@ project adopts a bundler or framework.
 - `static/js/portfolio/state.js`
   - Portfolio page global state, startup wiring, default dates, and theme/chart
     refresh coordination.
+  - `PortfolioState` is the single state container for portfolio data, fee
+    config, chart instances, trade pagination, position sorting, NAV history,
+    and privacy mode.
+  - State writes should go through helpers such as `setPortfolioData`,
+    `setFeeConfig`, `setTradesRows`, and `setNavHistoryRows` when one exists.
 - `static/js/portfolio/layout.js`
   - Portfolio layout helpers, modal open/close helpers, fee configuration,
     allocation pie chart, privacy toggle, and portfolio-specific formatting.

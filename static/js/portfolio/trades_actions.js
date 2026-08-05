@@ -1,5 +1,5 @@
 function openTradeModal(code, type = 'buy') {
-  const positions = latestPortfolioData.positions || [];
+  const positions = PortfolioState.portfolioData.positions || [];
   const row = positions.find(p => String(p.code) === String(code)) || {};
   const isKnownPosition = Boolean(row.code);
   const codeInput = document.getElementById('tradeCodeInput');
@@ -27,7 +27,7 @@ function openTradeModal(code, type = 'buy') {
 function updateTradeModalMode() {
   const code = document.getElementById('tradeCodeInput').value;
   const type = document.getElementById('tradeType').value;
-  const positions = latestPortfolioData.positions || [];
+  const positions = PortfolioState.portfolioData.positions || [];
   const row = positions.find(p => String(p.code) === String(code)) || {};
   const sharesInput = document.getElementById('tradeSharesInput');
   const isSell = type === 'sell';
@@ -48,7 +48,7 @@ function closeTradeModal() {
 }
 
 function openActionModal(code) {
-  const row = (latestPortfolioData.positions || []).find(p => String(p.code) === String(code)) || {};
+  const row = (PortfolioState.portfolioData.positions || []).find(p => String(p.code) === String(code)) || {};
   document.getElementById('actionModalOverlay').classList.add('active');
   document.getElementById('actionCodeInput').value = code;
   document.getElementById('actionDate').value = new Date().toISOString().slice(0, 10);
@@ -101,12 +101,11 @@ async function saveAction() {
   try {
     const data = await StockApi.postJson('/api/portfolio/actions', payload);
     if (data.error) throw new Error(data.error || '保存权益失败');
-    latestPortfolioData = data;
-    if (data.fee_config) latestFeeConfig = data.fee_config;
+    setPortfolioData(data);
     closeActionModal();
     renderSummary(data.summary);
     renderPositions(data.positions || []);
-    tradesPage = 1;
+    resetTradesPage();
     renderTrades(data.trades || []);
     renderActions(data.actions || []);
     renderFlows(data.flows || []);
@@ -126,13 +125,12 @@ async function saveTrade() {
   const note = document.getElementById('tradeNoteInput').value.trim();
   try {
     const code = await resolveStockCode(identifier);
-    if (tradeType === 'sell' && !(latestPortfolioData.positions || []).some(p => String(p.code) === String(code))) {
+    if (tradeType === 'sell' && !(PortfolioState.portfolioData.positions || []).some(p => String(p.code) === String(code))) {
       throw new Error('卖出必须从当前持仓股票后方进入');
     }
     const data = await StockApi.postJson('/api/portfolio/trades', {trade_date: tradeDate, trade_type: tradeType, code, shares, price, note});
     if (data.error) throw new Error(data.error || '保存交易失败');
-    latestPortfolioData = data;
-    if (data.fee_config) latestFeeConfig = data.fee_config;
+    setPortfolioData(data);
     document.getElementById('tradeCodeInput').value = '';
     document.getElementById('tradeSharesInput').value = '';
     document.getElementById('tradePriceInput').value = '';
@@ -140,7 +138,7 @@ async function saveTrade() {
     closeTradeModal();
     renderSummary(data.summary);
     renderPositions(data.positions || []);
-    tradesPage = 1;
+    resetTradesPage();
     renderTrades(data.trades || []);
     renderActions(data.actions || []);
     renderFlows(data.flows || []);
@@ -174,8 +172,8 @@ async function loadFlows() {
 async function loadTrades() {
   try {
     const rows = await StockApi.getJson('/api/portfolio/trades');
-    tradesPage = 1;
-    tradesLoaded = true;
+    resetTradesPage();
+    PortfolioState.trades.loaded = true;
     renderTrades(Array.isArray(rows) ? rows : []);
   } catch (e) {
     showToast('加载交易记录失败', 'error');
@@ -183,14 +181,14 @@ async function loadTrades() {
 }
 
 async function toggleTradesPanel() {
-  tradesCollapsed = !tradesCollapsed;
+  PortfolioState.trades.collapsed = !PortfolioState.trades.collapsed;
   const content = document.getElementById('tradesContent');
   const toggleBtn = document.getElementById('tradesToggleBtn');
   const refreshBtn = document.getElementById('tradesRefreshBtn');
-  if (content) content.style.display = tradesCollapsed ? 'none' : 'block';
-  if (toggleBtn) toggleBtn.textContent = tradesCollapsed ? '展开' : '收起';
-  if (refreshBtn) refreshBtn.style.display = tradesCollapsed ? 'none' : '';
-  if (!tradesCollapsed && !tradesLoaded) {
+  if (content) content.style.display = PortfolioState.trades.collapsed ? 'none' : 'block';
+  if (toggleBtn) toggleBtn.textContent = PortfolioState.trades.collapsed ? '展开' : '收起';
+  if (refreshBtn) refreshBtn.style.display = PortfolioState.trades.collapsed ? 'none' : '';
+  if (!PortfolioState.trades.collapsed && !PortfolioState.trades.loaded) {
     await loadTrades();
   }
 }
@@ -210,13 +208,12 @@ function renderTrades(rows) {
   const totalEl = document.getElementById('tradesTotal');
   const pagination = document.getElementById('tradesPagination');
   if (!body || !empty || !totalEl || !pagination) return;
-  tradesLoaded = true;
-  tradeRows = Array.isArray(rows) ? rows : [];
-  const totalPages = Math.max(1, Math.ceil(tradeRows.length / TRADES_PAGE_SIZE));
-  if (tradesPage > totalPages) tradesPage = totalPages;
-  const start = (tradesPage - 1) * TRADES_PAGE_SIZE;
-  const pageRows = tradeRows.slice(start, start + TRADES_PAGE_SIZE);
-  empty.style.display = tradeRows.length ? 'none' : 'block';
+  setTradesRows(rows);
+  const totalPages = Math.max(1, Math.ceil(PortfolioState.trades.rows.length / PortfolioState.trades.pageSize));
+  if (PortfolioState.trades.page > totalPages) PortfolioState.trades.page = totalPages;
+  const start = (PortfolioState.trades.page - 1) * PortfolioState.trades.pageSize;
+  const pageRows = PortfolioState.trades.rows.slice(start, start + PortfolioState.trades.pageSize);
+  empty.style.display = PortfolioState.trades.rows.length ? 'none' : 'block';
   body.innerHTML = pageRows.map(r => {
     const isBuy = r.trade_type === 'buy';
     const typeText = isBuy ? '买入' : '卖出';
@@ -242,32 +239,32 @@ function renderTrades(rows) {
       <td>${r.is_void ? '--' : `<button class="btn btn-danger btn-sm" onclick="voidTrade(${r.id})">作废</button>`}</td>
     </tr>`;
   }).join('');
-  totalEl.textContent = '共 ' + tradeRows.length + ' 条';
+  totalEl.textContent = '共 ' + PortfolioState.trades.rows.length + ' 条';
   pagination.innerHTML = renderTradesPagination(totalPages);
 }
 
 function renderTradesPagination(totalPages) {
-  const disabledPrev = tradesPage <= 1 ? ' disabled' : '';
-  const disabledNext = tradesPage >= totalPages ? ' disabled' : '';
+  const disabledPrev = PortfolioState.trades.page <= 1 ? ' disabled' : '';
+  const disabledNext = PortfolioState.trades.page >= totalPages ? ' disabled' : '';
   const pages = [];
-  const start = Math.max(1, tradesPage - 2);
-  const end = Math.min(totalPages, tradesPage + 2);
+  const start = Math.max(1, PortfolioState.trades.page - 2);
+  const end = Math.min(totalPages, PortfolioState.trades.page + 2);
   for (let page = start; page <= end; page++) {
-    pages.push(`<button class="page-btn${page === tradesPage ? ' active' : ''}" type="button" onclick="setTradesPage(${page})">${page}</button>`);
+    pages.push(`<button class="page-btn${page === PortfolioState.trades.page ? ' active' : ''}" type="button" onclick="setTradesPage(${page})">${page}</button>`);
   }
   return `
-    <button class="page-btn"${disabledPrev} type="button" onclick="setTradesPage(${tradesPage - 1})">上一页</button>
+    <button class="page-btn"${disabledPrev} type="button" onclick="setTradesPage(${PortfolioState.trades.page - 1})">上一页</button>
     ${start > 1 ? '<span class="page-ellipsis">...</span>' : ''}
     ${pages.join('')}
     ${end < totalPages ? '<span class="page-ellipsis">...</span>' : ''}
-    <button class="page-btn"${disabledNext} type="button" onclick="setTradesPage(${tradesPage + 1})">下一页</button>
+    <button class="page-btn"${disabledNext} type="button" onclick="setTradesPage(${PortfolioState.trades.page + 1})">下一页</button>
   `;
 }
 
 function setTradesPage(page) {
-  const totalPages = Math.max(1, Math.ceil(tradeRows.length / TRADES_PAGE_SIZE));
-  tradesPage = Math.min(Math.max(1, Number(page) || 1), totalPages);
-  renderTrades(tradeRows);
+  const totalPages = Math.max(1, Math.ceil(PortfolioState.trades.rows.length / PortfolioState.trades.pageSize));
+  PortfolioState.trades.page = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  renderTrades(PortfolioState.trades.rows);
 }
 
 function renderActions(rows) {
