@@ -11,40 +11,9 @@ import subprocess
 import tempfile
 import threading
 from datetime import datetime
-from services.http_client import get_json
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 if APP_DIR not in sys.path:
     sys.path.insert(0, APP_DIR)
-
-
-def _read_local_settings():
-    path = os.path.join(APP_DIR, "local_settings.json")
-    if not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8-sig") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-LOCAL_SETTINGS = _read_local_settings()
-
-
-def _set_local_settings(settings):
-    global LOCAL_SETTINGS
-    LOCAL_SETTINGS = settings
-
-
-def _setting(name, env_name, default=None):
-    value = os.environ.get(env_name)
-    if value not in (None, ""):
-        return value
-    value = LOCAL_SETTINGS.get(name)
-    return default if value in (None, "") else value
-
-
-LOCAL_SETTINGS_PATH = os.path.join(APP_DIR, "local_settings.json")
 
 
 from models import Stock
@@ -59,6 +28,7 @@ from services.cloud_backup_service import (
     backup_file_groups,
     validate_sql_backup_file,
 )
+from services import app_settings
 from services.stock_identity import (
     eastmoney_secu_code as _eastmoney_secu_code,
     eastmoney_web_code as _eastmoney_web_code,
@@ -83,11 +53,16 @@ from services import portfolio_money
 from services import portfolio_nav
 from services import portfolio_positions
 from services import portfolio_records
+from services import ui_preferences
 from services.portfolio_schema import ensure_portfolio_tables
 from services.market_data import (
     fetch_realtime_prices as market_fetch_realtime_prices,
     fetch_realtime_quotes as market_fetch_realtime_quotes,
     fetch_ytd_return as market_fetch_ytd_return,
+)
+from services.exchange_rates import (
+    currency_for_market as _currency_for_market,
+    exchange_rate_to_cny as _exchange_rate_to_cny,
 )
 from routes.portfolio import register_portfolio_routes
 from routes.corporate_actions import register_corporate_action_routes
@@ -111,14 +86,29 @@ from routes.pages import register_page_routes
 
 app = Flask(__name__)
 
+LOCAL_SETTINGS = app_settings.read_local_settings(APP_DIR)
+LOCAL_SETTINGS_PATH = app_settings.local_settings_path(APP_DIR)
+
+
+def _read_local_settings():
+    return app_settings.read_local_settings(APP_DIR)
+
+
+def _set_local_settings(settings):
+    global LOCAL_SETTINGS
+    LOCAL_SETTINGS = settings
+
+
+def _setting(name, env_name, default=None):
+    return app_settings.setting(LOCAL_SETTINGS, name, env_name, default)
+
+
 CLOUD_SYNC_DIR = _setting("cloud_sync_dir", "STOCK_CLOUD_SYNC_DIR", r"D:\stock-cloud-sync")
 MYSQL_BIN_DIR = _setting("mysql_bin_dir", "MYSQL_BIN_DIR", "")
 APP_PORT = int(_setting("app_port", "STOCK_APP_PORT", 5002))
 CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
-EXCHANGE_RATE_CACHE_JSON = os.path.join(APP_DIR, "data", "exchange_rates.json")
-EXCHANGE_RATE_CACHE_SECONDS = 12 * 60 * 60
 AUTO_CLOUD_BACKUP_DELAY_SECONDS = int(_setting("auto_cloud_backup_delay_seconds", "STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS", 180))
 _auto_backup_lock = threading.Lock()
 _auto_backup_timer = None
@@ -257,61 +247,6 @@ def _write_local_cloud_state(payload):
     os.makedirs(os.path.dirname(LOCAL_CLOUD_STATE_JSON), exist_ok=True)
     with open(LOCAL_CLOUD_STATE_JSON, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-
-
-def _read_exchange_rate_cache():
-    if not os.path.exists(EXCHANGE_RATE_CACHE_JSON):
-        return {}
-    try:
-        with open(EXCHANGE_RATE_CACHE_JSON, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _write_exchange_rate_cache(payload):
-    os.makedirs(os.path.dirname(EXCHANGE_RATE_CACHE_JSON), exist_ok=True)
-    with open(EXCHANGE_RATE_CACHE_JSON, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
-
-def _currency_for_market(market):
-    return "HKD" if market == "HK" else "CNY"
-
-
-def _exchange_rate_to_cny(currency):
-    currency = (currency or "CNY").upper()
-    if currency == "CNY":
-        return {"rate": 1.0, "base": "CNY", "target": "CNY", "date": None, "source": "native", "cached": False}
-
-    key = f"{currency}_CNY"
-    now = time.time()
-    cache = _read_exchange_rate_cache()
-    cached = (cache.get("rates") or {}).get(key)
-    if cached and now - float(cached.get("fetched_at") or 0) < EXCHANGE_RATE_CACHE_SECONDS:
-        return {**cached, "cached": True}
-
-    if currency == "HKD":
-        try:
-            data = get_json("https://api.frankfurter.dev/v2/rate/HKD/CNY", timeout=8)
-            rate = float(data.get("rate"))
-            payload = {
-                "rate": rate,
-                "base": "HKD",
-                "target": "CNY",
-                "date": data.get("date"),
-                "source": "Frankfurter",
-                "fetched_at": now,
-                "cached": False,
-            }
-            cache.setdefault("rates", {})[key] = payload
-            _write_exchange_rate_cache(cache)
-            return payload
-        except Exception:
-            if cached:
-                return {**cached, "cached": True, "stale": True}
-
-    return None
 
 
 def _cloud_latest_mtime():
@@ -720,43 +655,12 @@ def _ensure_stock_order_column():
         pass
 
 
-def _ensure_ui_preferences_table():
-    execute_query(
-        """CREATE TABLE IF NOT EXISTS ui_preferences (
-            pref_key VARCHAR(80) NOT NULL PRIMARY KEY,
-            pref_value JSON NOT NULL,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci""",
-        fetch=False,
-    )
-
-
 def _ui_preference_get(pref_key):
-    _ensure_ui_preferences_table()
-    rows = execute_query(
-        "SELECT pref_value, updated_at FROM ui_preferences WHERE pref_key=%s LIMIT 1",
-        (pref_key,),
-    )
-    if not rows:
-        return None, None
-    value = rows[0].get("pref_value")
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except Exception:
-            value = None
-    return value, rows[0].get("updated_at")
+    return ui_preferences.ui_preference_get(execute_query, pref_key)
 
 
 def _ui_preference_set(pref_key, pref_value):
-    _ensure_ui_preferences_table()
-    execute_query(
-        """INSERT INTO ui_preferences (pref_key, pref_value)
-           VALUES (%s, %s)
-           ON DUPLICATE KEY UPDATE pref_value=VALUES(pref_value), updated_at=CURRENT_TIMESTAMP""",
-        (pref_key, json.dumps(pref_value, ensure_ascii=False)),
-        fetch=False,
-    )
+    return ui_preferences.ui_preference_set(execute_query, pref_key, pref_value)
 
 
 def _fetch_realtime_quotes(stocks):
