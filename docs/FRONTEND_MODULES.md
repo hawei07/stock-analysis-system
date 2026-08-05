@@ -56,6 +56,30 @@ project adopts a bundler or framework.
 - `static/js/background_jobs.js`
   - Floating background task panel and polling.
 
+## Portfolio Page
+
+- `templates/portfolio.html`
+  - Portfolio page markup and modal structure only.
+  - Do not add large inline scripts here; new behavior should live in
+    `static/js/portfolio/`.
+- `static/js/portfolio/state.js`
+  - Portfolio page global state, startup wiring, default dates, and theme/chart
+    refresh coordination.
+- `static/js/portfolio/layout.js`
+  - Portfolio layout helpers, modal open/close helpers, fee configuration,
+    allocation pie chart, privacy toggle, and portfolio-specific formatting.
+- `static/js/portfolio/positions.js`
+  - Portfolio summary cards, position sorting, and position table rendering.
+- `static/js/portfolio/trades_actions.js`
+  - Buy/sell modal, corporate action modal, trade/action loading, and trade/action
+    table rendering.
+- `static/js/portfolio/ledger.js`
+  - Cash-flow rendering, cash-flow writes, trade/action voiding, account audit,
+    ledger rebuild, and custom dividend settings.
+- `static/js/portfolio/nav.js`
+  - NAV snapshot creation, NAV chart rendering, NAV detail table pagination,
+    filters, Excel export, resize handling, and the portfolio toast helper.
+
 ## Script Loading Order
 
 Scripts are loaded in `templates/index.html` in this order:
@@ -64,6 +88,16 @@ Scripts are loaded in `templates/index.html` in this order:
 2. Stock detail shell and detail tabs.
 3. Financial tab shell and financial submodules.
 4. Home list, notes, backup, settings, and background jobs.
+
+Scripts are loaded in `templates/portfolio.html` in this order:
+
+1. Portfolio state and startup wiring.
+2. Portfolio layout helpers and formatters.
+3. Positions.
+4. Trades and corporate actions.
+5. Ledger/cash-flow maintenance.
+6. NAV chart and NAV history.
+7. Shared cloud backup and background job scripts.
 
 New modules must not depend on files loaded after them. If a helper is needed by
 multiple modules, move it into `static/js/core/` or a clearly named shared module
