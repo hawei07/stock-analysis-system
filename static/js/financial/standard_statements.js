@@ -78,14 +78,14 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
 
   // YoY
   const yoyMap = {};
-  for (const key of keys) { const d = dataMap[key]; const prevKey = makePrevKey(key); const prev = dataMap[prevKey]; yoyMap[key] = {}; for (const f of allFields) { yoyMap[key][f] = FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null); } }
+  for (const key of keys) { const d = dataMap[key]; const prevKey = makePrevKey(key); const prev = dataMap[prevKey]; yoyMap[key] = {}; for (const f of allFields) { yoyMap[key][f] = window.FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null); } }
 
   // Comparison
   let cmpDataMap = {}, cmpKeys = [], cmpYoyMap = {};
   if (cmpData && cmpData.length > 0) {
     for (const d of cmpData) cmpDataMap[makeKey(d)] = d;
     cmpKeys = cmpData.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
-    for (const key of cmpKeys) { const d = cmpDataMap[key]; const prevKey = makePrevKey(key); const prev = cmpDataMap[prevKey]; cmpYoyMap[key] = {}; for (const f of allFields) { cmpYoyMap[key][f] = FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null); } }
+    for (const key of cmpKeys) { const d = cmpDataMap[key]; const prevKey = makePrevKey(key); const prev = cmpDataMap[prevKey]; cmpYoyMap[key] = {}; for (const f of allFields) { cmpYoyMap[key][f] = window.FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null); } }
   }
 
   const hasCmp = cmpData && cmpData.length > 0;
@@ -154,35 +154,35 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
 }
 
 function incomeValue(row, field) {
-  return FinancialMetrics.value(row, field);
+  return window.FinancialMetrics.value(row, field);
 }
 
 function positiveIncomeValue(row, field) {
-  return FinancialMetrics.positive(row, field);
+  return window.FinancialMetrics.positive(row, field);
 }
 
 function incomeRevenueValue(row) {
-  return FinancialMetrics.incomeRevenue(row);
+  return window.FinancialMetrics.incomeRevenue(row);
 }
 
 function incomeOperatingRevenueValue(row) {
-  return FinancialMetrics.incomeOperatingRevenue(row);
+  return window.FinancialMetrics.incomeOperatingRevenue(row);
 }
 
 function incomeInterestIncludedInRevenue(row) {
-  return FinancialMetrics.incomeInterestIncludedInRevenue(row);
+  return window.FinancialMetrics.incomeInterestIncludedInRevenue(row);
 }
 
 function incomeFinanceExpenseBeforeInterestIncomeValue(row) {
-  return FinancialMetrics.incomeFinanceExpenseBeforeInterestIncome(row);
+  return window.FinancialMetrics.incomeFinanceExpenseBeforeInterestIncome(row);
 }
 
 function incomePeriodExpenseValue(row) {
-  return FinancialMetrics.incomePeriodExpense(row);
+  return window.FinancialMetrics.incomePeriodExpense(row);
 }
 
 function incomeGrossValue(row) {
-  return FinancialMetrics.incomeGross(row);
+  return window.FinancialMetrics.incomeGross(row);
 }
 
 function incomeCoreProfitValue(row) {
@@ -190,23 +190,23 @@ function incomeCoreProfitValue(row) {
 }
 
 function incomeCoreProfitRawValue(row) {
-  return FinancialMetrics.incomeCoreProfit(row);
+  return window.FinancialMetrics.incomeCoreProfit(row);
 }
 
 function enrichIncomeDerivedFields(row) {
-  return FinancialMetrics.enrichIncomeDerivedFields(row);
+  return window.FinancialMetrics.enrichIncomeDerivedFields(row);
 }
 
 function incomeOperatingSignedAdjustmentSum(row) {
-  return FinancialMetrics.incomeOperatingSignedAdjustmentSum(row);
+  return window.FinancialMetrics.incomeOperatingSignedAdjustmentSum(row);
 }
 
 function incomeOperatingAdjustmentResidual(row) {
-  return FinancialMetrics.incomeOperatingAdjustmentResidual(row);
+  return window.FinancialMetrics.incomeOperatingAdjustmentResidual(row);
 }
 
 function incomeParentProfitValue(row) {
-  return FinancialMetrics.incomeParentProfit(row);
+  return window.FinancialMetrics.incomeParentProfit(row);
 }
 
 function incomePrevKey(key) {
@@ -224,7 +224,7 @@ function incomeNodeLabel(name, value, row, prevRow, field) {
   let labelText = `{node|${name}}\n{amount|${amountText}}`;
   let tooltipText = name + '\n' + amountText;
   if (field && prev !== 0) {
-    const rate = FinancialMetrics.pctChange(cur, prev);
+    const rate = window.FinancialMetrics.pctChange(cur, prev);
     if (Number.isFinite(rate)) {
       const yoyText = (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
       labelText += `\n{${rate >= 0 ? 'pos' : 'neg'}|${yoyText}}`;
@@ -489,14 +489,14 @@ function openFinanceChart(field, name, prefix) {
   const sortedKeys = [...keys].sort(sortFiscalKeysAsc);
   const labels = sortedKeys.map(formatFiscalKeyLabel);
   const values = sortedKeys.map(k => { const d = dataMap[k]; return d && d[field] != null ? d[field] : null; });
-  const yoyValues = sortedKeys.map((k, i) => i === 0 ? null : FinancialMetrics.pctChange(values[i], values[i - 1], 2));
+  const yoyValues = sortedKeys.map((k, i) => i === 0 ? null : window.FinancialMetrics.pctChange(values[i], values[i - 1], 2));
 
   const cleanVals = values.filter(v => v != null);
-  if (cleanVals.length >= 2) { const fv = cleanVals[0], lv = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1; const rate = FinancialMetrics.cagr(fv, lv, n, 2); if (rate != null) title += ' (CAGR: ' + rate.toFixed(2) + '%)'; }
+  if (cleanVals.length >= 2) { const fv = cleanVals[0], lv = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1; const rate = window.FinancialMetrics.cagr(fv, lv, n, 2); if (rate != null) title += ' (CAGR: ' + rate.toFixed(2) + '%)'; }
 
   let cmpValues = null;
   if (cmpDataMap) cmpValues = sortedKeys.map(k => { const d = cmpDataMap[k]; return d && d[field] != null ? d[field] : null; });
-  if (cmpValues && cmpValues.some(v => v != null)) { title += ' vs ' + (cmpName || cmpCode); const cc = cmpValues.filter(v => v != null); if (cc.length >= 2) { const fv = cc[0], lv = cc[cc.length - 1], n = cc.length - 1; const rate = FinancialMetrics.cagr(fv, lv, n, 2); if (rate != null) title += ' (CAGR: ' + rate.toFixed(2) + '%)'; } }
+  if (cmpValues && cmpValues.some(v => v != null)) { title += ' vs ' + (cmpName || cmpCode); const cc = cmpValues.filter(v => v != null); if (cc.length >= 2) { const fv = cc[0], lv = cc[cc.length - 1], n = cc.length - 1; const rate = window.FinancialMetrics.cagr(fv, lv, n, 2); if (rate != null) title += ' (CAGR: ' + rate.toFixed(2) + '%)'; } }
 
   document.getElementById('chartModalTitle').textContent = title;
   document.getElementById('chartModalOverlay').classList.add('active');

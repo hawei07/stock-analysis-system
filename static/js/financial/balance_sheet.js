@@ -178,7 +178,7 @@ function renderBalanceSheetTable(data, cmpData, cmpCode, cmpName) {
     const prev = dataMap[prevKey];
     yoyMap[key] = {};
     for (const f of bsFields) {
-      yoyMap[key][f] = FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null);
+      yoyMap[key][f] = window.FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null);
     }
   }
 
@@ -193,7 +193,7 @@ function renderBalanceSheetTable(data, cmpData, cmpCode, cmpName) {
       const prev = cmpDataMap[prevKey];
       cmpYoyMap[key] = {};
       for (const f of bsFields) {
-        cmpYoyMap[key][f] = FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null);
+        cmpYoyMap[key][f] = window.FinancialMetrics.pctChange(d ? d[f] : null, prev ? prev[f] : null);
       }
     }
   }
@@ -627,13 +627,13 @@ function openBSChart(field, name) {
   });
 
   // YoY line data
-  const yoyValues = sortedKeys.map((k, i) => i === 0 ? null : FinancialMetrics.pctChange(values[i], values[i - 1], 2));
+  const yoyValues = sortedKeys.map((k, i) => i === 0 ? null : window.FinancialMetrics.pctChange(values[i], values[i - 1], 2));
 
   // CAGR for main stock
   const cleanVals = values.filter(v => v != null);
   if (cleanVals.length >= 2) {
     const firstV = cleanVals[0], lastV = cleanVals[cleanVals.length - 1], n = cleanVals.length - 1;
-    const cagr = FinancialMetrics.cagr(firstV, lastV, n, 2);
+    const cagr = window.FinancialMetrics.cagr(firstV, lastV, n, 2);
     if (cagr != null) title += ' (CAGR: ' + cagr.toFixed(2) + '%)';
   }
 
@@ -652,7 +652,7 @@ function openBSChart(field, name) {
     const cmpClean = cmpValues.filter(v => v != null);
     if (cmpClean.length >= 2) {
       const firstV = cmpClean[0], lastV = cmpClean[cmpClean.length - 1], n = cmpClean.length - 1;
-      const cmpCagr = FinancialMetrics.cagr(firstV, lastV, n, 2);
+      const cmpCagr = window.FinancialMetrics.cagr(firstV, lastV, n, 2);
       if (cmpCagr != null) title += ' (CAGR: ' + cmpCagr.toFixed(2) + '%)';
     }
   }
