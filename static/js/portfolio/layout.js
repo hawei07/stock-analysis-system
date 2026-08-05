@@ -39,9 +39,8 @@ function fillFeeConfigForm() {
 
 async function loadFeeConfig() {
   try {
-    const res = await fetch('/api/portfolio/fee-config');
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '加载费率失败');
+    const data = await StockApi.getJson('/api/portfolio/fee-config');
+    if (data.error) throw new Error(data.error || '加载费率失败');
     latestFeeConfig = data;
   } catch (e) {
     showToast(e.message || '加载费率失败', 'error');
@@ -56,13 +55,8 @@ async function saveFeeConfig() {
     transfer_fee_rate: Number(document.getElementById('transferFeeRateInput').value || 0) / 100
   };
   try {
-    const res = await fetch('/api/portfolio/fee-config', {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '保存费率失败');
+    const data = await StockApi.putJson('/api/portfolio/fee-config', payload);
+    if (data.error) throw new Error(data.error || '保存费率失败');
     latestFeeConfig = data;
     closeFeeConfigModal();
     updateTradeFeeEstimate();
@@ -136,13 +130,11 @@ function renderAllocationPie() {
 }
 
 function money(v) {
-  if (v == null || Number.isNaN(Number(v))) return '--';
-  return Number(v).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  return StockFormat.number(v, {empty: '--', minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
 function dividendHistoryMoney(v) {
-  if (v == null || Number.isNaN(Number(v))) return '--';
-  return Number(v).toLocaleString('zh-CN', {minimumFractionDigits: 3, maximumFractionDigits: 3});
+  return StockFormat.number(v, {empty: '--', minimumFractionDigits: 3, maximumFractionDigits: 3});
 }
 
 function maskedMoney() {
@@ -161,9 +153,7 @@ function signedPrivateMoney(v) {
 }
 
 function signedPct(v) {
-  if (v == null || Number.isNaN(Number(v))) return '--';
-  const n = Number(v);
-  return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
+  return StockFormat.signedPercent(v, {empty: '--', minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
 function profitClass(v) {
@@ -192,8 +182,7 @@ function toggleAmountPrivacy() {
 }
 
 function plain(v) {
-  if (v == null || Number.isNaN(Number(v))) return '--';
-  return Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 4});
+  return StockFormat.number(v, {empty: '--', maximumFractionDigits: 4});
 }
 
 function price2(v) {

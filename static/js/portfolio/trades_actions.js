@@ -99,13 +99,8 @@ async function saveAction() {
     note: document.getElementById('actionNoteInput').value.trim()
   };
   try {
-    const res = await fetch('/api/portfolio/actions', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '保存权益失败');
+    const data = await StockApi.postJson('/api/portfolio/actions', payload);
+    if (data.error) throw new Error(data.error || '保存权益失败');
     latestPortfolioData = data;
     if (data.fee_config) latestFeeConfig = data.fee_config;
     closeActionModal();
@@ -134,13 +129,8 @@ async function saveTrade() {
     if (tradeType === 'sell' && !(latestPortfolioData.positions || []).some(p => String(p.code) === String(code))) {
       throw new Error('卖出必须从当前持仓股票后方进入');
     }
-    const res = await fetch('/api/portfolio/trades', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({trade_date: tradeDate, trade_type: tradeType, code, shares, price, note})
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '保存交易失败');
+    const data = await StockApi.postJson('/api/portfolio/trades', {trade_date: tradeDate, trade_type: tradeType, code, shares, price, note});
+    if (data.error) throw new Error(data.error || '保存交易失败');
     latestPortfolioData = data;
     if (data.fee_config) latestFeeConfig = data.fee_config;
     document.getElementById('tradeCodeInput').value = '';
@@ -164,8 +154,7 @@ async function saveTrade() {
 async function resolveStockCode(identifier) {
   if (/^\d{5,6}$/.test(identifier)) return identifier;
   if (/^hk\d{1,5}$/i.test(identifier)) return identifier.replace(/^hk/i, '').padStart(5, '0');
-  const res = await fetch('/api/stock-search?keyword=' + encodeURIComponent(identifier));
-  const list = await res.json();
+  const list = await StockApi.getJson('/api/stock-search?keyword=' + encodeURIComponent(identifier));
   if (!Array.isArray(list) || !list.length) {
     throw new Error('未找到匹配的股票，请输入代码或更准确的名称');
   }
@@ -175,8 +164,7 @@ async function resolveStockCode(identifier) {
 
 async function loadFlows() {
   try {
-    const res = await fetch('/api/portfolio/flows');
-    const rows = await res.json();
+    const rows = await StockApi.getJson('/api/portfolio/flows');
     renderFlows(Array.isArray(rows) ? rows : []);
   } catch (e) {
     showToast('加载资金流水失败', 'error');
@@ -185,8 +173,7 @@ async function loadFlows() {
 
 async function loadTrades() {
   try {
-    const res = await fetch('/api/portfolio/trades');
-    const rows = await res.json();
+    const rows = await StockApi.getJson('/api/portfolio/trades');
     tradesPage = 1;
     tradesLoaded = true;
     renderTrades(Array.isArray(rows) ? rows : []);
@@ -210,8 +197,7 @@ async function toggleTradesPanel() {
 
 async function loadActions() {
   try {
-    const res = await fetch('/api/portfolio/actions');
-    const rows = await res.json();
+    const rows = await StockApi.getJson('/api/portfolio/actions');
     renderActions(Array.isArray(rows) ? rows : []);
   } catch (e) {
     showToast('加载权益记录失败', 'error');

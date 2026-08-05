@@ -1,8 +1,7 @@
 async function saveSnapshot() {
   try {
-    const res = await fetch('/api/portfolio/snapshot', {method: 'POST'});
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '记录失败');
+    const data = await StockApi.postJson('/api/portfolio/snapshot');
+    if (data.error) throw new Error(data.error || '记录失败');
     latestPortfolioData = data;
     renderSummary(data.summary);
     renderPositions(data.positions || []);
@@ -14,8 +13,7 @@ async function saveSnapshot() {
 }
 
 async function loadNav(live = false) {
-  const res = await fetch('/api/portfolio/nav' + (live ? '?live=1' : ''));
-  const rows = await res.json();
+  const rows = await StockApi.getJson('/api/portfolio/nav' + (live ? '?live=1' : ''));
   renderNav(rows || []);
   navHistoryRows = Array.isArray(rows) ? rows : [];
   renderNavHistoryTable();

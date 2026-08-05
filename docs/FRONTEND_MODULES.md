@@ -91,13 +91,14 @@ Scripts are loaded in `templates/index.html` in this order:
 
 Scripts are loaded in `templates/portfolio.html` in this order:
 
-1. Portfolio state and startup wiring.
-2. Portfolio layout helpers and formatters.
-3. Positions.
-4. Trades and corporate actions.
-5. Ledger/cash-flow maintenance.
-6. NAV chart and NAV history.
-7. Shared cloud backup and background job scripts.
+1. Core utilities: `core/api.js`, `core/formatters.js`.
+2. Portfolio state and startup wiring.
+3. Portfolio layout helpers and portfolio-compatible formatter wrappers.
+4. Positions.
+5. Trades and corporate actions.
+6. Ledger/cash-flow maintenance.
+7. NAV chart and NAV history.
+8. Shared cloud backup and background job scripts.
 
 New modules must not depend on files loaded after them. If a helper is needed by
 multiple modules, move it into `static/js/core/` or a clearly named shared module

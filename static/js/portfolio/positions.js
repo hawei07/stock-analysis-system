@@ -1,8 +1,7 @@
 async function loadPortfolio() {
   try {
-    const res = await fetch('/api/portfolio');
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || '加载失败');
+    const data = await StockApi.getJson('/api/portfolio');
+    if (data.error) throw new Error(data.error || '加载失败');
     latestPortfolioData = data;
     if (data.fee_config) latestFeeConfig = data.fee_config;
     renderSummary(data.summary);
