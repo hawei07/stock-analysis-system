@@ -1104,3 +1104,120 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 - 如果该股票没有任何持仓相关记录，则物理删除 `stocks` 主表记录。
 - 删除 `data/sticky_notes.json` 中绑定该股票的便利贴，并清理便利贴图片附件。
 - 重新添加曾经隐藏的股票时，会把 `is_watchlist` 恢复为 `1`，重新显示在自选股列表。
+
+---
+
+## 15. 当前开发规范（2026-08-05）
+
+本节记录系统当前已经形成的架构、前端和接口约定。后续迭代优先遵守这些约定，避免把已经拆开的职责重新堆回 `app.py`、模板内联脚本或重复公式里。
+
+### 15.1 后端分层
+
+- `app.py` 是应用装配入口，只负责 Flask 创建、全局配置、依赖注入、路由注册、云备份/恢复调度等根级编排；新增业务逻辑不要直接堆在 `app.py`。
+- `routes/` 按业务域承载页面和 API 路由，例如股票、自定义财报、三张表、营收构成、分红/融资、股东、互动易、组合持仓、系统设置、后台任务等。
+- `services/` 承载业务服务、领域 helper、外部接口封装和跨路由复用逻辑。路由层只做参数校验、调用服务、组织响应。
+- `db.py` 是数据库访问门面，具体实现集中在 `services/database.py`。业务代码应通过门面函数访问数据库。
+- `models.py`、`migrations.py`、`migrations/` 负责表结构、迁移和历史兼容，新增字段应同步补充迁移脚本或启动期 schema ensure 逻辑。
+
+### 15.2 路由模块规范
+
+- 每个 `routes/*.py` 只处理一个清晰业务域，避免跨域互相塞逻辑。
+- 路由模块优先暴露 `register_*_routes(app, deps)` 风格的注册函数，由 `app.py` 统一注入依赖。
+- 新接口需要复用既有 service，不要在路由里直接复制抓取、计算、格式化或 SQL 片段。
+- 页面入口放在 `routes/pages.py`；业务数据接口放在对应业务路由模块。
+- 长耗时批量接口不要同步阻塞请求，应迁入后台任务系统并返回 `job_id`。
+
+### 15.3 服务层规范
+
+- 财务期间选择统一放在 `services/financial_periods.py`，例如“当前年只有 Q1 时不能误当 FY 年报”这类逻辑不得散落在接口里。
+- 财务指标和公式统一放在 `services/financial_metrics.py`，包括同比、CAGR、核心利润、核心利润率、毛利率等。
+- 股票代码、市场、腾讯 symbol、东方财富编码、港股识别和行业信息优先使用 `services/stock_identity.py`。
+- 行情、实时价格、年初至今涨跌幅等外部市场数据优先通过 `services/market_data.py`。
+- 外部 HTTP 请求优先通过 `services/http_client.py`，统一超时、重试、headers 和异常处理口径。
+- 云备份的存储和策略分开：本地/远端存储细节放在 `services/cloud_backup_storage.py`，业务编排放在 `services/cloud_backup_service.py` 或系统路由中。
+- 股票删除清理逻辑放在 `services/stock_delete_service.py`，删除自选股详情数据时不能误删我的持仓交易、现金流水和公司行为数据。
+
+### 15.4 数据库访问规范
+
+- 业务代码使用 `execute_query`、`execute_update`、`execute_insert`、`execute_many`、`transaction` 等门面函数。
+- 除 `services/database.py` 或底层基础设施外，不要直接写 `conn.cursor()`、`commit()`、`rollback()`。
+- 多步写入必须使用 `transaction`，保证失败时整体回滚。
+- 查询结果优先返回 dict/list 结构，避免路由层依赖裸 tuple 下标。
+- 慢 SQL 和数据库统计已经接入观测接口：`GET /api/db/stats`、`POST /api/db/stats/reset`。
+- 慢 SQL 阈值通过环境变量 `STOCK_SLOW_SQL_SECONDS` 控制。
+
+### 15.5 后台任务规范
+
+- 批量更新、全量抓取、股东刷新、互动易同步、财报/分红/三张表/营收构成等长耗时操作应接入 `services/background_jobs.py`。
+- 后台任务接口返回结构应包含 `background: true`、`job_id`、`job_type`、`message`。
+- 同类任务在 `queued` / `running` 时默认复用已有任务，确需重跑时再支持 `force: true`。
+- 任务循环应在每只股票处理前检查取消标记，并把开始、完成、失败、取消原因写入 `background_job_logs`。
+- 重试应创建新任务，不复活旧任务；优先只重试失败股票，无法提取失败股票时才使用原参数重跑。
+- 任务真正完成并发生数据写入后，再按业务原因安排云备份；不要因为“任务已创建”就触发云备份。
+- 前端统一通过 `static/js/background_jobs.js` 的任务浮窗展示进度、日志、取消和重试；没有任务执行时浮窗应自动隐藏。
+
+### 15.6 API 响应规范
+
+- 新读接口优先返回 `{"ok": true, ...}`；历史接口如果已经返回数组或对象，可保持兼容，不要为了形式统一破坏前端。
+- 新写接口优先返回 `{"ok": true}` 或 `{"success": true}`，并附带 `created`、`updated`、`deleted`、`count`、`errors` 等可诊断字段。
+- 错误响应统一包含 `{"error": "可读错误信息"}`，必要时补充 `details`，HTTP 状态码应与错误类型匹配。
+- 股票详情类接口优先使用 `GET /api/stock/<code>/...`。
+- 数据更新类接口优先使用 `POST /api/update-...` 或对应业务域下的 `POST`。
+- 后台任务状态接口使用 `GET /api/jobs/<job_id>`，取消和重试使用任务域接口，不要为每种业务任务另起一套轮询协议。
+- 接口字段名保持 snake_case，前端展示层再决定中文名称和格式。
+
+### 15.7 前端模块规范
+
+- `static/js/core/api.js` 是通用 fetch 封装，新增请求优先挂到 `StockApi.*`，不要在页面里散写 `fetch`。
+- `static/js/core/formatters.js` 放通用格式化能力，例如金额、百分比、日期、数字空值展示。
+- 股票详情页 tab 逻辑放在 `static/js/detail/*.js`，一个 tab 或一组强相关 tab 一个模块。
+- 财务表格和财务图表相关逻辑放在 `static/js/financial/`；前端展示侧公式放在 `static/js/financial/metrics.js`。
+- 我的持仓页面使用 `static/js/portfolio/` 下的模块，语义化接口封装放在 `static/js/portfolio/api.js`，状态集中在 `state.js`。
+- 模板中避免新增大段内联脚本；模板只负责 DOM 骨架和脚本加载顺序。
+- 修改共享 JS 后要检查模板中的加载顺序。依赖关系通常是 `core/api.js`、`core/formatters.js`、财务公式/业务模块、页面入口脚本。
+- 对已有页面兼容风险较高的共享脚本变更，可以同步更新查询串版本号，避免浏览器缓存导致旧脚本和新脚本混用。
+
+### 15.8 财务公式规范
+
+- 后端 `services/financial_metrics.py` 是业务/API 数据的公式事实来源。
+- 前端 `static/js/financial/metrics.js` 只用于展示侧派生值、图表节点和无需落库的即时计算。
+- 同一指标不能在多个路由或多个 JS 模块里各写一份公式；新增指标先补公式 helper，再由路由和前端调用。
+- 核心利润、核心利润率、毛利率、同比和 CAGR 的口径要保持后端、表格、图表、自定义财报一致。
+- 核心利润为负数时也要展示；桑基图中负核心利润按既有约定保留可见流向，不得被空值过滤。
+
+### 15.9 云备份和同步规范
+
+- 会改变本地数据的同步接口，应登记到自动云备份机制中，或在任务完成后显式安排备份。
+- 后台任务只在实际完成写入后触发备份；创建任务、查询任务、取消任务不应触发备份。
+- 用户偏好、财务自定义指标、排序和 UI 设置应通过可同步的存储服务保存，保证换电脑云恢复后仍能复原。
+- 云恢复/覆盖本地属于高风险操作，保留现有确认和版本判断机制，避免静默覆盖用户本地新数据。
+
+### 15.10 验证规范
+
+后端改动至少运行 Python 编译检查：
+
+```powershell
+$files = @('app.py','db.py','models.py','migrations.py') + (Get-ChildItem routes,services -Filter *.py -Recurse | ForEach-Object { $_.FullName })
+.\.venv\Scripts\python.exe -m py_compile @files
+```
+
+前端改动至少对改过的 JS 文件运行语法检查。当前本机可用的 Node 路径示例：
+
+```powershell
+& 'C:\Users\吴赛\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe' --check static\js\financial\metrics.js
+```
+
+提交前运行：
+
+```powershell
+git diff --check
+```
+
+涉及页面布局、图表、弹窗、表格对齐和深色模式时，应启动本地服务并用浏览器实际检查关键页面。
+
+### 15.11 Git 工作流
+
+- 后续每次代码或文档改动完成后自动 `commit`。
+- 只在用户明确说 `push` 时推送到 GitHub。
+- 提交前先看 `git status --short`，不要把无关的用户改动混入同一个提交。
+- 不使用 `git reset --hard`、`git checkout --` 等会覆盖用户工作的命令，除非用户明确要求。
