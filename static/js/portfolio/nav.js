@@ -104,25 +104,51 @@ function renderNav(rows) {
   });
 }
 
+function calcNavPeriodMetrics(rows) {
+  const validRows = rows.filter(r => r && r.nav_index != null && !Number.isNaN(Number(r.nav_index)));
+  if (!validRows.length) {
+    return {
+      changePct: null,
+      returnValue: null,
+      rangeText: '当前筛选区间'
+    };
+  }
+
+  const firstRow = validRows[0];
+  const lastRow = validRows[validRows.length - 1];
+  const firstNav = Number(firstRow.nav_index);
+  const lastNav = Number(lastRow.nav_index);
+  const changePct = firstNav > 0 && lastNav != null ? (lastNav / firstNav - 1) * 100 : null;
+  const firstAsset = Number(firstRow.total_asset_value || firstRow.total_market_value || 0);
+  const lastAsset = Number(lastRow.total_asset_value || lastRow.total_market_value || 0);
+  const periodNetFlow = validRows.slice(1).reduce((sum, row) => {
+    const flowIn = Number(row.flow_in || 0);
+    const flowOut = Number(row.flow_out || 0);
+    return sum + flowIn - flowOut;
+  }, 0);
+  const returnValue = lastAsset - firstAsset - periodNetFlow;
+
+  return {
+    changePct,
+    returnValue,
+    rangeText: `${firstRow.date} 至 ${lastRow.date}`
+  };
+}
+
 function updateNavPeriodChange(rows) {
   const valueEl = document.getElementById('navPeriodChangeValue');
+  const returnEl = document.getElementById('navPeriodReturnValue');
   const rangeEl = document.getElementById('navPeriodChangeRange');
-  if (!valueEl || !rangeEl) return;
+  if (!valueEl || !returnEl || !rangeEl) return;
 
-  const navRows = rows.filter(r => r.nav_index != null && !Number.isNaN(Number(r.nav_index)));
-  const firstNavRow = navRows[0];
-  const lastNavRow = navRows[navRows.length - 1];
-  const firstNav = firstNavRow ? Number(firstNavRow.nav_index) : null;
-  const lastNav = lastNavRow ? Number(lastNavRow.nav_index) : null;
-  const periodChangePct = firstNav && lastNav != null ? (lastNav / firstNav - 1) * 100 : null;
-
-  const valueText = periodChangePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(periodChangePct);
-  const rangeText = rows[0]?.date && rows[rows.length - 1]?.date
-    ? `${rows[0].date} 至 ${rows[rows.length - 1].date}`
-    : '当前筛选区间';
+  const metrics = calcNavPeriodMetrics(rows);
+  const valueText = metrics.changePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(metrics.changePct);
+  const returnText = metrics.returnValue == null ? '区间收益：--' : '区间收益：' + signedPrivateMoney(metrics.returnValue);
   valueEl.textContent = valueText;
-  valueEl.className = profitClass(periodChangePct);
-  rangeEl.textContent = rangeText;
+  valueEl.className = profitClass(metrics.changePct);
+  returnEl.textContent = returnText;
+  returnEl.className = profitClass(metrics.returnValue);
+  rangeEl.textContent = metrics.rangeText;
 }
 
 function navPositionPct(row) {
