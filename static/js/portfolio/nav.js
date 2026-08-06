@@ -139,15 +139,19 @@ function updateNavPeriodChange(rows) {
   const valueEl = document.getElementById('navPeriodChangeValue');
   const returnEl = document.getElementById('navPeriodReturnValue');
   const rangeEl = document.getElementById('navPeriodChangeRange');
-  if (!valueEl || !returnEl || !rangeEl) return;
+  if (!valueEl || !rangeEl) return;
 
   const metrics = calcNavPeriodMetrics(rows);
-  const valueText = metrics.changePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(metrics.changePct);
-  const returnText = metrics.returnValue == null ? '区间收益：--' : '区间收益：' + signedPrivateMoney(metrics.returnValue);
+  const valueText = [
+    metrics.changePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(metrics.changePct),
+    metrics.returnValue == null ? '区间收益：--' : '区间收益：' + signedPrivateMoney(metrics.returnValue)
+  ].join('  ');
   valueEl.textContent = valueText;
   valueEl.className = profitClass(metrics.changePct);
-  returnEl.textContent = returnText;
-  returnEl.className = profitClass(metrics.returnValue);
+  if (returnEl) {
+    returnEl.textContent = '';
+    returnEl.style.display = 'none';
+  }
   rangeEl.textContent = metrics.rangeText;
 }
 
