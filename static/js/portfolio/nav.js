@@ -105,9 +105,15 @@ function renderNav(rows) {
 }
 
 function updateNavPeriodChange(rows) {
-  const valueEl = document.getElementById('navPeriodChangeValue');
-  const rangeEl = document.getElementById('navPeriodChangeRange');
-  if (!valueEl || !rangeEl) return;
+  const valueEls = [
+    document.getElementById('navPeriodChangeValue'),
+    document.getElementById('navPeriodChangeOverlayValue')
+  ].filter(Boolean);
+  const rangeEls = [
+    document.getElementById('navPeriodChangeRange'),
+    document.getElementById('navPeriodChangeOverlayRange')
+  ].filter(Boolean);
+  if (!valueEls.length || !rangeEls.length) return;
 
   const navRows = rows.filter(r => r.nav_index != null && !Number.isNaN(Number(r.nav_index)));
   const firstNavRow = navRows[0];
@@ -116,11 +122,17 @@ function updateNavPeriodChange(rows) {
   const lastNav = lastNavRow ? Number(lastNavRow.nav_index) : null;
   const periodChangePct = firstNav && lastNav != null ? (lastNav / firstNav - 1) * 100 : null;
 
-  valueEl.textContent = periodChangePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(periodChangePct);
-  valueEl.className = 'nav-period-change-value ' + profitClass(periodChangePct);
-  rangeEl.textContent = rows[0]?.date && rows[rows.length - 1]?.date
+  const valueText = periodChangePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(periodChangePct);
+  const rangeText = rows[0]?.date && rows[rows.length - 1]?.date
     ? `${rows[0].date} 至 ${rows[rows.length - 1].date}`
     : '当前筛选区间';
+  valueEls.forEach(el => {
+    el.textContent = valueText;
+    el.className = 'nav-period-change-value ' + profitClass(periodChangePct);
+  });
+  rangeEls.forEach(el => {
+    el.textContent = rangeText;
+  });
 }
 
 function navPositionPct(row) {

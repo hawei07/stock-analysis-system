@@ -8,7 +8,7 @@
 <script src="/static/js/theme.js"></script>
 <link rel="stylesheet" href="/static/css/cloud_backup.css">
 <link rel="stylesheet" href="/static/css/background_jobs.css">
-<link rel="stylesheet" href="/static/css/portfolio.css">
+<link rel="stylesheet" href="/static/css/portfolio.css?v=20260806a">
 </head>
 <body>
 <div class="header">
@@ -218,18 +218,22 @@
     </div>
   </div>
 
-  <div class="panel">
+    <div class="panel">
     <div class="panel-header">
       <div class="panel-title">净值曲线</div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="nav-chart-header">
+        <div class="nav-period-change-inline">
+          <span id="navPeriodChangeValue">区间涨跌幅：--</span>
+          <span id="navPeriodChangeRange">当前筛选区间</span>
+        </div>
         <div style="font-size:12px;color:#999">历史快照独立保存，后续持仓变动不会改写过去日期</div>
         <button class="btn btn-primary btn-sm" onclick="saveSnapshot()">记录今日净值</button>
       </div>
     </div>
     <div class="nav-chart-wrap">
       <div class="nav-period-change" id="navPeriodChange">
-        <div class="nav-period-change-value" id="navPeriodChangeValue">区间涨跌幅：--</div>
-        <div class="nav-period-change-range" id="navPeriodChangeRange">当前筛选区间</div>
+        <div class="nav-period-change-value" id="navPeriodChangeOverlayValue">区间涨跌幅：--</div>
+        <div class="nav-period-change-range" id="navPeriodChangeOverlayRange">当前筛选区间</div>
       </div>
       <div class="chart-box" id="navChart"></div>
     </div>
@@ -452,7 +456,7 @@
 <script src="/static/js/portfolio/trades_actions.js"></script>
 <script src="/static/js/portfolio/render_ledger.js"></script>
 <script src="/static/js/portfolio/ledger.js"></script>
-<script src="/static/js/portfolio/nav.js"></script>
+<script src="/static/js/portfolio/nav.js?v=20260806a"></script>
 <script src="/static/js/cloud_backup.js"></script>
 <script src="/static/js/background_jobs.js"></script>
 </body>
