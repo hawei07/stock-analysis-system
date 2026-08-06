@@ -105,15 +105,9 @@ function renderNav(rows) {
 }
 
 function updateNavPeriodChange(rows) {
-  const valueEls = [
-    document.getElementById('navPeriodChangeValue'),
-    document.getElementById('navPeriodChangeOverlayValue')
-  ].filter(Boolean);
-  const rangeEls = [
-    document.getElementById('navPeriodChangeRange'),
-    document.getElementById('navPeriodChangeOverlayRange')
-  ].filter(Boolean);
-  if (!valueEls.length || !rangeEls.length) return;
+  const valueEl = document.getElementById('navPeriodChangeValue');
+  const rangeEl = document.getElementById('navPeriodChangeRange');
+  if (!valueEl || !rangeEl) return;
 
   const navRows = rows.filter(r => r.nav_index != null && !Number.isNaN(Number(r.nav_index)));
   const firstNavRow = navRows[0];
@@ -126,13 +120,9 @@ function updateNavPeriodChange(rows) {
   const rangeText = rows[0]?.date && rows[rows.length - 1]?.date
     ? `${rows[0].date} 至 ${rows[rows.length - 1].date}`
     : '当前筛选区间';
-  valueEls.forEach(el => {
-    el.textContent = valueText;
-    el.className = 'nav-period-change-value ' + profitClass(periodChangePct);
-  });
-  rangeEls.forEach(el => {
-    el.textContent = rangeText;
-  });
+  valueEl.textContent = valueText;
+  valueEl.className = profitClass(periodChangePct);
+  rangeEl.textContent = rangeText;
 }
 
 function navPositionPct(row) {
