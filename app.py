@@ -1064,7 +1064,8 @@ register_notes_chat_routes(app, {
 
 
 if __name__ == "__main__":
-    print("stock Web 服务启动: http://127.0.0.1:5002")
+    debug_enabled = str(_setting("flask_debug", "STOCK_FLASK_DEBUG", "0")).lower() in ("1", "true", "yes", "on")
+    print(f"stock Web 服务启动: http://127.0.0.1:{APP_PORT}")
     try:
         migration_result = run_migrations()
         if migration_result["count"]:
@@ -1080,4 +1081,4 @@ if __name__ == "__main__":
         print("OK 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"WARN 表结构检查异常: {e}")
-    app.run(host="0.0.0.0", port=APP_PORT, debug=True)
+    app.run(host="0.0.0.0", port=APP_PORT, debug=debug_enabled, use_reloader=debug_enabled)
