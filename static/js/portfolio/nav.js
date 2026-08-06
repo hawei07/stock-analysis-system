@@ -37,7 +37,28 @@ function renderNav(rows) {
     const stockValue = Number(r.stock_market_value || r.total_market_value || 0);
     return Math.max(totalAsset - stockValue, 0);
   });
+  const navRows = rows.filter(r => r.nav_index != null && !Number.isNaN(Number(r.nav_index)));
+  const firstNavRow = navRows[0];
+  const lastNavRow = navRows[navRows.length - 1];
+  const firstNav = firstNavRow ? Number(firstNavRow.nav_index) : null;
+  const lastNav = lastNavRow ? Number(lastNavRow.nav_index) : null;
+  const periodChangePct = firstNav && lastNav != null ? (lastNav / firstNav - 1) * 100 : null;
+  const periodChangeText = periodChangePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(periodChangePct);
+  const periodRangeText = rows[0]?.date && rows[rows.length - 1]?.date
+    ? `${rows[0].date} 至 ${rows[rows.length - 1].date}`
+    : '当前筛选区间';
+  const periodChangeColor = periodChangePct == null || periodChangePct === 0
+    ? '#666'
+    : (periodChangePct > 0 ? '#d93026' : '#137333');
   PortfolioState.charts.nav.setOption({
+    title: {
+      text: periodChangeText,
+      subtext: periodRangeText,
+      left: 56,
+      top: 8,
+      textStyle: {fontSize: 14, fontWeight: 700, color: periodChangeColor},
+      subtextStyle: {fontSize: 11, color: '#999'}
+    },
     tooltip: {
       trigger: 'axis',
       formatter(params) {
@@ -61,8 +82,8 @@ function renderNav(rows) {
           总资产: ${money(totalAsset)}`;
       }
     },
-    legend: {top: 8, data: ['净值指数', '股票仓位', '现金/空仓']},
-    grid: {left: 56, right: 56, top: 56, bottom: 42},
+    legend: {top: 36, data: ['净值指数', '股票仓位', '现金/空仓']},
+    grid: {left: 56, right: 56, top: 82, bottom: 42},
     xAxis: {type: 'category', data: rows.map(r => r.date)},
     yAxis: [
       {type: 'value', name: '净值指数', min: value => Math.max(0, value.min * .98)},
