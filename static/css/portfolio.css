@@ -65,6 +65,12 @@ tr:hover td{background:#fafbff}
 .profit-positive{color:#cf1322!important;font-weight:700}
 .profit-negative{color:#389e0d!important;font-weight:700}
 .empty{text-align:center;padding:48px 20px;color:#999;font-size:14px}
+.nav-chart-wrap{position:relative}
+.nav-period-change{position:absolute;left:44px;top:14px;z-index:2;pointer-events:none;min-width:150px;text-align:center}
+.nav-period-change-value{font-size:14px;font-weight:800;line-height:1.35;color:#666}
+.nav-period-change-value.profit-positive{color:#cf1322!important}
+.nav-period-change-value.profit-negative{color:#389e0d!important}
+.nav-period-change-range{font-size:11px;color:#999;line-height:1.35;margin-top:3px}
 .chart-box{width:100%;height:420px;padding:8px 12px 18px}
 .pie-box{width:100%;height:520px}
 .toast{position:fixed;top:24px;right:24px;padding:12px 24px;border-radius:8px;color:#fff;font-size:13px;z-index:200;opacity:0;transform:translateY(-10px);transition:all .3s}
@@ -122,6 +128,7 @@ html[data-theme="dark"] .field label,
 html[data-theme="dark"] .dividend-meta,
 html[data-theme="dark"] .empty,
 html[data-theme="dark"] .nav-history-total,
+html[data-theme="dark"] .nav-period-change-range,
 html[data-theme="dark"] .page-ellipsis{color:var(--text-muted)!important}
 html[data-theme="dark"] .nav-history-footer{border-color:var(--border)!important}
 html[data-theme="dark"] .page-btn{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}

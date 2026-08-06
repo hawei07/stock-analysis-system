@@ -22,6 +22,8 @@ async function loadNav(live = false) {
 function renderNav(rows) {
   const el = document.getElementById('navChart');
   if (!PortfolioState.charts.nav) PortfolioState.charts.nav = echarts.init(el);
+  updateNavPeriodChange(rows);
+
   if (!rows.length) {
     PortfolioState.charts.nav.setOption({
       title: {text: '暂无净值快照', left: 'center', top: 'center', textStyle: {fontSize: 14, color: '#999'}},
@@ -31,34 +33,16 @@ function renderNav(rows) {
     }, true);
     return;
   }
+
   const stockValues = rows.map(r => Number(r.stock_market_value || r.total_market_value || 0));
   const cashValues = rows.map(r => {
     const totalAsset = Number(r.total_asset_value || r.total_market_value || 0);
     const stockValue = Number(r.stock_market_value || r.total_market_value || 0);
     return Math.max(totalAsset - stockValue, 0);
   });
-  const navRows = rows.filter(r => r.nav_index != null && !Number.isNaN(Number(r.nav_index)));
-  const firstNavRow = navRows[0];
-  const lastNavRow = navRows[navRows.length - 1];
-  const firstNav = firstNavRow ? Number(firstNavRow.nav_index) : null;
-  const lastNav = lastNavRow ? Number(lastNavRow.nav_index) : null;
-  const periodChangePct = firstNav && lastNav != null ? (lastNav / firstNav - 1) * 100 : null;
-  const periodChangeText = periodChangePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(periodChangePct);
-  const periodRangeText = rows[0]?.date && rows[rows.length - 1]?.date
-    ? `${rows[0].date} 至 ${rows[rows.length - 1].date}`
-    : '当前筛选区间';
-  const periodChangeColor = periodChangePct == null || periodChangePct === 0
-    ? '#666'
-    : (periodChangePct > 0 ? '#d93026' : '#137333');
+
   PortfolioState.charts.nav.setOption({
-    title: {
-      text: periodChangeText,
-      subtext: periodRangeText,
-      left: 56,
-      top: 8,
-      textStyle: {fontSize: 14, fontWeight: 700, color: periodChangeColor},
-      subtextStyle: {fontSize: 11, color: '#999'}
-    },
+    title: {show: false},
     tooltip: {
       trigger: 'axis',
       formatter(params) {
@@ -95,6 +79,7 @@ function renderNav(rows) {
       {name: '现金/空仓', type: 'bar', stack: 'asset', yAxisIndex: 1, data: cashValues, itemStyle: {color: '#c8d6e8'}}
     ]
   }, true);
+
   PortfolioState.charts.nav.setOption({
     yAxis: [
       {
@@ -117,6 +102,25 @@ function renderNav(rows) {
       }
     ]
   });
+}
+
+function updateNavPeriodChange(rows) {
+  const valueEl = document.getElementById('navPeriodChangeValue');
+  const rangeEl = document.getElementById('navPeriodChangeRange');
+  if (!valueEl || !rangeEl) return;
+
+  const navRows = rows.filter(r => r.nav_index != null && !Number.isNaN(Number(r.nav_index)));
+  const firstNavRow = navRows[0];
+  const lastNavRow = navRows[navRows.length - 1];
+  const firstNav = firstNavRow ? Number(firstNavRow.nav_index) : null;
+  const lastNav = lastNavRow ? Number(lastNavRow.nav_index) : null;
+  const periodChangePct = firstNav && lastNav != null ? (lastNav / firstNav - 1) * 100 : null;
+
+  valueEl.textContent = periodChangePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(periodChangePct);
+  valueEl.className = 'nav-period-change-value ' + profitClass(periodChangePct);
+  rangeEl.textContent = rows[0]?.date && rows[rows.length - 1]?.date
+    ? `${rows[0].date} 至 ${rows[rows.length - 1].date}`
+    : '当前筛选区间';
 }
 
 function navPositionPct(row) {
@@ -259,7 +263,7 @@ function exportNavHistoryExcel() {
       <tbody>${bodyRows}</tbody>
     </table>
   </body></html>`;
-  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const blob = new Blob([html], {type: 'application/vnd.ms-excel;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const from = document.getElementById('navFromDate')?.value || '全部';
