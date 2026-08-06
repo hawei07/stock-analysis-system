@@ -131,7 +131,7 @@ function calcNavPeriodMetrics(rows) {
   return {
     changePct,
     returnValue,
-    rangeText: `${firstRow.date} 至 ${lastRow.date}`
+    rangeText: `${firstRow.date}~${lastRow.date}`
   };
 }
 
