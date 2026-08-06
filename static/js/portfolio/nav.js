@@ -14,8 +14,8 @@ async function saveSnapshot() {
 
 async function loadNav(live = false) {
   const rows = await PortfolioApi.loadNav(live);
-  renderNav(rows || []);
   setNavHistoryRows(rows);
+  renderNav(navHistoryChartRows());
   renderNavHistoryTable();
 }
 
@@ -105,7 +105,7 @@ function navPositionPct(row) {
   return stockMarketValue / totalAsset * 100;
 }
 
-function navHistoryFilteredRows() {
+function navHistoryRowsInRange() {
   const from = document.getElementById('navFromDate')?.value || '';
   const to = document.getElementById('navToDate')?.value || '';
   return PortfolioState.navHistory.rows
@@ -115,7 +115,16 @@ function navHistoryFilteredRows() {
       if (to && date > to) return false;
       return true;
     })
-    .slice()
+    .slice();
+}
+
+function navHistoryChartRows() {
+  return navHistoryRowsInRange()
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+}
+
+function navHistoryFilteredRows() {
+  return navHistoryRowsInRange()
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 }
 
@@ -183,6 +192,7 @@ function setNavHistoryPage(page) {
 
 function applyNavHistoryFilter() {
   PortfolioState.navHistory.page = 1;
+  renderNav(navHistoryChartRows());
   renderNavHistoryTable();
 }
 
