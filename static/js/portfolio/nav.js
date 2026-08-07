@@ -153,10 +153,14 @@ function updateNavPeriodChange(rows) {
   const metrics = calcNavPeriodMetrics(rows);
   valueEl.textContent = metrics.changePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(metrics.changePct);
   valueEl.className = profitClass(metrics.changePct);
-  returnEl.textContent = metrics.returnValue == null ? '区间收益：--' : '区间收益：' + signedPrivateMoney(metrics.returnValue);
+  const returnText = metrics.returnValue == null ? '区间收益：--' : '区间收益：' + signedPrivateMoney(metrics.returnValue);
+  const annualizedText = metrics.annualizedPct == null ? '区间年化：--' : '区间年化：' + signedPct(metrics.annualizedPct);
+  returnEl.textContent = `${returnText} · ${annualizedText}`;
   returnEl.className = profitClass(metrics.returnValue);
-  annualizedEl.textContent = metrics.annualizedPct == null ? '区间年化：--' : '区间年化：' + signedPct(metrics.annualizedPct);
-  annualizedEl.className = profitClass(metrics.annualizedPct);
+  if (annualizedEl) {
+    annualizedEl.textContent = '';
+    annualizedEl.style.display = 'none';
+  }
   rangeEl.textContent = metrics.rangeText;
 }
 
