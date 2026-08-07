@@ -110,6 +110,7 @@ function calcNavPeriodMetrics(rows) {
     return {
       changePct: null,
       returnValue: null,
+      annualizedPct: null,
       rangeText: '当前筛选区间'
     };
   }
@@ -127,10 +128,17 @@ function calcNavPeriodMetrics(rows) {
     return sum + flowIn - flowOut;
   }, 0);
   const returnValue = lastAsset - firstAsset - periodNetFlow;
+  const firstDate = new Date(`${firstRow.date}T00:00:00`);
+  const lastDate = new Date(`${lastRow.date}T00:00:00`);
+  const dayDiff = (lastDate - firstDate) / 86400000;
+  const annualizedPct = dayDiff > 0 && firstNav > 0 && lastNav > 0
+    ? (Math.pow(lastNav / firstNav, 365 / dayDiff) - 1) * 100
+    : null;
 
   return {
     changePct,
     returnValue,
+    annualizedPct,
     rangeText: `${firstRow.date}~${lastRow.date}`
   };
 }
@@ -138,20 +146,17 @@ function calcNavPeriodMetrics(rows) {
 function updateNavPeriodChange(rows) {
   const valueEl = document.getElementById('navPeriodChangeValue');
   const returnEl = document.getElementById('navPeriodReturnValue');
+  const annualizedEl = document.getElementById('navPeriodAnnualizedValue');
   const rangeEl = document.getElementById('navPeriodChangeRange');
-  if (!valueEl || !rangeEl) return;
+  if (!valueEl || !returnEl || !annualizedEl || !rangeEl) return;
 
   const metrics = calcNavPeriodMetrics(rows);
-  const valueText = [
-    metrics.changePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(metrics.changePct),
-    metrics.returnValue == null ? '区间收益：--' : '区间收益：' + signedPrivateMoney(metrics.returnValue)
-  ].join('  ');
-  valueEl.textContent = valueText;
+  valueEl.textContent = metrics.changePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(metrics.changePct);
   valueEl.className = profitClass(metrics.changePct);
-  if (returnEl) {
-    returnEl.textContent = '';
-    returnEl.style.display = 'none';
-  }
+  returnEl.textContent = metrics.returnValue == null ? '区间收益：--' : '区间收益：' + signedPrivateMoney(metrics.returnValue);
+  returnEl.className = profitClass(metrics.returnValue);
+  annualizedEl.textContent = metrics.annualizedPct == null ? '区间年化：--' : '区间年化：' + signedPct(metrics.annualizedPct);
+  annualizedEl.className = profitClass(metrics.annualizedPct);
   rangeEl.textContent = metrics.rangeText;
 }
 

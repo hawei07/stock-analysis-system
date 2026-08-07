@@ -57,6 +57,7 @@ tr:hover td{background:#fafbff}
 .nav-period-change-inline{display:flex;align-items:baseline;gap:8px;white-space:nowrap;font-size:12px;line-height:1.3;padding-right:6px;flex-wrap:nowrap}
 .nav-period-change-inline #navPeriodChangeValue{font-size:13px;font-weight:700;color:#666}
 .nav-period-change-inline #navPeriodReturnValue{font-size:13px;font-weight:700;color:#666}
+.nav-period-change-inline #navPeriodAnnualizedValue{font-size:13px;font-weight:700;color:#666}
 .nav-period-change-inline #navPeriodChangeRange{color:#999}
 .page-btn{min-width:32px;height:30px;padding:0 10px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#555;font-size:12px;cursor:pointer}
 .page-btn:hover{border-color:#4a6cf7;color:#4a6cf7;background:#f0f5ff}
@@ -130,9 +131,11 @@ html[data-theme="dark"] .empty,
 html[data-theme="dark"] .nav-history-total,
 html[data-theme="dark"] #navPeriodChangeRange,
 html[data-theme="dark"] #navPeriodReturnValue,
+html[data-theme="dark"] #navPeriodAnnualizedValue,
 html[data-theme="dark"] .page-ellipsis{color:var(--text-muted)!important}
 html[data-theme="dark"] #navPeriodChangeValue,
-html[data-theme="dark"] #navPeriodReturnValue{color:var(--text-subtle)!important}
+html[data-theme="dark"] #navPeriodReturnValue,
+html[data-theme="dark"] #navPeriodAnnualizedValue{color:var(--text-subtle)!important}
 html[data-theme="dark"] .nav-history-footer{border-color:var(--border)!important}
 html[data-theme="dark"] .page-btn{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .page-btn:hover{background:var(--primary-soft)!important;color:var(--primary)!important;border-color:var(--primary)!important}
