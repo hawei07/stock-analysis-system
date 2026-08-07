@@ -146,9 +146,8 @@ function calcNavPeriodMetrics(rows) {
 function updateNavPeriodChange(rows) {
   const valueEl = document.getElementById('navPeriodChangeValue');
   const returnEl = document.getElementById('navPeriodReturnValue');
-  const annualizedEl = document.getElementById('navPeriodAnnualizedValue');
   const rangeEl = document.getElementById('navPeriodChangeRange');
-  if (!valueEl || !returnEl || !annualizedEl || !rangeEl) return;
+  if (!valueEl || !returnEl || !rangeEl) return;
 
   const metrics = calcNavPeriodMetrics(rows);
   valueEl.textContent = metrics.changePct == null ? '区间涨跌幅：--' : '区间涨跌幅：' + signedPct(metrics.changePct);
@@ -157,10 +156,6 @@ function updateNavPeriodChange(rows) {
   const annualizedText = metrics.annualizedPct == null ? '区间年化：--' : '区间年化：' + signedPct(metrics.annualizedPct);
   returnEl.textContent = `${returnText} · ${annualizedText}`;
   returnEl.className = profitClass(metrics.returnValue);
-  if (annualizedEl) {
-    annualizedEl.textContent = '';
-    annualizedEl.style.display = 'none';
-  }
   rangeEl.textContent = metrics.rangeText;
 }
 
