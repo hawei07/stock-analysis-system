@@ -29,6 +29,11 @@ const PortfolioState = {
     rows: [],
     page: 1,
     pageSize: 20
+  },
+  autoRefresh: {
+    portfolioPricesTimer: null,
+    portfolioPricesInFlight: false,
+    portfolioPricesListenerBound: false
   }
 };
 
@@ -78,6 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
   mountFlowPanel();
   loadFeeConfig();
   loadPortfolio();
+  startPortfolioPriceAutoRefresh();
   loadFlows();
   loadActions();
   loadNav(true);

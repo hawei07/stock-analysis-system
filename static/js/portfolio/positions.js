@@ -10,6 +10,49 @@ async function loadPortfolio() {
   }
 }
 
+function isAshareTradingTime(date = new Date()) {
+  const day = date.getDay();
+  if (day === 0 || day === 6) return false;
+  const minutes = date.getHours() * 60 + date.getMinutes();
+  return (minutes >= 9 * 60 + 30 && minutes < 11 * 60 + 30) || (minutes >= 13 * 60 && minutes < 15 * 60);
+}
+
+function shouldAutoRefreshPortfolioPrices() {
+  return !document.hidden && isAshareTradingTime(new Date()) && Array.isArray(PortfolioState.portfolioData.positions);
+}
+
+async function refreshPortfolioPricesIfNeeded(force = false) {
+  if (!force && !shouldAutoRefreshPortfolioPrices()) return false;
+  if (PortfolioState.autoRefresh.portfolioPricesInFlight) return false;
+  PortfolioState.autoRefresh.portfolioPricesInFlight = true;
+  try {
+    await loadPortfolio();
+    return true;
+  } finally {
+    PortfolioState.autoRefresh.portfolioPricesInFlight = false;
+  }
+}
+
+function startPortfolioPriceAutoRefresh() {
+  if (PortfolioState.autoRefresh.portfolioPricesTimer) {
+    clearInterval(PortfolioState.autoRefresh.portfolioPricesTimer);
+  }
+  PortfolioState.autoRefresh.portfolioPricesTimer = setInterval(() => {
+    refreshPortfolioPricesIfNeeded(false);
+  }, 10000);
+
+  if (!PortfolioState.autoRefresh.portfolioPricesListenerBound) {
+    PortfolioState.autoRefresh.portfolioPricesListenerBound = true;
+    document.addEventListener('visibilitychange', () => {
+      if (shouldAutoRefreshPortfolioPrices()) {
+        refreshPortfolioPricesIfNeeded(true);
+      }
+    });
+  }
+
+  refreshPortfolioPricesIfNeeded(false);
+}
+
 function renderSummary(summary) {
   const total = Number(summary.total_market_value || 0);
   const cash = Number(summary.cash_amount || 0);
