@@ -8,6 +8,7 @@ import threading
 import time
 
 from mysql.connector import pooling
+from mysql.connector.errors import PoolError
 
 from config import DB_CONFIG
 
@@ -22,6 +23,13 @@ def _slow_query_seconds():
 
 
 DEFAULT_SLOW_QUERY_SECONDS = _slow_query_seconds()
+
+
+def _pool_wait_seconds():
+    try:
+        return float(os.environ.get("STOCK_DB_POOL_WAIT_SECONDS") or 8.0)
+    except ValueError:
+        return 8.0
 
 
 def _sql_summary(sql):
@@ -59,7 +67,16 @@ class Database:
         self._pool = None
 
     def get_connection(self):
-        return self.get_pool().get_connection()
+        deadline = time.time() + _pool_wait_seconds()
+        while True:
+            try:
+                return self.get_pool().get_connection()
+            except PoolError as exc:
+                if time.time() >= deadline:
+                    raise
+                time.sleep(0.1)
+            except Exception:
+                raise
 
     def stats(self):
         with self._stats_lock:
