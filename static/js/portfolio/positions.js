@@ -1,15 +1,29 @@
 async function loadPortfolio() {
+  if (PortfolioState.autoRefresh.portfolioLoadPromise) {
+    return PortfolioState.autoRefresh.portfolioLoadPromise;
+  }
+
+  const promise = (async () => {
+    try {
+      const data = await PortfolioApi.loadPortfolio();
+      if (data.error) throw new Error(data.error || '????');
+      setPortfolioData(data);
+      renderSummary(data.summary);
+      renderPositions(data.positions || []);
+      return data;
+    } catch (e) {
+      showToast(e.message || '??????', 'error');
+      throw e;
+    }
+  })();
+
+  PortfolioState.autoRefresh.portfolioLoadPromise = promise;
   try {
-    const data = await PortfolioApi.loadPortfolio();
-    if (data.error) throw new Error(data.error || '加载失败');
-    setPortfolioData(data);
-    renderSummary(data.summary);
-    renderPositions(data.positions || []);
-  } catch (e) {
-    showToast(e.message || '加载持仓失败', 'error');
+    return await promise;
+  } finally {
+    PortfolioState.autoRefresh.portfolioLoadPromise = null;
   }
 }
-
 function isAshareTradingTime(date = new Date()) {
   const day = date.getDay();
   if (day === 0 || day === 6) return false;
@@ -18,7 +32,10 @@ function isAshareTradingTime(date = new Date()) {
 }
 
 function shouldAutoRefreshPortfolioPrices() {
-  return !document.hidden && isAshareTradingTime(new Date()) && Array.isArray(PortfolioState.portfolioData.positions);
+  return !document.hidden
+    && isAshareTradingTime(new Date())
+    && Array.isArray(PortfolioState.portfolioData.positions)
+    && PortfolioState.portfolioData.positions.length > 0;
 }
 
 async function refreshPortfolioPricesIfNeeded(force = false) {
@@ -50,7 +67,6 @@ function startPortfolioPriceAutoRefresh() {
     });
   }
 
-  refreshPortfolioPricesIfNeeded(false);
 }
 
 function renderSummary(summary) {

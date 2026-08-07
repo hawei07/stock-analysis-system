@@ -33,7 +33,8 @@ const PortfolioState = {
   autoRefresh: {
     portfolioPricesTimer: null,
     portfolioPricesInFlight: false,
-    portfolioPricesListenerBound: false
+    portfolioPricesListenerBound: false,
+    portfolioLoadPromise: null
   }
 };
 
@@ -82,8 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
   startCloudBackupStatusPolling();
   mountFlowPanel();
   loadFeeConfig();
-  loadPortfolio();
-  startPortfolioPriceAutoRefresh();
+  loadPortfolio().finally(startPortfolioPriceAutoRefresh);
   loadFlows();
   loadActions();
   loadNav(true);
