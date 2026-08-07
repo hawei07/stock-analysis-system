@@ -28,7 +28,14 @@ const PortfolioState = {
   navHistory: {
     rows: [],
     page: 1,
-    pageSize: 20
+    pageSize: 20,
+    loadPromise: null,
+    loaded: false
+  },
+  earningsCalendar: {
+    period: 'year',
+    display: 'amount',
+    selectedMonth: ''
   },
   autoRefresh: {
     portfolioPricesTimer: null,
@@ -61,6 +68,7 @@ function setTradesRows(rows) {
 
 function setNavHistoryRows(rows) {
   PortfolioState.navHistory.rows = Array.isArray(rows) ? rows : [];
+  PortfolioState.navHistory.loaded = true;
   return PortfolioState.navHistory.rows;
 }
 

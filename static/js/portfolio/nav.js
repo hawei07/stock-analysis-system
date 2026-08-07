@@ -13,10 +13,22 @@ async function saveSnapshot() {
 }
 
 async function loadNav(live = false) {
-  const rows = await PortfolioApi.loadNav(live);
-  setNavHistoryRows(rows);
-  renderNav(navHistoryChartRows());
-  renderNavHistoryTable();
+  if (PortfolioState.navHistory.loadPromise) {
+    return PortfolioState.navHistory.loadPromise;
+  }
+  const promise = (async () => {
+    const rows = await PortfolioApi.loadNav(live);
+    setNavHistoryRows(rows);
+    renderNav(navHistoryChartRows());
+    renderNavHistoryTable();
+    return rows;
+  })();
+  PortfolioState.navHistory.loadPromise = promise;
+  try {
+    return await promise;
+  } finally {
+    PortfolioState.navHistory.loadPromise = null;
+  }
 }
 
 function renderNav(rows) {

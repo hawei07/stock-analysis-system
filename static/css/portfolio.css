@@ -87,6 +87,38 @@ tr:hover td{background:#fafbff}
 .modal-body{padding:16px;overflow:auto}
 .modal-footer{padding:12px 18px;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:flex-end;gap:10px}
 .trade-modal{width:min(720px,96vw)}
+.earnings-calendar-modal{width:min(960px,96vw)}
+.earnings-calendar-body{padding:18px 20px 22px}
+.earnings-calendar-note{font-size:11px;color:#999;margin-top:4px;line-height:1.5}
+.earnings-calendar-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.earnings-period-tabs{display:flex;align-items:center;gap:4px;padding:4px;background:#f5f6f8;border-radius:8px}
+.earnings-period-tab{padding:8px 18px;border:0;border-radius:6px;background:transparent;color:#666;font-size:14px;cursor:pointer;transition:all .2s}
+.earnings-period-tab:hover{color:#4a6cf7}
+.earnings-period-tab.active{background:#fff;color:#4a6cf7;box-shadow:0 1px 4px rgba(0,0,0,.1);font-weight:600}
+.earnings-display-toggle{padding:8px 14px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#555;font-size:13px;cursor:pointer;transition:all .2s}
+.earnings-display-toggle:hover{border-color:#4a6cf7;color:#4a6cf7;background:#f0f5ff}
+.earnings-calendar-day-toolbar{display:flex;align-items:center;justify-content:center;gap:18px;margin:4px 0 14px;color:#1a1a2e;font-size:16px}
+.earnings-month-nav{width:30px;height:30px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#666;font-size:22px;line-height:24px;cursor:pointer}
+.earnings-month-nav:hover{border-color:#4a6cf7;color:#4a6cf7;background:#f0f5ff}
+.earnings-month-nav:disabled{cursor:not-allowed;opacity:.4}
+.earnings-weekday-grid,.earnings-day-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.earnings-weekday-grid{margin-bottom:8px;color:#999;font-size:12px;text-align:center}
+.earnings-day-cell{min-height:74px;padding:8px;border:1px solid #edf0f5;border-radius:8px;background:#fff;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
+.earnings-day-cell.is-empty{background:#fafafa;color:#d9d9d9}
+.earnings-day-cell.has-data{box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.earnings-day-cell.profit-positive{background:#fff1f0;border-color:#ffccc7}
+.earnings-day-cell.profit-negative{background:#f6ffed;border-color:#b7eb8f}
+.earnings-day-number{font-size:12px;color:#888}
+.earnings-day-value{font-size:13px;font-weight:700;text-align:right;overflow:hidden;text-overflow:ellipsis}
+.earnings-calendar-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid #f0f0f0;color:#888;font-size:12px}
+.earnings-period-summary{margin:-2px 0 14px;color:#888;font-size:12px}
+.earnings-period-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.earnings-period-card{min-height:142px;padding:18px;border-radius:14px;border:1px solid #e8edf5;background:#f7f9fc;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.earnings-period-card.profit-positive{background:#fff1f0;border-color:#ff7875;color:#cf1322}
+.earnings-period-card.profit-negative{background:#f0f5ff;border-color:#91b7ff;color:#2f54a6}
+.earnings-period-title{font-size:18px;color:#777}
+.earnings-period-value{font-size:26px;font-weight:700;line-height:1.2;color:inherit}
+.earnings-period-meta{font-size:11px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .trade-stock-card{background:#f7f9fc;border:1px solid #edf1f7;border-radius:8px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .trade-stock-name{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:4px}
 .trade-stock-meta,.trade-hint{font-size:12px;color:#888;line-height:1.6}
@@ -123,6 +155,28 @@ html[data-theme="dark"] .trade-action-buy{color:#ff7875!important;border-color:#
 html[data-theme="dark"] .trade-action-sell{color:#73d13d!important;border-color:#73d13d!important}
 html[data-theme="dark"] .trade-stock-card{background:var(--surface-soft)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .trade-stock-name{color:var(--text-strong)!important}
+html[data-theme="dark"] .earnings-calendar-note,
+html[data-theme="dark"] .earnings-period-summary,
+html[data-theme="dark"] .earnings-calendar-summary,
+html[data-theme="dark"] .earnings-weekday-grid{color:var(--text-muted)!important}
+html[data-theme="dark"] .earnings-period-tabs{background:var(--surface-muted)!important}
+html[data-theme="dark"] .earnings-period-tab{color:var(--text-subtle)!important}
+html[data-theme="dark"] .earnings-period-tab.active{background:var(--surface)!important;color:var(--primary)!important}
+html[data-theme="dark"] .earnings-display-toggle,
+html[data-theme="dark"] .earnings-month-nav{background:var(--surface)!important;color:var(--text)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .earnings-display-toggle:hover,
+html[data-theme="dark"] .earnings-month-nav:hover{background:var(--primary-soft)!important;color:var(--primary)!important;border-color:var(--primary)!important}
+html[data-theme="dark"] .earnings-calendar-day-toolbar{color:var(--text-strong)!important}
+html[data-theme="dark"] .earnings-day-cell{background:var(--surface)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .earnings-day-cell.is-empty{background:var(--surface-muted)!important;color:var(--text-muted)!important}
+html[data-theme="dark"] .earnings-day-cell.profit-positive{background:rgba(255,120,117,.14)!important;border-color:#a84850!important}
+html[data-theme="dark"] .earnings-day-cell.profit-negative{background:rgba(115,209,61,.12)!important;border-color:#477d3c!important}
+html[data-theme="dark"] .earnings-day-number{color:var(--text-muted)!important}
+html[data-theme="dark"] .earnings-calendar-summary{border-color:var(--border)!important}
+html[data-theme="dark"] .earnings-period-card{background:var(--surface-soft)!important;border-color:var(--border)!important}
+html[data-theme="dark"] .earnings-period-card.profit-positive{background:rgba(255,120,117,.14)!important;border-color:#a84850!important}
+html[data-theme="dark"] .earnings-period-card.profit-negative{background:rgba(124,151,255,.14)!important;border-color:#526da8!important}
+html[data-theme="dark"] .earnings-period-title{color:var(--text-subtle)!important}
 html[data-theme="dark"] .summary-card .label,
 html[data-theme="dark"] .summary-card .sub,
 html[data-theme="dark"] .field label,
@@ -148,4 +202,4 @@ html[data-theme="dark"] .modal-overlay{background:var(--modal-mask)!important}
 .theme-toggle:hover{background:rgba(255,255,255,.22)}
 @media (max-width:1100px){.summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.content{padding:16px}}
 @media (max-width:760px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:560px){.header{padding:12px 16px;align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.field input{width:100%}.field{width:100%}.form-row{align-items:stretch}.btn{width:100%}}
+@media (max-width:560px){.header{padding:12px 16px;align-items:flex-start;flex-direction:column}.summary-grid{grid-template-columns:1fr}.field input{width:100%}.field{width:100%}.form-row{align-items:stretch}.btn{width:100%}.earnings-calendar-body{padding:14px 12px 18px}.earnings-period-tab{padding:8px 12px;font-size:13px}.earnings-calendar-toolbar{align-items:stretch}.earnings-period-tabs{justify-content:space-between}.earnings-display-toggle{width:100%}.earnings-day-grid,.earnings-weekday-grid{gap:4px}.earnings-day-cell{min-height:62px;padding:5px}.earnings-day-value{font-size:11px}.earnings-calendar-summary{align-items:flex-start;flex-direction:column}}

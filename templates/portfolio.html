@@ -8,7 +8,7 @@
 <script src="/static/js/theme.js"></script>
 <link rel="stylesheet" href="/static/css/cloud_backup.css">
 <link rel="stylesheet" href="/static/css/background_jobs.css">
-<link rel="stylesheet" href="/static/css/portfolio.css?v=20260807b">
+<link rel="stylesheet" href="/static/css/portfolio.css?v=20260807c">
 </head>
 <body>
 <div class="header">
@@ -118,6 +118,7 @@
     <div class="panel-header">
       <div class="panel-title">持仓明细</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="openEarningsCalendarModal()">收益日历</button>
         <button class="btn btn-outline btn-sm" onclick="openAllocationModal()">持仓比例</button>
         <button class="btn btn-outline btn-sm" onclick="runPortfolioAudit()">账本检查</button>
         <button class="btn btn-primary btn-sm" onclick="openTradeModal('', 'buy')">买入股票</button>
@@ -441,6 +442,29 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="earningsCalendarModalOverlay" onclick="if(event.target===this)closeEarningsCalendarModal()">
+  <div class="modal earnings-calendar-modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">收益日历</div>
+        <div class="earnings-calendar-note" id="earningsCalendarNote">按净值明细计算，收益率已剔除外部入金/出金影响</div>
+      </div>
+      <button class="modal-close" type="button" onclick="closeEarningsCalendarModal()" aria-label="关闭">&times;</button>
+    </div>
+    <div class="modal-body earnings-calendar-body">
+      <div class="earnings-calendar-toolbar">
+        <div class="earnings-period-tabs" role="tablist" aria-label="收益周期">
+          <button class="earnings-period-tab" type="button" data-earnings-period="day" onclick="setEarningsCalendarPeriod('day')">日收益</button>
+          <button class="earnings-period-tab" type="button" data-earnings-period="month" onclick="setEarningsCalendarPeriod('month')">月收益</button>
+          <button class="earnings-period-tab" type="button" data-earnings-period="year" onclick="setEarningsCalendarPeriod('year')">年收益</button>
+        </div>
+        <button class="earnings-display-toggle" id="earningsDisplayToggle" type="button" onclick="toggleEarningsCalendarDisplay()">↔ 收益率</button>
+      </div>
+      <div id="earningsCalendarContent" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="/static/js/core/api.js"></script>
@@ -453,7 +477,8 @@
 <script src="/static/js/portfolio/trades_actions.js"></script>
 <script src="/static/js/portfolio/render_ledger.js"></script>
 <script src="/static/js/portfolio/ledger.js"></script>
-<script src="/static/js/portfolio/nav.js?v=20260807b"></script>
+<script src="/static/js/portfolio/nav.js?v=20260807c"></script>
+<script src="/static/js/portfolio/earnings_calendar.js?v=20260807a"></script>
 <script src="/static/js/cloud_backup.js"></script>
 <script src="/static/js/background_jobs.js"></script>
 </body>

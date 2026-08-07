@@ -179,6 +179,10 @@ function toggleAmountPrivacy() {
   localStorage.setItem('portfolioAmountPrivacy', PortfolioState.amountPrivacyMode ? 'hidden' : 'visible');
   updateAmountPrivacyButton();
   renderSummary(PortfolioState.portfolioData.summary || {});
+  if (typeof renderEarningsCalendar === 'function'
+      && document.getElementById('earningsCalendarModalOverlay')?.classList.contains('active')) {
+    renderEarningsCalendar();
+  }
 }
 
 function plain(v) {

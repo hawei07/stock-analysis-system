@@ -91,6 +91,9 @@ project adopts a bundler or framework.
 - `static/js/portfolio/nav.js`
   - NAV snapshot creation, NAV chart rendering, NAV detail table pagination,
     filters, Excel export, resize handling, and the portfolio toast helper.
+- `static/js/portfolio/earnings_calendar.js`
+  - Earnings calendar modal based on NAV history, including daily calendar,
+    monthly/yearly aggregation, and amount/rate display switching.
 
 ## Script Loading Order
 
@@ -113,7 +116,8 @@ Scripts are loaded in `templates/portfolio.html` in this order:
 8. Ledger renderers.
 9. Ledger/cash-flow maintenance.
 10. NAV chart and NAV history.
-11. Shared cloud backup and background job scripts.
+11. Earnings calendar.
+12. Shared cloud backup and background job scripts.
 
 New modules must not depend on files loaded after them. If a helper is needed by
 multiple modules, move it into `static/js/core/` or a clearly named shared module
