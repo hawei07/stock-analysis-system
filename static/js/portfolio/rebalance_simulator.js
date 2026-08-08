@@ -74,7 +74,7 @@ function initializeRebalanceTargets(rows) {
   const state = PortfolioState.rebalance;
   state.targetRatios = {};
   rows.forEach(row => {
-    state.targetRatios[row.code] = Number(row.currentRatio.toFixed(2));
+    state.targetRatios[row.code] = row.currentRatio;
   });
   state.userAdjusted = false;
 }
@@ -92,7 +92,7 @@ function updateRebalanceRows(data, resetTargets = false) {
     state.targetRatios = {};
     next.rows.forEach(row => {
       state.targetRatios[row.code] = previousTargets[row.code] == null
-        ? Number(row.currentRatio.toFixed(2))
+        ? row.currentRatio
         : rebalanceClamp(previousTargets[row.code]);
     });
     const targetSum = rebalanceStockTargetSum();
@@ -435,7 +435,7 @@ function setRebalanceTarget(code, value) {
 function resetRebalanceTargets() {
   const state = PortfolioState.rebalance;
   state.rows.forEach(row => {
-    state.targetRatios[row.code] = Number(row.currentRatio.toFixed(2));
+    state.targetRatios[row.code] = row.currentRatio;
   });
   state.userAdjusted = false;
   renderRebalanceResults();
