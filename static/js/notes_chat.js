@@ -1,5 +1,112 @@
 let chatLoaded = false;
 
+function chatEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function renderChatMarkdown(content) {
+  const lines = String(content ?? '').replace(/\r/g, '').split('\n');
+  const output = [];
+  let listType = null;
+  let inCode = false;
+  let codeLines = [];
+
+  function closeList() {
+    if (listType) output.push(`</${listType}>`);
+    listType = null;
+  }
+
+  function inline(text) {
+    return chatEscape(text)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\[S(\d+)\]/g, '<span class="chat-citation">[S$1]</span>');
+  }
+
+  lines.forEach(rawLine => {
+    if (/^\s*```/.test(rawLine)) {
+      if (inCode) {
+        output.push(`<pre><code>${chatEscape(codeLines.join('\n'))}</code></pre>`);
+        codeLines = [];
+        inCode = false;
+      } else {
+        closeList();
+        inCode = true;
+      }
+      return;
+    }
+    if (inCode) {
+      codeLines.push(rawLine);
+      return;
+    }
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      closeList();
+      output.push('<br>');
+      return;
+    }
+    const heading = line.match(/^#{2,4}\s+(.+)$/);
+    if (heading) {
+      closeList();
+      output.push(`<h3>${inline(heading[1])}</h3>`);
+      return;
+    }
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) {
+      if (listType !== 'ul') {
+        closeList();
+        output.push('<ul>');
+        listType = 'ul';
+      }
+      output.push(`<li>${inline(bullet[1])}</li>`);
+      return;
+    }
+    const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (ordered) {
+      if (listType !== 'ol') {
+        closeList();
+        output.push('<ol>');
+        listType = 'ol';
+      }
+      output.push(`<li>${inline(ordered[1])}</li>`);
+      return;
+    }
+    closeList();
+    const quote = line.match(/^>\s?(.*)$/);
+    output.push(quote ? `<blockquote>${inline(quote[1])}</blockquote>` : `${inline(line)}<br>`);
+  });
+  if (inCode) output.push(`<pre><code>${chatEscape(codeLines.join('\n'))}</code></pre>`);
+  closeList();
+  return output.join('').replace(/(<br>){2,}/g, '<br>');
+}
+
+function safeChatUrl(url) {
+  return /^https?:\/\//i.test(String(url || '')) ? String(url) : '';
+}
+
+function renderChatMeta(meta) {
+  if (!meta || meta.error) return '';
+  const identity = [meta.stock_name, meta.stock_code].filter(Boolean).join(' ');
+  const period = meta.latest_period ? `最新 ${chatEscape(meta.latest_period)}` : '';
+  const yoy = meta.yoy_base ? `同比基准 ${chatEscape(meta.yoy_base)}` : '';
+  const sourceCount = Number(meta.source_count) || 0;
+  const summary = [identity && chatEscape(identity), period, yoy,
+    meta.search_used ? `已参考 ${sourceCount} 个来源` : '未联网搜索'].filter(Boolean).join(' · ');
+  const warnings = (Array.isArray(meta.warnings) ? meta.warnings : [])
+    .map(item => `<li>${chatEscape(item)}</li>`).join('');
+  const sources = (Array.isArray(meta.sources) ? meta.sources : []).map(source => {
+    const url = safeChatUrl(source.url);
+    const title = chatEscape(source.title || url || source.id || '来源');
+    const id = chatEscape(source.id || 'S?');
+    const reliability = source.reliability ? ` · ${chatEscape(source.reliability)}` : '';
+    return `<li><span class="chat-source-id">${id}</span>${url ? ` <a class="chat-source-link" href="${chatEscape(url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : ` ${title}`}${reliability}</li>`;
+  }).join('');
+  const details = sources || warnings ? `<details class="chat-source-list"><summary>上下文详情${sourceCount ? `（${sourceCount} 个来源）` : ''}</summary>${sources ? `<ul>${sources}</ul>` : ''}${warnings ? `<div class="chat-warning-title">数据提示</div><ul class="chat-warnings">${warnings}</ul>` : ''}</details>` : '';
+  return `<div class="chat-meta">${summary || '已加载本地分析上下文'}${details}</div>`;
+}
+
 async function loadMungerChat() {
   const code = document.getElementById('detailCode').textContent.trim();
   if (!code) return;
@@ -12,38 +119,30 @@ async function loadMungerChat() {
     if (!msgs.length) {
       container.innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
     } else {
-      msgs.forEach(m => appendMsg(m.role, m.content, m.id));
+      msgs.forEach(m => appendMsg(m.role, m.content, m.id, m.meta));
     }
     chatLoaded = true;
     scrollChatBottom();
   } catch(e) {
-    container.innerHTML = '<div class="chat-empty" style="color:#e74c3c">加载失败</div>';
+    container.innerHTML = `<div class="chat-empty chat-error">${chatEscape(e.message || '加载失败')}</div>`;
   }
 }
 
-function appendMsg(role, content, msgId) {
+function appendMsg(role, content, msgId, meta) {
   const container = document.getElementById('chatMessages');
   const empty = document.getElementById('chatEmpty');
   if (empty) empty.remove();
 
   const cls = role === 'munger' ? 'munger' : 'user';
   const avatar = role === 'munger' ? '🧠' : '👤';
-
-  // Simple markdown render
-  let html = esc(content);
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\n\n/g, '<br><br>');
-
-  const delBtn = msgId ? `<button class="chat-delete" onclick="deleteChatMsg(${msgId},this)" title="删除">✕</button>` : '';
+  const html = renderChatMarkdown(content);
+  const delBtn = msgId ? `<button class="chat-delete" onclick="deleteChatMsg(${Number(msgId)},this)" title="删除">✕</button>` : '';
 
   const div = document.createElement('div');
   div.className = 'chat-msg ' + cls;
   div.innerHTML = `
     <div class="chat-avatar">${avatar}</div>
-    <div class="chat-bubble">${html}${delBtn}</div>`;
+    <div class="chat-bubble">${html}${renderChatMeta(meta)}${delBtn}</div>`;
   container.appendChild(div);
 }
 
@@ -54,14 +153,12 @@ async function sendMungerChat() {
   const msg = input.value.trim();
   if (!msg || !code) return;
 
-  // Show user message immediately
   appendMsg('user', msg);
   input.value = '';
   input.disabled = true;
   btn.disabled = true;
   scrollChatBottom();
 
-  // Typing indicator
   const container = document.getElementById('chatMessages');
   const typing = document.createElement('div');
   typing.className = 'chat-msg munger';
@@ -72,19 +169,19 @@ async function sendMungerChat() {
 
   try {
     const data = await StockApi.postJson('/api/stock/' + code + '/munger-chat', {message: msg});
-    // Remove typing
     const t = document.getElementById('chatTyping');
     if (t) t.remove();
-    appendMsg('munger', data.reply || data.error || '...');
+    appendMsg('munger', data.reply || '智能体返回了空内容。', null, data.meta);
   } catch(e) {
     const t = document.getElementById('chatTyping');
     if (t) t.remove();
-    appendMsg('munger', '网络错误，请重试。');
+    appendMsg('munger', `⚠️ ${e.message || '请求失败，请稍后重试。'}`, null, {error: true});
+  } finally {
+    input.disabled = false;
+    btn.disabled = false;
+    input.focus();
+    scrollChatBottom();
   }
-  input.disabled = false;
-  btn.disabled = false;
-  input.focus();
-  scrollChatBottom();
 }
 
 async function deleteChatMsg(msgId, btn) {
@@ -92,11 +189,12 @@ async function deleteChatMsg(msgId, btn) {
   try {
     await StockApi.deleteJson('/api/stock/' + document.getElementById('detailCode').textContent + '/munger-chat?msg_id=' + msgId);
     btn.closest('.chat-msg').remove();
-    // Show empty if no messages left
     if (!document.querySelector('.chat-msg')) {
       document.getElementById('chatMessages').innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
     }
-  } catch(e) {}
+  } catch(e) {
+    showToast(e.message || '删除失败', 'error');
+  }
 }
 
 async function clearMungerChat() {
@@ -105,7 +203,9 @@ async function clearMungerChat() {
   try {
     await StockApi.deleteJson('/api/stock/' + code + '/munger-chat');
     document.getElementById('chatMessages').innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
-  } catch(e) {}
+  } catch(e) {
+    showToast(e.message || '清空失败', 'error');
+  }
 }
 
 function scrollChatBottom() {

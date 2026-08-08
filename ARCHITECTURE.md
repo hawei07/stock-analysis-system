@@ -118,6 +118,7 @@ MySQL stock_analysis
 | `routes/notes_chat.py` | 便利贴、图片附件、对话芒格 |
 | `migrations.py` | 轻量数据库迁移执行器，按顺序执行 `migrations/*.sql` 并写入 `schema_migrations` |
 | `migrations/001_current_schema.sql` | 当前数据库结构基线迁移，覆盖股票、财务、持仓、芒格、配置等核心表 |
+| `migrations/009_add_munger_chat_metadata.sql` | 对话芒格回答上下文元数据字段 |
 | `services/app_settings.py` | 应用设置读取与本机配置 helper |
 | `services/cloud_backup_service.py` | 云备份保留策略、自动备份延迟策略、SQL 备份文件校验 |
 | `services/cloud_backup_storage.py` | 云备份文件、状态文件、备份目录等存储层操作 |
@@ -125,6 +126,7 @@ MySQL stock_analysis
 | `services/exchange_rates.py` | 港币等汇率获取与缓存 |
 | `services/financial_periods.py` | 财务报告期 helper：可用期间过滤、最新期间、去年同期、年报序列、CAGR 起点 |
 | `services/financial_metrics.py` | 财务指标 helper：数字转换、同比、CAGR、核心利润口径、财务摘要派生指标 |
+| `services/munger_context.py` | 对话芒格专用财务上下文：期间筛选、核心利润、行情、估值和数据质量提示 |
 | `services/http_client.py` | 外部 HTTP 请求统一封装 |
 | `services/mysql_tools.py` | MySQL dump/import、可执行文件探测等工具 |
 | `services/stock_identity.py` | 股票代码规范化、市场识别、腾讯行情 symbol、东方财富编码、港股识别、行业获取 |
@@ -683,6 +685,27 @@ stock_code + fiscal_year + report_period + dimension_type + segment_name
 - 保存芒格回复
 - 支持单条删除和清空
 
+`meta_json` 保存回答生成时的上下文快照元数据，不保存 API Key 或网页正文：
+
+| 元数据 | 说明 |
+|---|---|
+| `stock_code` / `stock_name` / `industry` | 本次回答对应的股票身份 |
+| `latest_period` | 最新有效报告期，例如 `2026 一季报` |
+| `latest_annual` | 最新完整年报，和最新季度数据分开 |
+| `yoy_base` | 同周期同比基准报告期 |
+| `search_used` / `source_count` | 是否联网搜索、引用来源数量 |
+| `sources` | 来源编号、标题、URL、来源等级 |
+| `warnings` | 财务数据质量提示 |
+| `model` / `elapsed_ms` | 使用的模型和本次耗时 |
+
+对应迁移：
+
+```text
+migrations/009_add_munger_chat_metadata.sql
+```
+
+读取历史时会先尝试读取 `meta_json`；旧数据库尚未执行迁移时自动回退到旧字段查询，不影响已有对话。
+
 ### 7.14 便利贴 JSON
 
 便利贴不再使用 MySQL 表，而是文件存储：
@@ -717,6 +740,12 @@ migrations/*.sql
 
 ```text
 migrations/001_current_schema.sql
+```
+
+当前增量迁移还包括：
+
+```text
+migrations/009_add_munger_chat_metadata.sql
 ```
 
 查询迁移状态：
@@ -1413,3 +1442,14 @@ git diff --check
 - 只在用户明确说 `push` 时推送到 GitHub。
 - 提交前先看 `git status --short`，不要把无关的用户改动混入同一个提交。
 - 不使用 `git reset --hard`、`git checkout --` 等会覆盖用户工作的命令，除非用户明确要求。
+
+### 15.12 对话芒格上下文规范
+
+- `services/munger_context.py` 是对话芒格的财务上下文入口，必须复用 `financial_periods.py` 和 `financial_metrics.py`，不能在提示词或路由里重新实现报告期和核心利润公式。
+- 最新有效报告期和最新完整年报必须分开：当前年度只有 Q1/Q2/Q3 时，当前年度疑似误标的 FY 行会被忽略；同比基准使用去年同报告期。
+- 对话上下文至少包含股票名称、代码、行业、最新有效报告期、最新完整年报、同比基准、近十年有效年报、核心利润/核心利润率、资产负债表、现金流、行情和用户估值配置；缺失项明确标为缺失。
+- 纯框架问题（例如“什么是护城河”）不联网搜索；涉及当前股票的最新业绩、行业、公告、风险、估值或用户提供链接时，才按主题搜索有限数量来源。
+- 外部网页正文必须放在 `<untrusted_source>` 标记中，仅作为未验证材料；提示词引用来源使用 `[S1]`、`[S2]` 编号，来源等级和链接写入 `munger_chats.meta_json`。
+- DeepSeek 模型从 `system_config.deepseek_model` 读取，默认 `deepseek-v4-pro`；调用使用超时和有限重试，API Key 不写日志、不写聊天元数据。
+- API 失败返回 400/500/502 等真实 HTTP 状态和可读错误，不得把异常文本伪装成助手回复，也不得在失败时写入一条假的 `munger` 消息。
+- 前端 `static/js/notes_chat.js` 只渲染经过转义的 Markdown，来源链接只允许 `http://` 和 `https://`，来源和数据质量提示在回答下方折叠展示。

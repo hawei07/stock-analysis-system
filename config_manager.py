@@ -37,3 +37,8 @@ def get_all_config() -> dict[str, str]:
 def get_deepseek_api_key() -> str:
     """获取 DeepSeek API Key"""
     return get_config("deepseek_api_key", "")
+
+
+def get_deepseek_model() -> str:
+    """获取 DeepSeek 模型名，允许在 system_config 中切换。"""
+    return get_config("deepseek_model", "deepseek-v4-pro")

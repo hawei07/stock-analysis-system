@@ -15,15 +15,21 @@ def period_sort_key(row):
     return (int(row["fiscal_year"]), PERIOD_ORDER.get(row.get("report_period"), 0))
 
 
-def filter_usable_report_rows(rows, current_year=None):
-    """Ignore current-year FY rows because they are usually mislabelled quarterly data."""
+def filter_usable_report_rows(rows, current_year=None, *, allow_fallback=True):
+    """Ignore current-year FY rows because they are usually mislabelled quarterly data.
+
+    ``allow_fallback`` keeps the historical UI behavior for callers that prefer
+    showing something when only a suspicious current-year FY row exists. Data
+    consumers that must not analyze a mislabeled annual report can set it to
+    ``False`` and receive an empty list instead.
+    """
     if current_year is None:
         current_year = datetime.now().year
     usable = [
         r for r in rows
         if not (r.get("report_period") == "FY" and int(r["fiscal_year"]) >= current_year)
     ]
-    return usable or list(rows)
+    return usable if usable or not allow_fallback else list(rows)
 
 
 def latest_report_row(rows):

@@ -29,12 +29,13 @@ def register_notes_chat_routes(app, deps):
             n = clear_chat_history(code)
             return jsonify({"ok": True, "deleted": n})
 
-        data = request.get_json(force=True)
+        data = request.get_json(silent=True) or {}
         message = data.get("message", "").strip()
         if not message:
             return jsonify({"error": "empty message"}), 400
         result = chat_send(code, message)
-        return jsonify(result)
+        status = result.pop("_http_status", 200)
+        return jsonify(result), status
 
     @app.route("/api/sticky-notes", methods=["GET", "POST"])
     def api_sticky_notes():
