@@ -26,6 +26,7 @@ def register_portfolio_routes(app, deps):
     _portfolio_rebuilt_cash_amount = deps["portfolio_rebuilt_cash_amount"]
     _save_portfolio_snapshot = deps["save_portfolio_snapshot"]
     _portfolio_flows_payload = deps["portfolio_flows_payload"]
+    _portfolio_auto_snapshot_status = deps.get("portfolio_auto_snapshot_status")
     _resolve_portfolio_stock = deps["resolve_portfolio_stock"]
     _calculate_portfolio_trade_fees = deps["calculate_portfolio_trade_fees"]
     _portfolio_cash_amount = deps["portfolio_cash_amount"]
@@ -283,3 +284,10 @@ def register_portfolio_routes(app, deps):
             _portfolio_current_state,
             include_live=request.args.get("live") == "1",
         ))
+
+
+    @app.route("/api/portfolio/auto-snapshot/status")
+    def api_portfolio_auto_snapshot_status():
+        if _portfolio_auto_snapshot_status:
+            return jsonify(_portfolio_auto_snapshot_status())
+        return jsonify({"enabled": False, "running": False, "status": "unavailable"})

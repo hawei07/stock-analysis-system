@@ -37,6 +37,15 @@ const PortfolioState = {
     display: 'amount',
     selectedMonth: ''
   },
+  rebalance: {
+    targetRatios: {},
+    rows: [],
+    totalAsset: 0,
+    currentCash: 0,
+    active: false,
+    initialized: false,
+    userAdjusted: false
+  },
   autoRefresh: {
     portfolioPricesTimer: null,
     portfolioPricesInFlight: false,

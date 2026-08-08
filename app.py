@@ -62,6 +62,7 @@ from services import portfolio_dividends
 from services import portfolio_fees
 from services import portfolio_money
 from services import portfolio_nav
+from services import portfolio_auto_snapshot
 from services import portfolio_positions
 from services import portfolio_records
 from services import ui_preferences
@@ -114,6 +115,18 @@ def _setting(name, env_name, default=None):
     return app_settings.setting(LOCAL_SETTINGS, name, env_name, default)
 
 
+def _setting_int(name, env_name, default):
+    try:
+        return int(_setting(name, env_name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _setting_bool(name, env_name, default=True):
+    value = str(_setting(name, env_name, "1" if default else "0")).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 CLOUD_SYNC_DIR = _setting("cloud_sync_dir", "STOCK_CLOUD_SYNC_DIR", r"D:\stock-cloud-sync")
 MYSQL_BIN_DIR = _setting("mysql_bin_dir", "MYSQL_BIN_DIR", "")
 APP_PORT = int(_setting("app_port", "STOCK_APP_PORT", 5002))
@@ -121,6 +134,32 @@ CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
 AUTO_CLOUD_BACKUP_DELAY_SECONDS = int(_setting("auto_cloud_backup_delay_seconds", "STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS", 180))
+AUTO_PORTFOLIO_SNAPSHOT_ENABLED = _setting_bool(
+    "auto_portfolio_snapshot_enabled",
+    "STOCK_AUTO_PORTFOLIO_SNAPSHOT_ENABLED",
+    True,
+)
+AUTO_PORTFOLIO_SNAPSHOT_HOUR = _setting_int(
+    "auto_portfolio_snapshot_hour",
+    "STOCK_AUTO_PORTFOLIO_SNAPSHOT_HOUR",
+    15,
+)
+AUTO_PORTFOLIO_SNAPSHOT_MINUTE = _setting_int(
+    "auto_portfolio_snapshot_minute",
+    "STOCK_AUTO_PORTFOLIO_SNAPSHOT_MINUTE",
+    5,
+)
+AUTO_PORTFOLIO_SNAPSHOT_RETRY_COUNT = _setting_int(
+    "auto_portfolio_snapshot_retry_count",
+    "STOCK_AUTO_PORTFOLIO_SNAPSHOT_RETRY_COUNT",
+    3,
+)
+AUTO_PORTFOLIO_SNAPSHOT_RETRY_SECONDS = _setting_int(
+    "auto_portfolio_snapshot_retry_seconds",
+    "STOCK_AUTO_PORTFOLIO_SNAPSHOT_RETRY_SECONDS",
+    60,
+)
+_portfolio_auto_snapshot_scheduler = None
 _auto_backup_lock = threading.Lock()
 _auto_backup_timer = None
 _auto_backup_reasons = set()
@@ -781,8 +820,90 @@ def _portfolio_current_state():
     )
 
 
-def _save_portfolio_snapshot():
-    return portfolio_nav.save_snapshot(execute_query, _portfolio_current_state)
+def _save_portfolio_snapshot(snapshot_date=None, state=None):
+    return portfolio_nav.save_snapshot(
+        execute_query,
+        _portfolio_current_state,
+        snapshot_date=snapshot_date,
+        state=state,
+    )
+
+
+def _portfolio_auto_snapshot_callback(snapshot_date):
+    """Validate close-date quotes and persist one automatic NAV snapshot."""
+    state = _portfolio_current_state()
+    target_quote_date = snapshot_date.strftime("%Y%m%d")
+    positions = state.get("positions") or []
+    invalid_codes = []
+
+    for position in positions:
+        if (
+            position.get("price") is None
+            or position.get("market_value") is None
+            or position.get("quote_date") != target_quote_date
+        ):
+            invalid_codes.append(position.get("code") or "未知股票")
+
+    if not positions:
+        benchmark = _fetch_realtime_quotes([{"code": "000001", "market": "SH"}]).get("000001", {})
+        if benchmark.get("quote_date") != target_quote_date:
+            return {
+                "status": "not_ready",
+                "message": "未取得当天有效收盘行情，暂不记录空仓净值",
+            }
+
+    if invalid_codes:
+        return {
+            "status": "not_ready",
+            "message": f"等待当天收盘行情：{', '.join(invalid_codes[:8])}",
+            "invalid_codes": invalid_codes[:20],
+        }
+
+    saved_state = _save_portfolio_snapshot(snapshot_date=snapshot_date, state=state)
+    _schedule_auto_cloud_backup("portfolio-auto-snapshot")
+    return {
+        "status": "saved",
+        "message": f"{snapshot_date.isoformat()} 自动净值已记录",
+        "position_count": len(saved_state.get("positions") or []),
+        "total_asset_value": saved_state.get("summary", {}).get("total_asset_value"),
+    }
+
+
+def _portfolio_auto_snapshot_status():
+    if _portfolio_auto_snapshot_scheduler is not None:
+        return _portfolio_auto_snapshot_scheduler.status()
+    return {
+        "enabled": AUTO_PORTFOLIO_SNAPSHOT_ENABLED,
+        "running": False,
+        "thread_alive": False,
+        "schedule": f"{AUTO_PORTFOLIO_SNAPSHOT_HOUR:02d}:{AUTO_PORTFOLIO_SNAPSHOT_MINUTE:02d}",
+        "retry_count": AUTO_PORTFOLIO_SNAPSHOT_RETRY_COUNT,
+        "retry_seconds": AUTO_PORTFOLIO_SNAPSHOT_RETRY_SECONDS,
+        "next_run_at": None,
+        "last_run_date": None,
+        "last_result": {
+            "status": "not_started",
+            "message": "应用尚未启动自动净值调度器",
+            "updated_at": None,
+        },
+    }
+
+
+def _start_portfolio_auto_snapshot_scheduler():
+    global _portfolio_auto_snapshot_scheduler
+    if _portfolio_auto_snapshot_scheduler is not None:
+        return _portfolio_auto_snapshot_scheduler.status()
+    _portfolio_auto_snapshot_scheduler = portfolio_auto_snapshot.PortfolioAutoSnapshotScheduler(
+        _portfolio_auto_snapshot_callback,
+        enabled=AUTO_PORTFOLIO_SNAPSHOT_ENABLED,
+        hour=AUTO_PORTFOLIO_SNAPSHOT_HOUR,
+        minute=AUTO_PORTFOLIO_SNAPSHOT_MINUTE,
+        retry_count=AUTO_PORTFOLIO_SNAPSHOT_RETRY_COUNT,
+        retry_seconds=AUTO_PORTFOLIO_SNAPSHOT_RETRY_SECONDS,
+        log_path=os.path.join(APP_DIR, "portfolio_auto_snapshot.log"),
+    )
+    _portfolio_auto_snapshot_scheduler.start()
+    return _portfolio_auto_snapshot_scheduler.status()
 
 
 register_portfolio_routes(app, {
@@ -802,6 +923,7 @@ register_portfolio_routes(app, {
     "portfolio_rebuilt_cash_amount": _portfolio_rebuilt_cash_amount,
     "save_portfolio_snapshot": _save_portfolio_snapshot,
     "portfolio_flows_payload": _portfolio_flows_payload,
+    "portfolio_auto_snapshot_status": _portfolio_auto_snapshot_status,
     "resolve_portfolio_stock": _resolve_portfolio_stock,
     "calculate_portfolio_trade_fees": _calculate_portfolio_trade_fees,
     "portfolio_cash_amount": _portfolio_cash_amount,
@@ -1081,4 +1203,14 @@ if __name__ == "__main__":
         print("OK 已确保 custom_financials 表结构完整")
     except Exception as e:
         print(f"WARN 表结构检查异常: {e}")
+    if not debug_enabled or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        try:
+            scheduler_status = _start_portfolio_auto_snapshot_scheduler()
+            print(
+                "OK 自动净值调度器已启动: "
+                f"{scheduler_status.get('schedule')}，"
+                f"enabled={scheduler_status.get('enabled')}"
+            )
+        except Exception as e:
+            print(f"WARN 自动净值调度器启动异常: {e}")
     app.run(host="0.0.0.0", port=APP_PORT, debug=debug_enabled, use_reloader=debug_enabled)

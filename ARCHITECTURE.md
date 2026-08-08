@@ -1,7 +1,7 @@
 # stock - 架构与业务说明
 
-> 当前版本：v3.3
-> 更新日期：2026-08-05
+> 当前版本：v3.4
+> 更新日期：2026-08-08
 > 技术栈：Python Flask + MySQL + 原生 HTML/CSS/JavaScript  
 > 默认访问地址：`http://127.0.0.1:5002`
 
@@ -16,7 +16,8 @@
 - 股票池管理：新增、修改、删除、搜索、分页、筛选、拖拽排序；新增股票后自动补全股票详情页数据。
 - 财务数据分析：自定义财报、分红、融资、资产负债表、利润表、现金流量表、营收构成、股东、估值、走势、互动易。
 - 估值分析：PE/PB、股息率、格雷厄姆估值参数、合理估值、合理价格、PB 扣商誉。
-- 持仓管理：买入/卖出、手续费配置、印花税、现金入金/出金、公司行为、持仓成本重算、预计分红、净值快照和净值明细。
+- 持仓管理：买入/卖出、手续费配置、印花税、现金入金/出金、公司行为、持仓成本重算、预计分红、净值快照、净值明细、收益日历和调仓模拟器。
+- 净值自动化：A 股交易日收盘后自动记录一次净值，行情不可用时按配置重试，并在成功后触发云备份。
 - 辅助分析：基本面驾驶舱、对比页、资本配置、对话芒格、便利贴、图片附件、K 线图。
 - 跨电脑使用：本机配置文件 `local_settings.json` + Dropbox/OneDrive 等同步盘云备份。
 - 数据安全：手动云备份、延迟自动云备份、恢复前备份、历史版本恢复。
@@ -54,6 +55,7 @@ routes/
 services/
   |-- database.py              统一数据库访问实现
   |-- background_jobs.py       长耗时任务与日志
+  |-- portfolio_auto_snapshot.py 收盘后自动记录持仓净值
   |-- financial_periods.py     财报期间选择
   |-- financial_metrics.py     财务公式
   |-- stock_identity.py        股票代码/市场/行业识别
@@ -79,6 +81,7 @@ MySQL stock_analysis
   |-- data/images/               便利贴图片
   |-- data/cloud_sync_state.json 本机云同步状态
   |-- auto_cloud_backup.log      自动云备份日志
+  |-- portfolio_auto_snapshot.log 收盘自动净值日志
 
 同步盘目录
   |-- stock_analysis_latest.sql
@@ -132,6 +135,7 @@ MySQL stock_analysis
 | `services/sticky_notes_service.py` | 便利贴 JSON 存储、base64 图片落盘、关联图片清理 |
 | `services/shareholder_schema.py` | 股东缓存表结构确保 |
 | `services/background_jobs.py` | 后台任务表结构、任务创建、进度更新、完成/失败状态落库 |
+| `services/portfolio_auto_snapshot.py` | A 股交易日收盘后净值快照调度、工作日判断、重试和运行状态 |
 | `services/stock_delete_service.py` | 删除自选股时清理股票详情页相关本地数据，保留持仓数据 |
 | `services/ui_preferences.py` | 前端偏好与自定义财报指标配置存储 |
 | `templates/index.html` | 股票列表和股票详情 SPA 页面，含图表、估值、便利贴、备份管理弹窗 |
@@ -153,7 +157,8 @@ MySQL stock_analysis
 | `static/js/cloud_backup.js` | 云备份、云恢复、备份管理、历史版本恢复 |
 | `static/js/background_jobs.js` | 后台任务浮窗、轮询、日志、取消、重试 |
 | `static/js/local_settings.js` | 本机环境配置读取、测试、保存 |
-| `static/js/portfolio/*.js` | 我的持仓页模块：API、状态、布局、持仓、交易、资金流水、净值 |
+| `static/js/portfolio/*.js` | 我的持仓页模块：API、状态、布局、持仓、交易、资金流水、净值、收益日历和调仓模拟器 |
+| `static/js/portfolio/rebalance_simulator.js` | 调仓模拟器：目标比例滑块、现金平衡、交易股数/费用/现金变化即时估算 |
 | `models.py` | `Stock` 模型，封装股票基础 CRUD |
 | `db.py` | MySQL 连接池和统一查询入口 |
 | `config.py` | 默认数据库连接参数 |
@@ -188,6 +193,11 @@ MySQL stock_analysis
 | `app_url` | `STOCK_APP_URL` | 启动后打开的地址 |
 | `cloud_sync_dir` | `STOCK_CLOUD_SYNC_DIR` | 云同步备份目录，例如 `D:\Dropbox\stock-cloud-sync` |
 | `auto_cloud_backup_delay_seconds` | `STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS` | 自动云备份延迟，默认 `180` 秒 |
+| `auto_portfolio_snapshot_enabled` | `STOCK_AUTO_PORTFOLIO_SNAPSHOT_ENABLED` | 是否开启收盘自动记录净值，默认开启 |
+| `auto_portfolio_snapshot_hour` | `STOCK_AUTO_PORTFOLIO_SNAPSHOT_HOUR` | 自动记录时间的小时，默认 `15` |
+| `auto_portfolio_snapshot_minute` | `STOCK_AUTO_PORTFOLIO_SNAPSHOT_MINUTE` | 自动记录时间的分钟，默认 `5` |
+| `auto_portfolio_snapshot_retry_count` | `STOCK_AUTO_PORTFOLIO_SNAPSHOT_RETRY_COUNT` | 收盘行情不可用时的最大尝试次数，默认 `3` |
+| `auto_portfolio_snapshot_retry_seconds` | `STOCK_AUTO_PORTFOLIO_SNAPSHOT_RETRY_SECONDS` | 自动记录重试间隔，默认 `60` 秒 |
 | `mysql_service_name` | `MYSQL_SERVICE_NAME` | MySQL Windows 服务名 |
 | `mysql_home` | `MYSQL_HOME` | MySQL 安装根目录 |
 | `mysql_bin_dir` | `MYSQL_BIN_DIR` | MySQL bin 目录 |
@@ -295,6 +305,24 @@ auto_cloud_backup.log
 | 新增资金流水 | `api_portfolio_add_flow` |
 | 删除资金流水 | `api_portfolio_delete_flow` |
 | 记录持仓快照 | `api_portfolio_snapshot` |
+
+### 5.3.1 收盘自动记录持仓净值
+
+持仓净值自动记录由 `services/portfolio_auto_snapshot.py` 在后端独立调度，不依赖浏览器页面是否打开：
+
+- A 股工作日默认在 `15:05` 执行一次；周末跳过。
+- 通过腾讯行情返回的 `quote_date` 校验是否拿到当天行情，避免节假日把上一交易日的价格误当成当天快照。
+- 行情短暂不可用时按 `auto_portfolio_snapshot_retry_count` 和 `auto_portfolio_snapshot_retry_seconds` 重试。
+- 同一天通过 `portfolio_nav_snapshots.snapshot_date` 唯一键幂等更新，只保留一条快照。
+- 应用在当天收盘时间后启动时，会执行一次当天补记；如果当天没有有效行情则不保存。
+- 自动保存成功后调用现有延迟云备份机制。
+- 手动“记录今日净值”仍然保留，页面进入时的实时净值刷新也不等于写入快照。
+
+状态接口：
+
+```text
+GET /api/portfolio/auto-snapshot/status
+```
 
 ### 5.4 云恢复
 
@@ -406,12 +434,15 @@ templates/portfolio.html
 
 功能：
 
-- 持仓列表，持仓明细只展示持仓股数和查看持仓入口
+- 持仓列表展示代码、名称、股数、成本价、最新价、今日变化、市值、持仓盈亏、占比、每股分红和预期分红，并提供行内买入、卖出、分红操作
 - 买入、卖出、交易作废、公司行为记录和持仓重算
 - 券商手续费配置，买卖时考虑国内印花税等税费
 - 现金通过入金、出金、买入、卖出等流水变化，不再直接修改现金金额
 - 净值模块展示净值、总资产、持仓市值、现金、仓位、当日收益、累计收益、累计入金、累计出金
 - 净值明细按日期倒序展示净值、涨跌幅、总市值、仓位百分比，支持日期筛选、分页和 Excel 导出
+- 持仓明细右上角提供“调仓模拟器”：弹窗展示各股票和现金的当前金额、股数、当前比例；拖动或输入目标比例后，按当前最新股价估算目标金额、建议买入/卖出股数、交易费用和现金变化
+- 调仓模拟器的现金比例是平衡项，股票目标比例合计不足 100% 的部分自动分配给现金；股数按 1 股取整，仅模拟，不写入交易记录或持仓
+- 调仓模拟器复用 `GET /api/portfolio` 返回的实时行情和手续费配置，不新增持久化数据
 - 预计分红和股息率，其中股息率按预期分红除以总市值
 - 港股持仓按自动获取的 `HKD -> CNY` 汇率折算进人民币总资产
 - 自定义每股分红，输入保留 2 位小数，历史最新分红展示到 3 位小数
@@ -842,6 +873,7 @@ GET /api/db/migrations
 | `DELETE` | `/api/portfolio/flows/<id>` | 删除资金流水 |
 | `POST` | `/api/portfolio/snapshot` | 记录今日快照 |
 | `GET` | `/api/portfolio/nav` | 净值曲线和净值明细，支持 `live=1` 进入页面时刷新一次 |
+| `GET` | `/api/portfolio/auto-snapshot/status` | 收盘自动记录净值调度器状态 |
 
 ### 8.5 云同步
 
@@ -1024,7 +1056,7 @@ JavaScript 按功能模块拆分：
 | `static/js/detail/*.js` | 股票详情页业务 Tab：驾驶舱、分红、融资、股东、估值、走势、互动易、对比、资本配置 |
 | `static/js/financial/*.js` | 自定义财报、三张表、营收构成、财务公式、指标偏好 |
 | `static/js/financial_tables.js` | 财务旧入口兼容层，新增财务能力优先放到 `static/js/financial/` |
-| `static/js/portfolio/*.js` | 我的持仓页面：API、状态、布局、持仓、交易、流水、净值 |
+| `static/js/portfolio/*.js` | 我的持仓页面：API、状态、布局、持仓、交易、流水、净值、收益日历和调仓模拟器 |
 | `static/js/background_jobs.js` | 后台任务浮窗、轮询、日志、取消、重试 |
 | `static/js/notes_chat.js` | 便利贴、图片粘贴、对话芒格 |
 | `static/js/cloud_backup.js` | 云备份、云恢复、备份管理、历史版本恢复、云端更新提示 |
@@ -1266,7 +1298,7 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 
 ---
 
-## 15. 当前开发规范（2026-08-05）
+## 15. 当前开发规范（2026-08-08）
 
 本节记录系统当前已经形成的架构、前端和接口约定。后续迭代优先遵守这些约定，避免把已经拆开的职责重新堆回 `app.py`、模板内联脚本或重复公式里。
 
@@ -1332,6 +1364,7 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 - 股票详情页 tab 逻辑放在 `static/js/detail/*.js`，一个 tab 或一组强相关 tab 一个模块。
 - 财务表格和财务图表相关逻辑放在 `static/js/financial/`；前端展示侧公式放在 `static/js/financial/metrics.js`。
 - 我的持仓页面使用 `static/js/portfolio/` 下的模块，语义化接口封装放在 `static/js/portfolio/api.js`，状态集中在 `state.js`。
+- 调仓模拟器等持仓页纯前端计算能力放入独立模块，复用 `/api/portfolio` 已返回的行情、汇率和费用配置；模拟功能不得直接写入交易记录。
 - 模板中避免新增大段内联脚本；模板只负责 DOM 骨架和脚本加载顺序。
 - 修改共享 JS 后要检查模板中的加载顺序。依赖关系通常是 `core/api.js`、`core/formatters.js`、财务公式/业务模块、页面入口脚本。
 - 对已有页面兼容风险较高的共享脚本变更，可以同步更新查询串版本号，避免浏览器缓存导致旧脚本和新脚本混用。

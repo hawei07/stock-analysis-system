@@ -36,6 +36,11 @@ def fetch_realtime_quotes(stocks, quote_symbol):
                         quote["day_change_pct"] = float(fields[32])
                     except (TypeError, ValueError):
                         pass
+                if len(fields) > 30:
+                    quote_time = str(fields[30] or "").strip()
+                    if len(quote_time) >= 8 and quote_time[:8].isdigit():
+                        quote["quote_date"] = quote_time[:8]
+                        quote["quote_time"] = quote_time
                 if quote:
                     quotes[code] = quote
     except Exception:

@@ -107,6 +107,7 @@ def current_state(
             "cost_price": round(cost_price, 4) if cost_price is not None else None,
             "cost_price_currency": currency,
             "price": round(price, 2) if price is not None else None,
+            "quote_date": quote.get("quote_date"),
             "day_change": round(float(quote.get("day_change")), 2) if quote.get("day_change") is not None else None,
             "day_change_pct": round(float(quote.get("day_change_pct")), 2) if quote.get("day_change_pct") is not None else None,
             "day_change_value": round(day_change_value, 2) if day_change_value is not None else None,
@@ -182,13 +183,14 @@ def current_state(
     }
 
 
-def save_snapshot(execute_query, current_state_func):
-    state = current_state_func()
+def save_snapshot(execute_query, current_state_func, snapshot_date=None, state=None):
+    state = state or current_state_func()
     summary = state["summary"]
+    snapshot_date = snapshot_date or datetime.now().date()
     execute_query(
         """INSERT INTO portfolio_nav_snapshots
            (snapshot_date, total_market_value, expected_dividend, cash_amount, total_asset_value, positions_json)
-           VALUES (CURDATE(), %s, %s, %s, %s, %s)
+           VALUES (%s, %s, %s, %s, %s, %s)
            ON DUPLICATE KEY UPDATE
              total_market_value=VALUES(total_market_value),
              expected_dividend=VALUES(expected_dividend),
@@ -197,6 +199,7 @@ def save_snapshot(execute_query, current_state_func):
              positions_json=VALUES(positions_json),
              updated_at=CURRENT_TIMESTAMP""",
         (
+            snapshot_date,
             summary["total_market_value"],
             summary["expected_dividend"],
             summary["cash_amount"],

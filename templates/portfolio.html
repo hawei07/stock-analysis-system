@@ -8,7 +8,7 @@
 <script src="/static/js/theme.js"></script>
 <link rel="stylesheet" href="/static/css/cloud_backup.css">
 <link rel="stylesheet" href="/static/css/background_jobs.css">
-<link rel="stylesheet" href="/static/css/portfolio.css?v=20260807c">
+<link rel="stylesheet" href="/static/css/portfolio.css?v=20260808a">
 </head>
 <body>
 <div class="header">
@@ -119,6 +119,7 @@
       <div class="panel-title">持仓明细</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" onclick="openEarningsCalendarModal()">收益日历</button>
+        <button class="btn btn-outline btn-sm" onclick="openRebalanceSimulatorModal()">调仓模拟器</button>
         <button class="btn btn-outline btn-sm" onclick="openAllocationModal()">持仓比例</button>
         <button class="btn btn-outline btn-sm" onclick="runPortfolioAudit()">账本检查</button>
         <button class="btn btn-primary btn-sm" onclick="openTradeModal('', 'buy')">买入股票</button>
@@ -442,6 +443,23 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="rebalanceModalOverlay" onclick="if(event.target===this)closeRebalanceSimulatorModal()">
+  <div class="modal rebalance-modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">调仓模拟器</div>
+        <div class="rebalance-modal-note">按当前最新股价测算目标比例对应的交易股数和现金变化</div>
+      </div>
+      <button class="modal-close" type="button" onclick="closeRebalanceSimulatorModal()" aria-label="关闭">&times;</button>
+    </div>
+    <div class="modal-body" id="rebalanceSimulatorContent" aria-live="polite"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" type="button" onclick="resetRebalanceTargets()">恢复当前比例</button>
+      <button class="btn btn-primary" type="button" onclick="closeRebalanceSimulatorModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="earningsCalendarModalOverlay" onclick="if(event.target===this)closeEarningsCalendarModal()">
   <div class="modal earnings-calendar-modal">
     <div class="modal-header">
@@ -473,6 +491,7 @@
 <script src="/static/js/portfolio/state.js"></script>
 <script src="/static/js/portfolio/layout.js"></script>
 <script src="/static/js/portfolio/positions.js"></script>
+<script src="/static/js/portfolio/rebalance_simulator.js?v=20260808a"></script>
 <script src="/static/js/portfolio/render_records.js"></script>
 <script src="/static/js/portfolio/trades_actions.js"></script>
 <script src="/static/js/portfolio/render_ledger.js"></script>

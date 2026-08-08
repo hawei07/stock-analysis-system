@@ -10,6 +10,10 @@ async function loadPortfolio() {
       setPortfolioData(data);
       renderSummary(data.summary);
       renderPositions(data.positions || []);
+      if (typeof refreshRebalanceSimulator === 'function'
+          && document.getElementById('rebalanceModalOverlay')?.classList.contains('active')) {
+        refreshRebalanceSimulator(data);
+      }
       return data;
     } catch (e) {
       showToast(e.message || '??????', 'error');
