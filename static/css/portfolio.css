@@ -210,7 +210,6 @@ html[data-theme="dark"] .modal-overlay{background:var(--modal-mask)!important}
 .rebalance-metric{background:#f7f9fc;border:1px solid #edf1f7;border-radius:8px;padding:10px 12px;min-width:0}
 .rebalance-metric span{display:block;color:#888;font-size:11px;margin-bottom:5px;white-space:nowrap}
 .rebalance-metric strong{display:block;color:#1a1a2e;font-size:16px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rebalance-metric-sub{display:block;margin-top:4px;color:#888;font-size:11px;line-height:1.3;white-space:nowrap}
 .rebalance-metric-value.profit-positive{color:#cf1322}
 .rebalance-metric-value.profit-negative{color:#389e0d}
 .rebalance-help{font-size:12px;color:#888;line-height:1.7;margin-bottom:10px}
@@ -240,6 +239,8 @@ html[data-theme="dark"] .modal-overlay{background:var(--modal-mask)!important}
 .rebalance-range-caption{font-size:11px;color:#888;margin-top:6px}
 .rebalance-cash-row td{background:#fafcff;font-weight:600}
 .rebalance-cash-auto{color:#4a6cf7}
+.rebalance-cash-target-cell{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:260px}
+.rebalance-cash-post-ratio{display:inline-flex;align-items:center;justify-content:center;min-width:112px;height:42px;padding:0 10px;border:1px solid #b8c5e0;border-radius:8px;background:#fff;color:#1a1a2e;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 1px 3px rgba(35,58,110,.08)}
 .rebalance-action{font-weight:600;white-space:nowrap}
 .rebalance-action.buy{color:#cf1322}
 .rebalance-action.sell{color:#389e0d}
@@ -250,7 +251,6 @@ html[data-theme="dark"] .rebalance-asset-note,
 html[data-theme="dark"] .rebalance-range-caption{color:var(--text-muted)!important}
 html[data-theme="dark"] .rebalance-metric{background:var(--surface-soft)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .rebalance-metric span{color:var(--text-muted)!important}
-html[data-theme="dark"] .rebalance-metric-sub{color:var(--text-muted)!important}
 html[data-theme="dark"] .rebalance-metric strong,
 html[data-theme="dark"] .rebalance-asset-name{color:var(--text-strong)!important}
 html[data-theme="dark"] .rebalance-status{background:var(--primary-soft)!important;color:var(--primary)!important}
@@ -258,6 +258,7 @@ html[data-theme="dark"] .rebalance-warning{background:rgba(173,104,0,.16)!import
 html[data-theme="dark"] .rebalance-table-wrap{border-color:var(--border)!important}
 html[data-theme="dark"] .rebalance-cash-row td{background:var(--surface-soft)!important}
 html[data-theme="dark"] .rebalance-cash-auto{color:var(--primary)!important}
+html[data-theme="dark"] .rebalance-cash-post-ratio{background:#111722!important;border-color:var(--border)!important;color:var(--text-strong)!important}
 html[data-theme="dark"] .rebalance-action.buy{color:#ff7875!important}
 html[data-theme="dark"] .rebalance-action.sell{color:#73d13d!important}
 html[data-theme="dark"] .rebalance-target-inputs input[type="range"]::-webkit-slider-runnable-track{background:#35446a}

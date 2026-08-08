@@ -256,7 +256,6 @@ function renderRebalanceResults() {
   const currentCashEl = document.getElementById('rebalanceCurrentCash');
   const targetCashEl = document.getElementById('rebalanceTargetCash');
   const postCashEl = document.getElementById('rebalancePostCash');
-  const postCashPctEl = document.getElementById('rebalancePostCashPct');
   const cashDeltaEl = document.getElementById('rebalanceCashDelta');
   const feeEl = document.getElementById('rebalanceFeeTotal');
   const postAssetEl = document.getElementById('rebalancePostAsset');
@@ -264,11 +263,6 @@ function renderRebalanceResults() {
   if (currentCashEl) currentCashEl.textContent = privateMoney(state.currentCash);
   if (targetCashEl) targetCashEl.textContent = `${privateMoney(result.cashTargetValue)} (${result.cashTargetRatio.toFixed(2)}%)`;
   if (postCashEl) postCashEl.textContent = privateMoney(result.postCash);
-  if (postCashPctEl) {
-    postCashPctEl.textContent = result.postCashRatio == null
-      ? '现金占比 --'
-      : `现金占比 ${result.postCashRatio.toFixed(2)}%`;
-  }
   if (cashDeltaEl) {
     cashDeltaEl.textContent = signedPrivateMoney(result.totalCashDelta);
     cashDeltaEl.className = `rebalance-metric-value ${profitClass(result.totalCashDelta)}`.trim();
@@ -331,11 +325,11 @@ function renderRebalanceResults() {
   setRebalanceCell(document.querySelector('.rebalance-cash-row'), 'cashDelta', signedPrivateMoney(result.totalCashDelta), profitClass(result.totalCashDelta));
   const cashTargetHint = document.querySelector('[data-rebalance-cash-target-hint]');
   if (cashTargetHint) cashTargetHint.textContent = `目标比例 ${result.cashTargetRatio.toFixed(2)}%`;
-  const cashPostHint = document.querySelector('[data-rebalance-cash-post-hint]');
-  if (cashPostHint) {
-    cashPostHint.textContent = result.postCashRatio == null
-      ? '调仓后比例 --'
-      : `调仓后比例 ${result.postCashRatio.toFixed(2)}%`;
+  const cashPostRatio = document.querySelector('[data-rebalance-cash-post-ratio]');
+  if (cashPostRatio) {
+    cashPostRatio.textContent = result.postCashRatio == null
+      ? '调仓后 --'
+      : `调仓后 ${result.postCashRatio.toFixed(2)}%`;
   }
 
   const summaryEl = document.getElementById('rebalanceTradeSummary');
@@ -398,7 +392,7 @@ function renderRebalanceTable() {
     <div class="rebalance-metric"><span>当前总资产</span><strong id="rebalanceTotalAsset">--</strong></div>
     <div class="rebalance-metric"><span>当前现金</span><strong id="rebalanceCurrentCash">--</strong></div>
     <div class="rebalance-metric"><span>目标现金</span><strong id="rebalanceTargetCash">--</strong></div>
-    <div class="rebalance-metric"><span>调仓后现金</span><strong id="rebalancePostCash">--</strong><small class="rebalance-metric-sub" id="rebalancePostCashPct">现金占比 --</small></div>
+    <div class="rebalance-metric"><span>调仓后现金</span><strong id="rebalancePostCash">--</strong></div>
     <div class="rebalance-metric"><span>现金变化</span><strong class="rebalance-metric-value" id="rebalanceCashDelta">--</strong></div>
     <div class="rebalance-metric"><span>预计交易费用</span><strong id="rebalanceFeeTotal">--</strong></div>
     <div class="rebalance-metric"><span>模拟后总资产</span><strong id="rebalancePostAsset">--</strong></div>
@@ -422,11 +416,11 @@ function renderRebalanceTable() {
       <tbody>
         ${rowsHtml}
         <tr class="rebalance-cash-row">
-          <td><div class="rebalance-asset-name">现金</div><div class="rebalance-asset-note" data-rebalance-cash-target-hint></div><div class="rebalance-asset-note" data-rebalance-cash-post-hint></div></td>
+          <td><div class="rebalance-asset-name">现金</div><div class="rebalance-asset-note" data-rebalance-cash-target-hint></div></td>
           <td class="num" data-rebalance-cell="currentValue">--</td>
           <td class="num">--</td>
           <td class="num" data-rebalance-cell="currentRatio">--</td>
-          <td><span class="rebalance-cash-auto">自动平衡</span></td>
+          <td><div class="rebalance-cash-target-cell"><span class="rebalance-cash-auto">自动平衡</span><strong class="rebalance-cash-post-ratio" data-rebalance-cash-post-ratio>调仓后 --</strong></div></td>
           <td class="num" data-rebalance-cell="targetValue">--</td>
           <td class="num" data-rebalance-cell="tradeShares">--</td>
           <td data-rebalance-cell="action">自动平衡</td>
