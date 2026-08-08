@@ -70,6 +70,22 @@ function rebalanceCashTargetRatio() {
   return rebalanceClamp(REBALANCE_RATIO_MAX - rebalanceStockTargetSum());
 }
 
+function rebalanceTargetMaximum(row) {
+  const state = PortfolioState.rebalance;
+  const otherTargetSum = state.rows
+    .filter(item => item.code !== row.code)
+    .reduce((sum, item) => sum + rebalanceFinite(state.targetRatios[item.code], item.currentRatio), 0);
+  return Math.max(0, REBALANCE_RATIO_MAX - otherTargetSum);
+}
+
+function rebalanceTargetRatio(row) {
+  const state = PortfolioState.rebalance;
+  const maximum = rebalanceTargetMaximum(row);
+  const target = rebalanceClamp(state.targetRatios[row.code], 0, maximum);
+  state.targetRatios[row.code] = target;
+  return target;
+}
+
 function initializeRebalanceTargets(rows) {
   const state = PortfolioState.rebalance;
   state.targetRatios = {};
@@ -139,7 +155,7 @@ function calculateRebalanceSimulation() {
   let sellCount = 0;
 
   const rows = state.rows.map(row => {
-    const targetRatio = rebalanceClamp(state.targetRatios[row.code], 0, REBALANCE_RATIO_MAX);
+    const targetRatio = rebalanceTargetRatio(row);
     const targetValue = totalAsset * targetRatio / 100;
     stockTargetValue += targetValue;
     const deltaValue = targetValue - row.currentValue;
@@ -255,8 +271,23 @@ function renderRebalanceResults() {
     if (!rowElement) return;
     const rangeInput = rowElement.querySelector('[data-rebalance-target-range]');
     const numberInput = rowElement.querySelector('[data-rebalance-target-number]');
-    if (rangeInput && document.activeElement !== rangeInput) rangeInput.value = row.targetRatio;
-    if (numberInput && document.activeElement !== numberInput) numberInput.value = row.targetRatio.toFixed(2);
+    const maximum = rebalanceTargetMaximum(row);
+    if (rangeInput) {
+      rangeInput.max = maximum.toFixed(2);
+      if (document.activeElement !== rangeInput) rangeInput.value = row.targetRatio;
+    }
+    if (numberInput) {
+      numberInput.max = maximum.toFixed(2);
+      const enteredValue = Number(numberInput.value);
+      if (document.activeElement !== numberInput
+          || !Number.isFinite(enteredValue)
+          || enteredValue < 0
+          || enteredValue > maximum) {
+        numberInput.value = row.targetRatio.toFixed(2);
+      }
+    }
+    const rangeCaption = rowElement.querySelector('.rebalance-range-caption');
+    if (rangeCaption) rangeCaption.textContent = `拖动或输入目标比例 · 最高 ${maximum.toFixed(2)}%`;
     setRebalanceCell(rowElement, 'currentValue', privateMoney(row.currentValue));
     setRebalanceCell(rowElement, 'currentShares', plain(row.shares));
     setRebalanceCell(rowElement, 'currentRatio', `${row.currentRatio.toFixed(2)}%`);
@@ -422,10 +453,7 @@ function setRebalanceTarget(code, value) {
   const state = PortfolioState.rebalance;
   const row = state.rows.find(item => item.code === String(code));
   if (!row || !row.canTrade) return;
-  const otherTargetSum = state.rows
-    .filter(item => item.code !== row.code)
-    .reduce((sum, item) => sum + rebalanceFinite(state.targetRatios[item.code], item.currentRatio), 0);
-  const max = Math.max(0, REBALANCE_RATIO_MAX - otherTargetSum);
+  const max = rebalanceTargetMaximum(row);
   const next = Number(rebalanceClamp(value, 0, max).toFixed(2));
   state.targetRatios[row.code] = next;
   state.userAdjusted = true;
