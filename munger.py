@@ -29,6 +29,7 @@ from services.financial_periods import period_label
 from services.munger_context import build_financial_context
 from services.chat_skills import (
     COMPOSITE_SKILLS,
+    canonical_model_id,
     get_model_spec,
     get_model_specs,
     get_skill_specs,
@@ -1720,12 +1721,13 @@ def _load_chat_base(
     if not isinstance(forecast_scenario, str) or forecast_scenario not in {"bear", "base", "bull"}:
         raise _ChatContextError("不支持的预测情景。", 400)
 
-    configured_model = model_id or get_deepseek_model()
+    requested_model_id = canonical_model_id(model_id)
+    configured_model = canonical_model_id(model_id or get_deepseek_model())
     model_ids = {
         item.get("id") for item in get_model_specs()
         if item.get("id") and item.get("enabled", True)
     }
-    if model_id and model_id not in model_ids:
+    if requested_model_id and requested_model_id not in model_ids:
         raise _ChatContextError("不支持的 DeepSeek 模型。", 400)
     selected_model_id = resolve_model_id(
         configured_model if configured_model in model_ids else skill_spec(selected_skill_id).get("default_model"),
@@ -2199,9 +2201,10 @@ def refresh_chat_memory(
             item.get("id") for item in get_model_specs()
             if item.get("id") and item.get("enabled", True)
         }
-        if model_id and model_id not in available_models:
+        requested_model_id = canonical_model_id(model_id)
+        if requested_model_id and requested_model_id not in available_models:
             return _chat_error("不支持的 DeepSeek 模型。", 400)
-        configured_model = model_id or get_deepseek_model()
+        configured_model = canonical_model_id(model_id or get_deepseek_model())
         model = get_model_spec(
             configured_model if configured_model in available_models else None
         ).get("id")

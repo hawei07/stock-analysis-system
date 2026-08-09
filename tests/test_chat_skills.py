@@ -24,6 +24,9 @@ class ChatSkillRegistryTests(unittest.TestCase):
         ids = {item["id"] for item in chat_skills.get_model_specs()}
         self.assertIn("deepseek-chat", ids)
         self.assertIn("deepseek-reasoner", ids)
+        self.assertIn("deepseek-v4-flash", ids)
+        self.assertEqual(chat_skills.canonical_model_id("DeepSeekV4FLASH"), "deepseek-v4-flash")
+        self.assertEqual(chat_skills.get_model_spec("DeepSeekV4FLASH")["id"], "deepseek-v4-flash")
         self.assertIn(chat_skills.get_model_spec("not-allowed")["id"], ids)
         self.assertNotEqual(chat_skills.get_model_spec("not-allowed")["id"], "not-allowed")
 

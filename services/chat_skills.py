@@ -119,7 +119,27 @@ DEFAULT_MODELS = [
         "max_tokens": 2600,
         "temperature": 0.2,
     },
+    {
+        "id": "deepseek-v4-flash",
+        "label": "DeepSeek V4 Flash",
+        "purpose": "低延迟股票问答和快速迭代",
+        "enabled": True,
+        "supports_stream": True,
+        "max_tokens": 1800,
+        "temperature": 0.3,
+    },
 ]
+
+
+def canonical_model_id(model_id: str | None) -> str | None:
+    """Normalize display/user aliases to the provider model ID."""
+    if model_id is None:
+        return None
+    value = str(model_id).strip().lower()
+    compact = value.replace("-", "").replace("_", "").replace(" ", "")
+    if compact == "deepseekv4flash":
+        return "deepseek-v4-flash"
+    return value
 
 
 def get_skill_specs() -> list[dict[str, Any]]:
@@ -148,6 +168,7 @@ def get_model_specs() -> list[dict[str, Any]]:
     normalised = []
     for model in models:
         item = dict(model)
+        item["id"] = canonical_model_id(item.get("id"))
         item.setdefault("label", item.get("id"))
         item.setdefault("purpose", "DeepSeek 股票研究模型")
         item["enabled"] = bool(item.get("enabled", True))
@@ -165,13 +186,13 @@ def get_model_specs() -> list[dict[str, Any]]:
 
 
 def get_model_spec(model_id: str | None = None) -> dict[str, Any]:
-    requested = model_id or get_deepseek_model()
+    requested = canonical_model_id(model_id or get_deepseek_model())
     models = get_model_specs()
     for model in models:
         if model.get("id") == requested and model.get("enabled", True):
             return model
     for model in models:
-        if model.get("id") == get_deepseek_model() and model.get("enabled", True):
+        if model.get("id") == canonical_model_id(get_deepseek_model()) and model.get("enabled", True):
             return model
     return models[0] if models else dict(DEFAULT_MODELS[0])
 
@@ -184,7 +205,7 @@ def resolve_skill_id(skill_id: str | None) -> str:
 
 def resolve_model_id(model_id: str | None, skill_id: str) -> str:
     if model_id:
-        return get_model_spec(model_id).get("id")
+        return get_model_spec(canonical_model_id(model_id)).get("id")
     return get_model_spec(SKILL_SPECS.get(skill_id, {}).get("default_model")).get("id")
 
 
