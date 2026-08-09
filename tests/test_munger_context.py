@@ -33,6 +33,65 @@ def _financial_row(year, period, *, revenue=100, profit=20, cashflow=30, roe=15)
 
 
 class MungerContextTests(unittest.TestCase):
+    def test_chat_intent_changes_with_question_type(self):
+        self.assertEqual(munger._classify_chat_intent("什么是护城河？"), "framework")
+        self.assertEqual(
+            munger._classify_chat_intent("如何理解这家公司当前的护城河？"),
+            "industry",
+        )
+        self.assertEqual(
+            munger._classify_chat_intent("这只股票最新 ROE 是多少？"),
+            "fact",
+        )
+        self.assertEqual(
+            munger._classify_chat_intent("这只股票最新业绩怎么样？"),
+            "financial",
+        )
+        self.assertEqual(
+            munger._classify_chat_intent("这只股票现在贵不贵？"),
+            "valuation",
+        )
+        self.assertEqual(
+            munger._classify_chat_intent("这家公司怎么会亏钱？"),
+            "risk",
+        )
+        self.assertEqual(
+            munger._classify_chat_intent("全面分析这家公司"),
+            "comprehensive",
+        )
+        self.assertEqual(
+            munger._classify_chat_intent("请核验 https://example.com/report"),
+            "link",
+        )
+
+    def test_stock_specific_framework_question_still_searches(self):
+        topics = munger._search_topics_for_message("如何理解这只股票的护城河？", [])
+        self.assertIn("行业与竞争", topics)
+
+    def test_prompt_contains_dynamic_output_guidance(self):
+        current_year = datetime.now().year
+        fin = {
+            "info": {"name": "测试股票", "code": "600000", "industry": "测试行业"},
+            "period_note": f"{current_year} 一季报",
+            "latest_period": _financial_row(current_year, "Q1"),
+            "yoy_base": _financial_row(current_year - 1, "Q1"),
+            "latest_annual": _financial_row(current_year - 1, "FY"),
+            "rows": [],
+            "market": {},
+            "warnings": [],
+        }
+        prompt = munger._build_chat_prompt(
+            fin,
+            "",
+            "",
+            "这只股票现在贵不贵？",
+            "valuation",
+        )
+        self.assertIn("本轮回答模式", prompt)
+        self.assertIn("估值判断（valuation）", prompt)
+        self.assertIn("### 估值结论", prompt)
+        self.assertNotIn("### 护城河与激励", prompt)
+
     def test_context_uses_current_quarter_and_same_period_last_year(self):
         current_year = datetime.now().year
         rows = [

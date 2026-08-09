@@ -89,10 +89,11 @@ function safeChatUrl(url) {
 function renderChatMeta(meta) {
   if (!meta || meta.error) return '';
   const identity = [meta.stock_name, meta.stock_code].filter(Boolean).join(' ');
+  const intent = meta.intent_label ? `回答模式：${chatEscape(meta.intent_label)}` : '';
   const period = meta.latest_period ? `最新 ${chatEscape(meta.latest_period)}` : '';
   const yoy = meta.yoy_base ? `同比基准 ${chatEscape(meta.yoy_base)}` : '';
   const sourceCount = Number(meta.source_count) || 0;
-  const summary = [identity && chatEscape(identity), period, yoy,
+  const summary = [identity && chatEscape(identity), intent, period, yoy,
     meta.search_used ? `已参考 ${sourceCount} 个来源` : '未联网搜索'].filter(Boolean).join(' · ');
   const warnings = (Array.isArray(meta.warnings) ? meta.warnings : [])
     .map(item => `<li>${chatEscape(item)}</li>`).join('');
