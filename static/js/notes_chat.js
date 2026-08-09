@@ -69,12 +69,16 @@ function renderMarkdownLink(url, label, title = '') {
   const safeUrl = safeMarkdownUrl(url);
   if (!safeUrl) return '';
   const titleAttr = title ? ` title="${chatEscape(title)}"` : '';
-  return `<a href="${chatEscape(safeUrl)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${renderMarkdownInline(label)}</a>`;
+  // Do not auto-link the label again.  A plain URL is itself a valid label,
+  // and recursively passing it through renderMarkdownInline would overflow
+  // the call stack (the sticky-note renderer used to fail on such content).
+  return `<a href="${chatEscape(safeUrl)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${renderMarkdownInline(label, {allowAutoLinks: false})}</a>`;
 }
 
 function renderMarkdownInline(text, options = {}) {
   const source = String(text ?? '');
   const allowImages = options.allowImages !== false;
+  const allowAutoLinks = options.allowAutoLinks !== false;
   const tokenPattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+["']([^"']*)["'])?\)|\[([^\]]+)\]\(([^)\s]+)(?:\s+["']([^"']*)["'])?\)|`([^`]+)`|(https?:\/\/[^\s<>]+|\/data\/images\/[^\s<>]+|data:image\/(?:png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+)/gi;
   const output = [];
   let cursor = 0;
@@ -113,7 +117,8 @@ function renderMarkdownInline(text, options = {}) {
     } else if (match[7] !== undefined) {
       output.push(`<code>${chatEscape(match[7])}</code>`);
     } else if (match[8] !== undefined) {
-      appendRawUrl(match[8]);
+      if (allowAutoLinks) appendRawUrl(match[8]);
+      else output.push(appendText(match[8]));
     }
     cursor = tokenPattern.lastIndex;
   }
@@ -884,6 +889,7 @@ async function loadStickyNotes() {
     if (code !== (document.getElementById('detailCode')?.textContent.trim() || '')) return;
     stickyNotesCache = Array.isArray(notes) ? notes : [];
     const list = document.getElementById('stickyList');
+    if (!list) return;
     if (!notes.length) {
       list.innerHTML = '<div style="text-align:center;color:#bbb;padding:60px">还没有便利贴，点击「+ 新建」开始</div>';
       return;
@@ -923,7 +929,9 @@ async function loadStickyNotes() {
       </div>`;
     }).join('');
   } catch(e) {
-    document.getElementById('stickyList').innerHTML = '<div style="text-align:center;color:#e74c3c;padding:40px">加载失败</div>';
+    console.error('loadStickyNotes failed', e);
+    const list = document.getElementById('stickyList');
+    if (list) list.innerHTML = '<div style="text-align:center;color:#e74c3c;padding:40px">加载失败</div>';
   }
 }
 
