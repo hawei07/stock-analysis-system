@@ -839,8 +839,6 @@ function resetStickyFontSize() {
   updateStickyFontSizePreview(STICKY_DEFAULT_FONT_SIZE);
 }
 
-let stickyDetailId = null;
-
 function stickySummary(content) {
   return String(content || '')
     .replace(/```[\s\S]*?```/g, ' ')
@@ -853,45 +851,23 @@ function stickySummary(content) {
     .slice(0, 180);
 }
 
-function openStickyDetail(id) {
-  const note = stickyNotesCache.find(item => Number(item.id) === Number(id));
-  if (!note) return;
-  stickyDetailId = note.id;
-  const fontSize = clampStickyFontSize(note.font_size);
-  document.getElementById('stickyDetailTitle').textContent = note.title || '未命名便利贴';
-  const meta = [
-    note.created_at ? `创建于 ${(note.created_at || '').replace('T', ' ').substring(0, 16)}` : '',
-    note.stock_code ? `关联股票 ${note.stock_code}` : '未关联股票',
-    `正文 ${fontSize}px`
-  ].filter(Boolean);
-  document.getElementById('stickyDetailMeta').textContent = meta.join(' · ');
-  const content = document.getElementById('stickyDetailContent');
-  content.style.setProperty('--sticky-font-size', `${fontSize}px`);
-  content.innerHTML = renderStickyMarkdown(note.content || '');
-  document.getElementById('stickyDetailOverlay').classList.add('active');
-  typesetMarkdown(content);
-}
-
-function closeStickyDetail() {
-  document.getElementById('stickyDetailOverlay').classList.remove('active');
-  stickyDetailId = null;
-}
-
-function editStickyFromDetail() {
-  const note = stickyNotesCache.find(item => Number(item.id) === Number(stickyDetailId));
-  if (!note) return;
-  closeStickyDetail();
-  openStickyModal(note.id, note.title, note.content, note.font_size);
-}
-
-function deleteStickyFromDetail() {
-  if (stickyDetailId) deleteSticky(stickyDetailId);
+function toggleStickyDetail(id, event) {
+  event?.stopPropagation();
+  const item = document.getElementById(`sticky-note-${id}`);
+  const detail = document.getElementById(`sticky-detail-${id}`);
+  if (!item || !detail) return;
+  const expanded = !item.classList.contains('is-expanded');
+  item.classList.toggle('is-expanded', expanded);
+  detail.hidden = !expanded;
+  const toggle = item.querySelector('.sticky-list-toggle');
+  if (toggle) toggle.textContent = expanded ? '收起' : '展开';
+  if (expanded) typesetMarkdown(detail);
 }
 
 function openStickyDetailOnKey(event, id) {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    openStickyDetail(id);
+    toggleStickyDetail(id, event);
   }
 }
 
@@ -920,23 +896,32 @@ async function loadStickyNotes() {
       const title = n.title || '未命名便利贴';
       const summary = stickySummary(n.content) || '暂无正文摘要';
 
-      return `<div class="sticky-list-item" role="button" tabindex="0" onclick="openStickyDetail(${n.id})" onkeydown="openStickyDetailOnKey(event, ${n.id})">
-        <div class="sticky-list-main">
-          <div class="sticky-list-title">${esc(title)}</div>
-          <div class="sticky-list-summary">${esc(summary)}${String(n.content || '').length > 180 ? '…' : ''}</div>
+      return `<div class="sticky-list-item" id="sticky-note-${n.id}">
+        <div class="sticky-list-row" role="button" tabindex="0" onclick="toggleStickyDetail(${n.id}, event)" onkeydown="openStickyDetailOnKey(event, ${n.id})">
+          <div class="sticky-list-main">
+            <div class="sticky-list-title">${esc(title)}</div>
+            <div class="sticky-list-summary">${esc(summary)}${String(n.content || '').length > 180 ? '…' : ''}</div>
+          </div>
+          <div class="sticky-list-meta">
+            <span>${time || '时间未知'}</span>
+            ${stockTag}
+            <span class="sticky-list-font-size">${fontSize}px</span>
+          </div>
+          <div class="sticky-list-actions" onclick="event.stopPropagation()">
+            <button type="button" onclick="editSticky(${n.id}, event)" title="编辑">✎</button>
+            <button type="button" onclick="deleteSticky(${n.id}, event)" title="删除">✕</button>
+          </div>
+          <span class="sticky-list-toggle">展开</span>
         </div>
-        <div class="sticky-list-meta">
-          <span>${time || '时间未知'}</span>
-          ${stockTag}
-          <span class="sticky-list-font-size">${fontSize}px</span>
-        </div>
-        <div class="sticky-list-actions" onclick="event.stopPropagation()">
-          <button type="button" onclick="editSticky(${n.id}, event)" title="编辑">✎</button>
-          <button type="button" onclick="deleteSticky(${n.id}, event)" title="删除">✕</button>
+        <div class="sticky-list-detail" id="sticky-detail-${n.id}" hidden>
+          <div class="sticky-markdown sticky-list-detail-content" style="--sticky-font-size:${fontSize}px">${renderStickyMarkdown(n.content || '')}</div>
+          <div class="sticky-list-detail-footer">
+            <span>点击上方标题区域收起</span>
+            <button type="button" onclick="toggleStickyDetail(${n.id}, event)">收起</button>
+          </div>
         </div>
       </div>`;
     }).join('');
-    typesetMarkdown(list);
   } catch(e) {
     document.getElementById('stickyList').innerHTML = '<div style="text-align:center;color:#e74c3c;padding:40px">加载失败</div>';
   }
@@ -1020,7 +1005,6 @@ async function deleteSticky(id, btn) {
   try {
     await StockApi.deleteJson('/api/sticky-notes/' + id);
     btn?.closest('.sticky-list-item')?.style.setProperty('opacity', '0');
-    if (Number(stickyDetailId) === Number(id)) closeStickyDetail();
     setTimeout(loadStickyNotes, 300);
   } catch(e) {}
 }

@@ -458,8 +458,11 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .sticky-card{background:#fffbe6;border-radius:12px;padding:18px 20px;position:relative;transition:all .3s;border:1px solid #f0e8c0}
 .sticky-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08);transform:translateY(-2px)}
 .sticky-list{display:flex;flex-direction:column;gap:8px}
-.sticky-list-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:18px;padding:14px 16px;background:#fffbe6;border:1px solid #f0e8c0;border-radius:10px;cursor:pointer;transition:all .2s}
-.sticky-list-item:hover,.sticky-list-item:focus{border-color:#d9c66b;box-shadow:0 3px 12px rgba(0,0,0,.08);outline:none;transform:translateY(-1px)}
+.sticky-list-item{background:#fffbe6;border:1px solid #f0e8c0;border-radius:10px;overflow:hidden;transition:all .2s}
+.sticky-list-item:hover{border-color:#d9c66b;box-shadow:0 3px 12px rgba(0,0,0,.08);transform:translateY(-1px)}
+.sticky-list-item.is-expanded{box-shadow:0 3px 14px rgba(0,0,0,.08)}
+.sticky-list-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;align-items:center;gap:18px;padding:14px 16px;cursor:pointer}
+.sticky-list-row:focus{outline:2px solid #d9c66b;outline-offset:-2px}
 .sticky-list-main{min-width:0}
 .sticky-list-title{font-size:15px;font-weight:650;color:#3f3a20;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sticky-list-summary{margin-top:5px;color:#776b3b;font-size:13px;line-height:1.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -469,8 +472,12 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .sticky-list-item:hover .sticky-list-actions,.sticky-list-item:focus .sticky-list-actions{opacity:1}
 .sticky-list-actions button{border:0;background:transparent;color:#999;cursor:pointer;font-size:14px;padding:4px 6px;border-radius:4px}
 .sticky-list-actions button:hover{background:rgba(0,0,0,.06);color:#4a6cf7}
-.sticky-detail-meta{margin-top:4px;color:#999;font-size:12px;font-weight:400}
-.sticky-detail-content{min-height:160px;padding:18px 20px;border:1px solid #f0e8c0;border-radius:10px;background:#fffbe6}
+.sticky-list-toggle{color:#9b8b47;font-size:12px;white-space:nowrap}
+.sticky-list-detail{border-top:1px solid #f0e8c0;padding:16px;background:rgba(255,255,255,.28)}
+.sticky-list-detail-content{padding:2px 4px 8px}
+.sticky-list-detail-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px;color:#999;font-size:11px}
+.sticky-list-detail-footer button{border:0;background:transparent;color:#9b8b47;cursor:pointer;font-size:12px;padding:3px 6px}
+.sticky-list-detail-footer button:hover{text-decoration:underline}
 .sticky-actions{opacity:0;transition:opacity .2s}
 .sticky-card:hover .sticky-actions{opacity:1}
 .sticky-card-tools{display:flex;align-items:center;gap:8px}
@@ -488,9 +495,10 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .sticky-markdown h3{font-size:calc(var(--sticky-font-size,14px) * 1.2)!important}
 .sticky-markdown h4,.sticky-markdown h5,.sticky-markdown h6{font-size:calc(var(--sticky-font-size,14px) * 1.08)!important}
 @media (max-width:700px){
-  .sticky-list-item{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px}
+  .sticky-list-row{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px}
   .sticky-list-meta{grid-column:1;grid-row:2}
   .sticky-list-actions{grid-column:2;grid-row:2}
+  .sticky-list-toggle{grid-column:2;grid-row:1}
 }
 .markdown-math{margin:10px 0;max-width:100%;overflow-x:auto;overflow-y:hidden;text-align:center}
 .chat-bubble .markdown-math{margin:10px 0}.sticky-markdown .markdown-math{margin:12px 0}
@@ -715,7 +723,8 @@ html[data-theme="dark"] .sticky-list-item{background:#2b2614;border-color:#51451
 html[data-theme="dark"] .sticky-list-item:hover,html[data-theme="dark"] .sticky-list-item:focus{border-color:#8a7835}
 html[data-theme="dark"] .sticky-list-title{color:var(--text-strong)}
 html[data-theme="dark"] .sticky-list-summary{color:#d6c889}
-html[data-theme="dark"] .sticky-detail-content{background:#2b2614;border-color:#51451f}
+html[data-theme="dark"] .sticky-list-detail{background:rgba(255,255,255,.04);border-color:#51451f}
+html[data-theme="dark"] .sticky-list-detail-footer button,html[data-theme="dark"] .sticky-list-toggle{color:#e4cf73}
 html[data-theme="dark"] .sticky-font-controls{color:#e4cf73}
 html[data-theme="dark"] .sticky-font-controls button{background:rgba(255,255,255,.08);border-color:#6b5c2a;color:#e4cf73}
 html[data-theme="dark"] .sticky-font-size-editor span{color:#e4cf73}
