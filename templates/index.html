@@ -479,6 +479,32 @@
       <div class="chat-panel">
         <div class="chat-header">
           <span style="font-weight:600;font-size:15px">🧠 对话芒格</span>
+          <div class="chat-analysis-controls" aria-label="分析配置">
+            <label>Skill
+              <select id="chatSkillSelect" title="选择分析 Skill">
+                <option value="munger">芒格思维</option>
+                <option value="auto">自动选择</option>
+              </select>
+            </label>
+            <label>模型
+              <select id="chatModelSelect" title="选择 DeepSeek 模型">
+                <option value="">系统默认</option>
+              </select>
+            </label>
+            <label class="chat-forecast-control">预测
+              <select id="chatForecastHorizon" title="业绩预测期限">
+                <option value="1">1 年</option>
+                <option value="3" selected>3 年</option>
+                <option value="5">5 年</option>
+                <option value="10">10 年</option>
+              </select>
+              <select id="chatForecastScenario" title="业绩预测情景">
+                <option value="bear">悲观</option>
+                <option value="base" selected>基准</option>
+                <option value="bull">乐观</option>
+              </select>
+            </label>
+          </div>
           <div class="chat-header-actions">
             <button class="btn btn-sm" onclick="refreshChatMemory()" style="font-size:11px;color:#666">🧠 刷新摘要</button>
             <button class="btn btn-sm" onclick="clearMungerChat()" style="font-size:11px;color:#999">🗑 清空全部</button>

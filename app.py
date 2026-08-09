@@ -28,7 +28,7 @@ from db import (
     transaction,
 )
 from config import DB_CONFIG
-from config_manager import get_all_config, set_config, get_deepseek_api_key
+from config_manager import get_all_config, set_config, get_deepseek_api_key, get_deepseek_model
 from munger import (
     get_chat_history,
     chat_send,
@@ -41,6 +41,7 @@ from munger import (
     clear_chat_memory,
     refresh_chat_memory,
 )
+from services.chat_skills import get_model_specs, get_skill_specs
 from migrations import run_migrations, migration_status
 from services.cloud_backup_service import (
     CLOUD_BACKUP_RETAIN_COUNT,
@@ -1194,6 +1195,9 @@ register_notes_chat_routes(app, {
     "get_chat_memory": get_chat_memory,
     "clear_chat_memory": clear_chat_memory,
     "refresh_chat_memory": refresh_chat_memory,
+    "get_chat_skills": get_skill_specs,
+    "get_chat_models": get_model_specs,
+    "get_chat_default_model": get_deepseek_model,
     "load_notes": _load_notes,
     "save_notes": _save_notes,
     "extract_images": _extract_images,

@@ -407,6 +407,12 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 /* 对话芒格聊天界面 */
 .chat-panel{display:flex;flex-direction:column;height:calc(100vh - 260px);min-height:380px;max-height:700px}
 .chat-header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid #f0f0f0;flex-shrink:0}
+.chat-analysis-controls{display:flex;align-items:center;gap:7px;margin-left:auto;margin-right:10px;flex-wrap:wrap}
+.chat-analysis-controls label{display:flex;align-items:center;gap:4px;color:#7b8494;font-size:10px;white-space:nowrap}
+.chat-analysis-controls select{max-width:132px;border:1px solid #dbe3f4;background:#f8faff;color:#354052;border-radius:6px;padding:4px 6px;font-size:11px;outline:none}
+.chat-analysis-controls select:focus{border-color:#4a6cf7}
+.chat-forecast-control{gap:3px!important}
+.chat-forecast-control select{max-width:70px}
 .chat-header-actions{display:flex;gap:6px;align-items:center}
 .chat-quick-prompts{display:flex;flex-wrap:wrap;gap:7px;padding:10px 20px 4px;background:var(--surface,#fff)}
 .chat-quick-prompts button{border:1px solid #dbe3f4;background:#f7f9ff;color:#4a6cf7;border-radius:14px;padding:5px 10px;font-size:11px;cursor:pointer;transition:all .15s}
@@ -505,6 +511,10 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
   .chat-msg.munger{padding-right:20px}
   .chat-msg.user{padding-left:20px}
   .chat-bubble{font-size:13px}
+  .chat-header{align-items:flex-start;flex-wrap:wrap;gap:7px;padding:10px 12px}
+  .chat-analysis-controls{order:3;width:100%;margin:0;gap:5px}
+  .chat-analysis-controls label{font-size:10px}
+  .chat-analysis-controls select{max-width:112px}
   .chat-panel{height:calc(100vh - 200px);min-height:350px}
   .chat-input-bar{padding:8px 12px}
   .detail-content{padding:12px 8px}

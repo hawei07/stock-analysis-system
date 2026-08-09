@@ -1,5 +1,41 @@
 let chatLoaded = false;
 let mungerRequestSeq = 0;
+let chatCatalogPromise = null;
+
+function chatConfigValue(id, fallback = '') {
+  return document.getElementById(id)?.value || fallback;
+}
+
+function currentChatConfig() {
+  return {
+    skill_id: chatConfigValue('chatSkillSelect', 'munger'),
+    model_id: chatConfigValue('chatModelSelect', ''),
+    forecast_horizon: Number(chatConfigValue('chatForecastHorizon', '3')) || 3,
+    forecast_scenario: chatConfigValue('chatForecastScenario', 'base') || 'base'
+  };
+}
+
+function persistChatConfig() {
+  const config = currentChatConfig();
+  try { localStorage.setItem('mungerChatConfig', JSON.stringify(config)); } catch (e) { /* private mode */ }
+  return config;
+}
+
+function restoreChatConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('mungerChatConfig') || '{}');
+    ['chatSkillSelect', 'chatModelSelect', 'chatForecastHorizon', 'chatForecastScenario'].forEach(id => {
+      const value = id === 'chatSkillSelect' ? saved.skill_id
+        : id === 'chatModelSelect' ? saved.model_id
+        : id === 'chatForecastHorizon' ? String(saved.forecast_horizon || '')
+        : saved.forecast_scenario;
+      const element = document.getElementById(id);
+      if (element && value && Array.from(element.options).some(option => option.value === String(value))) {
+        element.value = String(value);
+      }
+    });
+  } catch (e) { /* ignore malformed local preference */ }
+}
 
 function chatEscape(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -255,19 +291,81 @@ function setChatPhase(label, visible = true) {
   phase.classList.toggle('active', Boolean(visible && label));
 }
 
+async function loadChatCatalog() {
+  if (chatCatalogPromise) return chatCatalogPromise;
+  chatCatalogPromise = Promise.all([
+    StockApi.getJson('/api/chat/skills'),
+    StockApi.getJson('/api/chat/models')
+  ]).then(([skillData, modelData]) => {
+    const skillSelect = document.getElementById('chatSkillSelect');
+    const modelSelect = document.getElementById('chatModelSelect');
+    if (skillSelect && Array.isArray(skillData?.skills)) {
+      skillSelect.innerHTML = '';
+      skillData.skills.forEach(skill => {
+        if (!skill?.id) return;
+        const option = document.createElement('option');
+        option.value = skill.id;
+        option.textContent = skill.label || skill.id;
+        option.title = [skill.description, skill.version].filter(Boolean).join(' · ');
+        skillSelect.appendChild(option);
+      });
+    }
+    if (modelSelect && Array.isArray(modelData?.models)) {
+      modelSelect.innerHTML = '';
+      modelData.models.forEach(model => {
+        if (!model?.id) return;
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.label || model.id;
+        option.title = model.purpose || model.id;
+        modelSelect.appendChild(option);
+      });
+      const defaultModel = modelData?.default_model;
+      if (defaultModel && Array.from(modelSelect.options).some(option => option.value === defaultModel)) {
+        modelSelect.value = defaultModel;
+      }
+    }
+    restoreChatConfig();
+    updateForecastControls();
+    return {skills: skillData?.skills || [], models: modelData?.models || []};
+  }).catch(error => {
+    chatCatalogPromise = null;
+    setChatPhase(`分析选项加载失败：${error.message || '请稍后重试'}`, true);
+    return {skills: [], models: []};
+  });
+  return chatCatalogPromise;
+}
+
+function updateForecastControls() {
+  const skill = chatConfigValue('chatSkillSelect', 'munger');
+  const supported = skill === 'auto' || skill === 'stock_analyst' || skill === 'valuation';
+  document.querySelectorAll('.chat-forecast-control').forEach(node => {
+    node.style.display = supported ? 'flex' : 'none';
+  });
+}
+
+function onChatConfigChange() {
+  persistChatConfig();
+  updateForecastControls();
+}
+
 function renderChatMeta(meta) {
   if (!meta || meta.error) return '';
   const identity = [meta.stock_name, meta.stock_code].filter(Boolean).join(' ');
+  const skill = meta.skill_id ? `Skill：${chatEscape(meta.skill_label || meta.skill_id)}${meta.skill_version ? ` ${chatEscape(meta.skill_version)}` : ''}` : '';
+  const model = meta.model_id || meta.model ? `模型：${chatEscape(meta.model_id || meta.model)}` : '';
   const intent = meta.intent_label ? `回答模式：${chatEscape(meta.intent_label)}` : '';
   const financial = meta.financial_data_as_of || meta.latest_period;
   const asOf = financial ? `财务截至 ${chatEscape(financial)}` : '';
   const quote = meta.quote_time ? `行情截至 ${chatEscape(meta.quote_time)}` : '';
   const collected = meta.source_collected_at ? `搜索于 ${chatEscape(meta.source_collected_at)}` : '';
+  const forecast = meta.forecast_horizon && meta.forecast_scenario
+    ? `预测 ${chatEscape(meta.forecast_horizon)} 年/${chatEscape(meta.forecast_scenario)}` : '';
   const sourceCount = Number(meta.source_count) || 0;
   const citationStatus = meta.citation_validation?.status === 'ok'
     ? '引用已校验'
     : meta.citation_validation?.status === 'warning' ? '引用需复核' : '';
-  const summary = [identity && chatEscape(identity), intent, asOf, quote, collected,
+  const summary = [identity && chatEscape(identity), skill, model, intent, forecast, asOf, quote, collected,
     meta.search_used ? `参考 ${sourceCount} 个来源` : '未联网搜索', citationStatus]
     .filter(Boolean).join(' · ');
   const warnings = (Array.isArray(meta.warnings) ? meta.warnings : [])
@@ -337,7 +435,9 @@ async function loadChatMemory() {
   const code = document.getElementById('detailCode')?.textContent.trim();
   if (!code) return;
   try {
-    const data = await StockApi.getJson(`/api/stock/${code}/munger-chat/memory`);
+    const config = currentChatConfig();
+    const query = config.skill_id ? `?skill_id=${encodeURIComponent(config.skill_id)}` : '';
+    const data = await StockApi.getJson(`/api/stock/${code}/munger-chat/memory${query}`);
     const memory = data?.memory;
     const text = document.getElementById('chatMemoryText');
     const status = document.getElementById('chatMemoryStatus');
@@ -354,7 +454,11 @@ async function refreshChatMemory() {
   if (!code || chatStreaming) return;
   setChatPhase('正在整理对话摘要…');
   try {
-    await StockApi.postJson(`/api/stock/${code}/munger-chat/memory`, {});
+    const config = currentChatConfig();
+    await StockApi.postJson(`/api/stock/${code}/munger-chat/memory`, {
+      skill_id: config.skill_id,
+      model_id: config.model_id || undefined
+    });
     await loadChatMemory();
     setChatPhase('对话摘要已更新', true);
     setTimeout(() => setChatPhase('', false), 1800);
@@ -396,6 +500,8 @@ async function sendMungerChat() {
   const btn = document.getElementById('chatSendBtn');
   const msg = input?.value.trim();
   if (!msg || !code || chatStreaming) return;
+  await loadChatCatalog();
+  const config = persistChatConfig();
   const requestSeq = ++mungerRequestSeq;
   const isCurrentRequest = () => requestSeq === mungerRequestSeq && code === document.getElementById('detailCode')?.textContent.trim();
   const userDiv = appendMsg('user', msg);
@@ -410,7 +516,7 @@ async function sendMungerChat() {
     const response = await fetch(`/api/stock/${code}/munger-chat/stream`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'Accept': 'text/event-stream'},
-      body: JSON.stringify({message: msg}),
+      body: JSON.stringify({message: msg, ...config}),
       signal: mungerStreamController.signal
     });
     await consumeMungerSse(response, (event, data) => {
@@ -457,6 +563,7 @@ async function loadMungerChat() {
   const code = document.getElementById('detailCode')?.textContent.trim();
   if (!code) return;
   mungerStreamController?.abort();
+  await loadChatCatalog();
   const requestSeq = ++mungerRequestSeq;
   const container = document.getElementById('chatMessages');
   try {
@@ -539,6 +646,9 @@ async function clearMungerChat() {
 document.addEventListener('DOMContentLoaded', () => {
   const input = document.getElementById('chatInput');
   if (!input) return;
+  ['chatSkillSelect', 'chatModelSelect', 'chatForecastHorizon', 'chatForecastScenario']
+    .forEach(id => document.getElementById(id)?.addEventListener('change', onChatConfigChange));
+  loadChatCatalog();
   input.addEventListener('input', () => autoGrowChatInput(input));
   input.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !chatStreaming) {

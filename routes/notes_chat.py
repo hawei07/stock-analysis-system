@@ -17,11 +17,28 @@ def register_notes_chat_routes(app, deps):
     get_chat_memory = deps.get("get_chat_memory")
     clear_chat_memory = deps.get("clear_chat_memory")
     refresh_chat_memory = deps.get("refresh_chat_memory")
+    get_chat_skills = deps.get("get_chat_skills", lambda: [])
+    get_chat_models = deps.get("get_chat_models", lambda: [])
+    get_chat_default_model = deps.get("get_chat_default_model", lambda: "")
     load_notes = deps["load_notes"]
     save_notes = deps["save_notes"]
     extract_images = deps["extract_images"]
     cleanup_images = deps["cleanup_images"]
     images_dir = deps["images_dir"]
+
+    @app.route("/api/chat/skills", methods=["GET"])
+    def api_chat_skills():
+        return jsonify({"skills": get_chat_skills()})
+
+    @app.route("/api/chat/models", methods=["GET"])
+    def api_chat_models():
+        # Only public, non-secret model metadata is returned. API keys remain
+        # server-side in system_config.
+        return jsonify({"models": [
+            {key: value for key, value in model.items() if key not in {"api_key", "secret", "token"}}
+            for model in get_chat_models()
+            if model.get("enabled", True)
+        ], "default_model": get_chat_default_model()})
 
     @app.route("/api/stock/<code>/munger-chat", methods=["GET", "POST", "DELETE"])
     def api_munger_chat(code):
@@ -49,7 +66,14 @@ def register_notes_chat_routes(app, deps):
         message = raw_message.strip()
         if not message:
             return jsonify({"error": "empty message"}), 400
-        result = chat_send(code, message)
+        result = chat_send(
+            code,
+            message,
+            skill_id=data.get("skill_id"),
+            model_id=data.get("model_id"),
+            forecast_horizon=data.get("forecast_horizon", 3),
+            forecast_scenario=data.get("forecast_scenario", "base"),
+        )
         status = result.pop("_http_status", 200)
         return jsonify(result), status
 
@@ -64,6 +88,10 @@ def register_notes_chat_routes(app, deps):
         message = raw_message.strip()
         turn_id = data.get("turn_id") or None
         is_regenerate = bool(data.get("regenerate"))
+        skill_id = data.get("skill_id")
+        model_id = data.get("model_id")
+        forecast_horizon = data.get("forecast_horizon", 3)
+        forecast_scenario = data.get("forecast_scenario", "base")
         if not chat_stream:
             return jsonify({"error": "streaming chat is unavailable"}), 503
 
@@ -71,6 +99,10 @@ def register_notes_chat_routes(app, deps):
             for item in chat_stream(
                 code,
                 message,
+                skill_id=skill_id,
+                model_id=model_id,
+                forecast_horizon=forecast_horizon,
+                forecast_scenario=forecast_scenario,
                 turn_id=turn_id,
                 persist_user=not is_regenerate,
                 replace_existing=is_regenerate,
@@ -98,14 +130,20 @@ def register_notes_chat_routes(app, deps):
     @app.route("/api/stock/<code>/munger-chat/memory", methods=["GET", "POST", "DELETE"])
     def api_munger_chat_memory(code):
         if request.method == "GET":
-            return jsonify({"ok": True, "memory": get_chat_memory(code) if get_chat_memory else None})
+            skill_id = request.args.get("skill_id") or None
+            return jsonify({"ok": True, "memory": get_chat_memory(code, skill_id) if get_chat_memory else None})
         if request.method == "DELETE":
             if clear_chat_memory:
-                clear_chat_memory(code)
+                clear_chat_memory(code, request.args.get("skill_id") or None)
             return jsonify({"ok": True})
         if not refresh_chat_memory:
             return jsonify({"error": "memory is unavailable"}), 503
-        result = refresh_chat_memory(code)
+        data = request.get_json(silent=True) or {}
+        result = refresh_chat_memory(
+            code,
+            data.get("skill_id") if isinstance(data, dict) else None,
+            data.get("model_id") if isinstance(data, dict) else None,
+        )
         status = result.pop("_http_status", 200)
         return jsonify(result), status
 

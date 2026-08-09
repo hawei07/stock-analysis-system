@@ -17,6 +17,15 @@ python evals/run_munger_eval.py --model deepseek-v4-pro --prompt-version v3 --ou
 python evals/run_munger_eval.py --model deepseek-chat --prompt-version v3 --output evals/results/v3-chat.json
 ```
 
+也可以在一次运行中比较多个模型，并切换到任意已注册 Skill：
+
+```powershell
+python evals/run_munger_eval.py --skill valuation --models deepseek-chat,deepseek-reasoner --prompt-version v4 --output evals/results/valuation-models.json
+python evals/run_munger_eval.py --skill financial_report --models deepseek-chat,deepseek-v4-pro --output evals/results/financial-report-models.json
+```
+
+支持的 Skill 包括 `munger`、`stock_analyst`、`valuation`、`financial_report`、`industry_research`、`portfolio`、`risk_review` 和 `auto`。模型列表来自后端白名单；如果在 `system_config.deepseek_models` 中配置 JSON，评测脚本和网页下拉框会共同使用这份配置。
+
 比较不同 Prompt：
 
 ```powershell
