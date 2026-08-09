@@ -1,15 +1,22 @@
 """Sticky notes and Munger chat routes."""
 
+import json
 from datetime import datetime
 
-from flask import jsonify, request, send_from_directory
+from flask import Response, jsonify, request, send_from_directory, stream_with_context
 
 
 def register_notes_chat_routes(app, deps):
     get_chat_history = deps["get_chat_history"]
     chat_send = deps["chat_send"]
+    chat_stream = deps.get("chat_stream")
+    chat_regenerate = deps.get("chat_regenerate")
     clear_chat_history = deps["clear_chat_history"]
     delete_chat_msg = deps["delete_chat_msg"]
+    delete_chat_turn = deps.get("delete_chat_turn")
+    get_chat_memory = deps.get("get_chat_memory")
+    clear_chat_memory = deps.get("clear_chat_memory")
+    refresh_chat_memory = deps.get("refresh_chat_memory")
     load_notes = deps["load_notes"]
     save_notes = deps["save_notes"]
     extract_images = deps["extract_images"]
@@ -26,6 +33,10 @@ def register_notes_chat_routes(app, deps):
             if msg_id:
                 ok = delete_chat_msg(code, msg_id)
                 return jsonify({"ok": ok})
+            turn_id = request.args.get("turn_id", "")
+            if turn_id:
+                deleted = delete_chat_turn(code, turn_id) if delete_chat_turn else 0
+                return jsonify({"ok": bool(deleted), "deleted": deleted})
             n = clear_chat_history(code)
             return jsonify({"ok": True, "deleted": n})
 
@@ -39,6 +50,62 @@ def register_notes_chat_routes(app, deps):
         if not message:
             return jsonify({"error": "empty message"}), 400
         result = chat_send(code, message)
+        status = result.pop("_http_status", 200)
+        return jsonify(result), status
+
+    @app.route("/api/stock/<code>/munger-chat/stream", methods=["POST"])
+    def api_munger_chat_stream(code):
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"error": "request body must be an object"}), 400
+        raw_message = data.get("message", "")
+        if not isinstance(raw_message, str):
+            return jsonify({"error": "message must be text"}), 400
+        message = raw_message.strip()
+        turn_id = data.get("turn_id") or None
+        is_regenerate = bool(data.get("regenerate"))
+        if not chat_stream:
+            return jsonify({"error": "streaming chat is unavailable"}), 503
+
+        def events():
+            for item in chat_stream(
+                code,
+                message,
+                turn_id=turn_id,
+                persist_user=not is_regenerate,
+                replace_existing=is_regenerate,
+            ):
+                event = item.get("event", "message")
+                payload = item.get("data") or {}
+                yield f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+
+        response = Response(stream_with_context(events()), mimetype="text/event-stream")
+        response.headers["Cache-Control"] = "no-cache, no-transform"
+        response.headers["X-Accel-Buffering"] = "no"
+        response.headers["Connection"] = "keep-alive"
+        return response
+
+    @app.route("/api/stock/<code>/munger-chat/regenerate", methods=["POST"])
+    def api_munger_chat_regenerate(code):
+        data = request.get_json(silent=True) or {}
+        turn_id = data.get("turn_id") if isinstance(data, dict) else None
+        if not chat_regenerate:
+            return jsonify({"error": "regeneration is unavailable"}), 503
+        result = chat_regenerate(code, turn_id or "")
+        status = result.pop("_http_status", 200)
+        return jsonify(result), status
+
+    @app.route("/api/stock/<code>/munger-chat/memory", methods=["GET", "POST", "DELETE"])
+    def api_munger_chat_memory(code):
+        if request.method == "GET":
+            return jsonify({"ok": True, "memory": get_chat_memory(code) if get_chat_memory else None})
+        if request.method == "DELETE":
+            if clear_chat_memory:
+                clear_chat_memory(code)
+            return jsonify({"ok": True})
+        if not refresh_chat_memory:
+            return jsonify({"error": "memory is unavailable"}), 503
+        result = refresh_chat_memory(code)
         status = result.pop("_http_status", 200)
         return jsonify(result), status
 

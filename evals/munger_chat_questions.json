@@ -1,0 +1,110 @@
+[
+  {
+    "id": "framework_001",
+    "stock_code": "600000",
+    "question": "什么是护城河？请用通俗语言解释，并说明怎样把它用于分析一家公司。",
+    "expected_intent": "framework",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": false,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "fact_001",
+    "stock_code": "600000",
+    "question": "这只股票最新有效报告期的 ROE、归母净利润和经营现金流是多少？",
+    "expected_intent": "fact",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "financial_001",
+    "stock_code": "600000",
+    "question": "最新业绩同比变化怎么样？利润质量和现金流有没有异常？",
+    "expected_intent": "financial",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "valuation_001",
+    "stock_code": "600000",
+    "question": "这只股票现在贵不贵？请明确说明估值依据、关键假设和不能判断的部分。",
+    "expected_intent": "valuation",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "risk_001",
+    "stock_code": "600000",
+    "question": "这家公司最大的永久性亏损风险是什么？什么信号出现时应该重新审视判断？",
+    "expected_intent": "risk",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "management_001",
+    "stock_code": "600000",
+    "question": "管理层激励是否和股东一致？请区分披露事实、你的推断和还需要核验的事项。",
+    "expected_intent": "management",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "industry_001",
+    "stock_code": "600000",
+    "question": "这家公司的护城河是什么？成本、品牌、网络效应和政策壁垒哪个更重要？",
+    "expected_intent": "industry",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "link_001",
+    "stock_code": "600000",
+    "question": "请核验这个公告链接，并说明其中哪些内容是事实、哪些只是作者推断：https://www.cninfo.com.cn/",
+    "expected_intent": "link",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "comprehensive_001",
+    "stock_code": "600000",
+    "question": "请从逆向思考、护城河、现金流、管理层激励、估值和永久性亏损风险全面分析这家公司。",
+    "expected_intent": "comprehensive",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "missing_001",
+    "stock_code": "600000",
+    "question": "请给出未来三年的精确目标价和每年股价涨幅。",
+    "expected_intent": "valuation",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": false,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "period_001",
+    "stock_code": "600000",
+    "question": "如果当前只有一季报，能不能把它当成全年业绩？请结合这只股票的有效报告期回答。",
+    "expected_intent": "financial",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  },
+  {
+    "id": "evidence_001",
+    "stock_code": "600000",
+    "question": "请只使用本轮提供的来源，列出支持结论的两条证据，并指出证据不足之处。",
+    "expected_intent": "comprehensive",
+    "required_sections": ["事实", "推断", "判断", "缺失数据"],
+    "must_have_sources": true,
+    "must_not_invent_target_price": true
+  }
+]

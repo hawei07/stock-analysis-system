@@ -41,6 +41,8 @@ CHAT_MAX_MESSAGE_CHARS = 4000
 CHAT_MAX_URLS = 3
 CHAT_MAX_URL_LENGTH = 2048
 WEB_CONTENT_CACHE_TTL_SECONDS = 6 * 60 * 60
+CHAT_PROMPT_VERSION = "chat-v3"
+CHAT_MEMORY_MAX_CHARS = 6000
 
 _web_content_cache: dict[str, tuple[float, str]] = {}
 _web_content_cache_lock = Lock()
@@ -1042,6 +1044,7 @@ def _build_chat_prompt(
     research_text: str,
     message: str,
     intent: str | None = None,
+    memory_text: str = "",
 ) -> str:
     info = fin.get("info") or {}
     latest_period = fin.get("latest_period") or {}
@@ -1104,6 +1107,13 @@ def _build_chat_prompt(
 
     if warnings:
         lines.extend(["", "## 数据质量提示", *[f"- {warning}" for warning in warnings]])
+    if memory_text:
+        lines.extend([
+            "",
+            "## 长期对话摘要",
+            "仅用于理解投资者关注点和已讨论内容，不是当前财务事实，不得替代本轮数据或来源。",
+            memory_text[:CHAT_MEMORY_MAX_CHARS],
+        ])
     if history_text:
         lines.extend(["", history_text])
     if research_text:
@@ -1124,7 +1134,7 @@ def get_chat_history(stock_code: str) -> list[dict]:
     """获取对话历史。"""
     try:
         rows = execute_query(
-            "SELECT id, role, content, meta_json FROM munger_chats "
+            "SELECT id, role, content, turn_id, meta_json FROM munger_chats "
             "WHERE stock_code=%s ORDER BY id DESC LIMIT 100",
             (stock_code,),
         )
@@ -1142,6 +1152,8 @@ def get_chat_history(stock_code: str) -> list[dict]:
     # 数据库按倒序取最近消息，前端仍按时间正序渲染。
     for row in reversed(rows):
         item = {"id": row["id"], "role": row["role"], "content": row["content"]}
+        if row.get("turn_id"):
+            item["turn_id"] = row["turn_id"]
         if has_meta and row.get("meta_json"):
             try:
                 meta = row["meta_json"]
@@ -1151,6 +1163,8 @@ def get_chat_history(stock_code: str) -> list[dict]:
                     meta = json.loads(meta)
                 if isinstance(meta, dict):
                     item["meta"] = meta
+                    if not item.get("turn_id") and meta.get("turn_id"):
+                        item["turn_id"] = meta["turn_id"]
             except (TypeError, ValueError, json.JSONDecodeError):
                 logger.warning("invalid munger chat metadata for message %s", row.get("id"))
         result.append(item)
@@ -1165,27 +1179,121 @@ def delete_chat_msg(stock_code: str, msg_id: int) -> bool:
     ) > 0
 
 
+def delete_chat_turn(stock_code: str, turn_id: str) -> int:
+    """Delete both messages belonging to one conversation turn."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", str(turn_id or "")):
+        return 0
+    return execute_update(
+        "DELETE FROM munger_chats WHERE stock_code=%s AND turn_id=%s",
+        (stock_code, turn_id),
+    )
+
+
 def clear_chat_history(stock_code: str) -> int:
     """清空对话。返回删除行数。"""
-    return execute_update("DELETE FROM munger_chats WHERE stock_code=%s", (stock_code,))
+    deleted = execute_update("DELETE FROM munger_chats WHERE stock_code=%s", (stock_code,))
+    try:
+        execute_update("DELETE FROM munger_chat_memory WHERE stock_code=%s", (stock_code,))
+    except Exception:
+        logger.debug("munger chat memory table unavailable while clearing %s", stock_code)
+    return deleted
 
 
-def _insert_chat_message(stock_code: str, role: str, content: str, meta: dict | None = None) -> None:
+def _insert_chat_message(
+    stock_code: str,
+    role: str,
+    content: str,
+    meta: dict | None = None,
+    turn_id: str | None = None,
+) -> int | None:
     """保存聊天消息，并兼容尚未执行元数据迁移的旧库。"""
+    encoded_meta = json.dumps(meta, ensure_ascii=False) if meta is not None else None
     if meta is not None:
         try:
             execute_update(
-                "INSERT INTO munger_chats (stock_code, role, content, meta_json) "
-                "VALUES (%s,%s,%s,%s)",
-                (stock_code, role, content, json.dumps(meta, ensure_ascii=False)),
+                "INSERT INTO munger_chats (stock_code, role, content, turn_id, meta_json) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (stock_code, role, content, turn_id, encoded_meta),
             )
-            return
+            return _find_chat_message_id(stock_code, role, turn_id)
         except Exception:
-            logger.warning("munger chat metadata column unavailable; falling back to legacy insert")
+            logger.warning("munger chat turn/meta columns unavailable; falling back to legacy insert")
+            try:
+                execute_update(
+                    "INSERT INTO munger_chats (stock_code, role, content, meta_json) "
+                    "VALUES (%s,%s,%s,%s)",
+                    (stock_code, role, content, encoded_meta),
+                )
+                return _find_chat_message_id(stock_code, role, None)
+            except Exception:
+                logger.warning("munger chat metadata column unavailable; falling back to legacy insert")
+    try:
+        execute_update(
+            "INSERT INTO munger_chats (stock_code, role, content, turn_id) VALUES (%s,%s,%s,%s)",
+            (stock_code, role, content, turn_id),
+        )
+    except Exception:
+        execute_update(
+            "INSERT INTO munger_chats (stock_code, role, content) VALUES (%s,%s,%s)",
+            (stock_code, role, content),
+        )
+        return _find_chat_message_id(stock_code, role, None)
+    return _find_chat_message_id(stock_code, role, turn_id)
+
+
+def _find_chat_message_id(stock_code: str, role: str, turn_id: str | None) -> int | None:
+    """Best-effort lookup for UI actions; old schemas simply return no ID."""
+    try:
+        if turn_id:
+            rows = execute_query(
+                "SELECT id FROM munger_chats WHERE stock_code=%s AND role=%s AND turn_id=%s "
+                "ORDER BY id DESC LIMIT 1",
+                (stock_code, role, turn_id),
+            )
+        else:
+            rows = execute_query(
+                "SELECT id FROM munger_chats WHERE stock_code=%s AND role=%s "
+                "ORDER BY id DESC LIMIT 1",
+                (stock_code, role),
+            )
+        return int(rows[0]["id"]) if rows else None
+    except Exception:
+        return None
+
+
+def get_chat_memory(stock_code: str) -> dict[str, Any] | None:
+    """Load the optional long-term summary without making it a factual source."""
+    try:
+        rows = execute_query(
+            "SELECT stock_code, summary, updated_at, model, source_turn_id "
+            "FROM munger_chat_memory WHERE stock_code=%s",
+            (stock_code,),
+        )
+    except Exception:
+        return None
+    return dict(rows[0]) if rows else None
+
+
+def clear_chat_memory(stock_code: str) -> int:
+    try:
+        return execute_update("DELETE FROM munger_chat_memory WHERE stock_code=%s", (stock_code,))
+    except Exception:
+        return 0
+
+
+def _save_chat_memory(stock_code: str, summary: str, model: str, source_turn_id: str | None) -> dict[str, Any]:
     execute_update(
-        "INSERT INTO munger_chats (stock_code, role, content) VALUES (%s,%s,%s)",
-        (stock_code, role, content),
+        "INSERT INTO munger_chat_memory (stock_code, summary, model, source_turn_id) "
+        "VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE summary=VALUES(summary), "
+        "model=VALUES(model), source_turn_id=VALUES(source_turn_id), updated_at=CURRENT_TIMESTAMP",
+        (stock_code, summary[:CHAT_MEMORY_MAX_CHARS], model, source_turn_id),
     )
+    return get_chat_memory(stock_code) or {
+        "stock_code": stock_code,
+        "summary": summary[:CHAT_MEMORY_MAX_CHARS],
+        "model": model,
+        "source_turn_id": source_turn_id,
+    }
 
 
 def _chat_error(message: str, status: int, *, detail: str | None = None) -> dict[str, Any]:
@@ -1208,6 +1316,8 @@ def _chat_meta(
     intent: str | None = None,
     turn_id: str | None = None,
     source_policy: str | None = None,
+    prepared_at: str | None = None,
+    source_collected_at: str | None = None,
 ) -> dict[str, Any]:
     info = fin.get("info") or {}
     latest_period = fin.get("latest_period") or {}
@@ -1228,6 +1338,10 @@ def _chat_meta(
             if yoy_base else None
         ),
         "search_used": bool(search_used),
+        "prepared_at": prepared_at or datetime.now().isoformat(timespec="seconds"),
+        "source_collected_at": source_collected_at or datetime.now().isoformat(timespec="seconds"),
+        "quote_time": (fin.get("market") or {}).get("quote_time"),
+        "financial_data_as_of": fin.get("period_note"),
         "source_count": len(sources),
         "sources": [
             {
@@ -1246,10 +1360,11 @@ def _chat_meta(
         "intent_label": CHAT_INTENT_LABELS.get(intent, "全面分析"),
         "turn_id": turn_id,
         "source_policy": source_policy,
+        "prompt_version": CHAT_PROMPT_VERSION,
     }
 
 
-def chat_send(stock_code: str, message: str) -> dict[str, Any]:
+def _chat_send_pre_round3(stock_code: str, message: str) -> dict[str, Any]:
     """发送一轮基于股票事实、统一期间口径和可追溯来源的对话。"""
     started = time.perf_counter()
     if not isinstance(message, str):
@@ -1375,3 +1490,389 @@ def chat_send(stock_code: str, message: str) -> dict[str, Any]:
         meta.get("elapsed_ms"),
     )
     return {"reply": reply, "role": "munger", "meta": meta}
+
+
+# ---------------------------------------------------------------------------
+# Third-round chat experience: shared request preparation, SSE, turn actions,
+# and optional long-term memory.  The older synchronous implementation above
+# is intentionally left in place as a compatibility reference; the definitions
+# below are the active entry points exported to the Flask routes.
+# ---------------------------------------------------------------------------
+
+
+class _ChatContextError(Exception):
+    def __init__(self, message: str, status: int = 500, detail: str | None = None):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+        self.detail = detail
+
+
+def _validate_chat_message(message: str) -> dict[str, Any] | None:
+    if not isinstance(message, str):
+        return _chat_error("问题必须是文本。", 400)
+    message = message.strip()
+    if not message:
+        return {"reply": "请先提出一个具体问题。", "role": "munger"}
+    urls = _extract_chat_urls(message)
+    if len(message) > CHAT_MAX_MESSAGE_CHARS:
+        return _chat_error(f"问题过长，请控制在 {CHAT_MAX_MESSAGE_CHARS} 字以内。", 400)
+    if len(urls) > CHAT_MAX_URLS:
+        return _chat_error(f"一次最多提供 {CHAT_MAX_URLS} 个链接。", 400)
+    if any(len(url) > CHAT_MAX_URL_LENGTH for url in urls):
+        return _chat_error(f"单个链接不能超过 {CHAT_MAX_URL_LENGTH} 个字符。", 400)
+    return None
+
+
+def _load_chat_history_text(stock_code: str) -> str:
+    try:
+        hist_rows = execute_query(
+            "SELECT role, content FROM munger_chats WHERE stock_code=%s "
+            "ORDER BY id DESC LIMIT 10",
+            (stock_code,),
+        )
+    except Exception:
+        hist_rows = []
+    hist_rows.reverse()
+    if not hist_rows:
+        return ""
+    return "## 对话历史（仅用于延续语境，不是事实来源）\n" + "\n".join(
+        f"{'投资者' if row['role'] == 'user' else '助手'}: {row['content'][:500]}"
+        for row in hist_rows
+    )
+
+
+def _load_chat_base(stock_code: str, message: str, turn_id: str | None = None) -> dict[str, Any]:
+    try:
+        key = get_deepseek_api_key()
+    except Exception as exc:
+        logger.exception("failed to read DeepSeek configuration")
+        raise _ChatContextError("读取 DeepSeek 配置失败，请检查系统设置。", 500, str(exc)) from exc
+    if not key:
+        raise _ChatContextError("请先在系统设置中配置 DeepSeek API Key。", 400)
+
+    urls = _extract_chat_urls(message)
+    intent_hint = _classify_chat_intent(message)
+    try:
+        fin = _gather_financials(stock_code, include_market=intent_hint != "framework")
+        route = _resolve_chat_route(message, stock_info=fin.get("info") or {}, urls=urls)
+        history_text = _load_chat_history_text(stock_code)
+        memory = get_chat_memory(stock_code) or {}
+    except Exception as exc:
+        logger.exception("failed to build Munger chat base context for %s", stock_code)
+        raise _ChatContextError(
+            "读取股票分析上下文失败，请检查数据库和财报数据后重试。", 500, str(exc)
+        ) from exc
+
+    return {
+        "key": key,
+        "stock_code": stock_code,
+        "message": message.strip(),
+        "turn_id": turn_id or _new_turn_id(),
+        "fin": fin,
+        "route": route,
+        "history_text": history_text,
+        "memory_text": (memory.get("summary") or "")[:CHAT_MEMORY_MAX_CHARS],
+        "model": get_deepseek_model(),
+    }
+
+
+def _complete_chat_context(base: dict[str, Any]) -> dict[str, Any]:
+    source_collected_at = datetime.now().isoformat(timespec="seconds")
+    research_text, sources, search_used, search_warnings = _collect_chat_sources(
+        base["fin"], base["message"], base["turn_id"]
+    )
+    base.update({
+        "research_text": research_text,
+        "sources": sources,
+        "search_used": search_used,
+        "search_warnings": search_warnings,
+        "source_collected_at": source_collected_at,
+    })
+    base["prompt"] = _build_chat_prompt(
+        base["fin"],
+        base["history_text"],
+        research_text,
+        base["message"],
+        base["route"]["intent"],
+        base["memory_text"],
+    )
+    base["meta"] = _chat_meta(
+        base["fin"],
+        sources,
+        search_used,
+        search_warnings,
+        base["model"],
+        base["route"]["intent"],
+        base["turn_id"],
+        base["route"]["source_policy"],
+        datetime.now().isoformat(timespec="seconds"),
+        source_collected_at,
+    )
+    return base
+
+
+def _chat_model_client(base: dict[str, Any]) -> OpenAI:
+    return OpenAI(
+        api_key=base["key"],
+        base_url="https://api.deepseek.com",
+        timeout=60,
+        max_retries=1,
+    )
+
+
+def _object_value(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _chat_model_reply(base: dict[str, Any]) -> str:
+    response = _chat_model_client(base).chat.completions.create(
+        model=base["model"],
+        messages=[
+            {"role": "system", "content": CHAT_SYSTEM},
+            {"role": "user", "content": base["prompt"]},
+        ],
+        temperature=0.3,
+        max_tokens=1600,
+    )
+    choices = _object_value(response, "choices", []) or []
+    message = _object_value(choices[0], "message", {}) if choices else {}
+    reply = _object_value(message, "content", "") or ""
+    reply = reply.strip()
+    if not reply:
+        raise RuntimeError("DeepSeek 返回了空内容")
+    return reply
+
+
+def _finalise_chat_reply(
+    base: dict[str, Any],
+    reply: str,
+    started: float,
+    *,
+    persist_user: bool = True,
+    replace_existing: bool = False,
+) -> dict[str, Any]:
+    reply = _normalise_chat_citations(reply, base["sources"])
+    citation_validation = _validate_chat_reply(reply, base["sources"], base["route"]["intent"])
+    meta = dict(base["meta"])
+    meta["citation_validation"] = citation_validation
+    meta["warnings"] = list(dict.fromkeys(
+        (meta.get("warnings") or []) + citation_validation["warnings"]
+    ))
+    meta["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
+    meta["turn_id"] = base["turn_id"]
+    if replace_existing:
+        execute_update(
+            "DELETE FROM munger_chats WHERE stock_code=%s AND turn_id=%s AND role=%s",
+            (base["stock_code"], base["turn_id"], "munger"),
+        )
+    try:
+        user_id = (
+            _insert_chat_message(base["stock_code"], "user", base["message"], turn_id=base["turn_id"])
+            if persist_user
+            else _find_chat_message_id(base["stock_code"], "user", base["turn_id"])
+        )
+        assistant_id = _insert_chat_message(
+            base["stock_code"], "munger", reply, meta, turn_id=base["turn_id"]
+        )
+    except Exception as exc:
+        logger.exception("failed to persist Munger chat for %s", base["stock_code"])
+        raise _ChatContextError(
+            "回答已生成，但保存对话失败，请稍后重试。", 500, str(exc)
+        ) from exc
+    return {
+        "reply": reply,
+        "role": "munger",
+        "meta": meta,
+        "turn_id": base["turn_id"],
+        "user_message_id": user_id,
+        "assistant_message_id": assistant_id,
+    }
+
+
+def chat_send(
+    stock_code: str,
+    message: str,
+    *,
+    turn_id: str | None = None,
+    persist_user: bool = True,
+    replace_existing: bool = False,
+) -> dict[str, Any]:
+    """Synchronous compatibility endpoint backed by the third-round pipeline."""
+    started = time.perf_counter()
+    message = message.strip() if isinstance(message, str) else message
+    validation = _validate_chat_message(message)
+    if validation:
+        return validation
+    try:
+        base = _complete_chat_context(_load_chat_base(stock_code, message, turn_id))
+        reply = _chat_model_reply(base)
+        return _finalise_chat_reply(
+            base,
+            reply,
+            started,
+            persist_user=persist_user,
+            replace_existing=replace_existing,
+        )
+    except _ChatContextError as exc:
+        return _chat_error(exc.message, exc.status, detail=exc.detail)
+    except Exception as exc:
+        logger.exception("Munger chat model call failed for %s", stock_code)
+        return _chat_error("芒格智能体暂时不可用，请稍后重试。", 502, detail=str(exc))
+
+
+def chat_stream(
+    stock_code: str,
+    message: str,
+    *,
+    turn_id: str | None = None,
+    persist_user: bool = True,
+    replace_existing: bool = False,
+):
+    """Yield structured events consumed by the Flask SSE route."""
+    started = time.perf_counter()
+    message = message.strip() if isinstance(message, str) else message
+    validation = _validate_chat_message(message)
+    if validation:
+        yield {"event": "error", "data": validation}
+        return
+    try:
+        yield {"event": "phase", "data": {"stage": "context", "label": "正在读取财务数据"}}
+        base = _load_chat_base(stock_code, message, turn_id)
+        yield {
+            "event": "phase",
+            "data": {
+                "stage": "context_ready",
+                "label": "财务数据已准备",
+                "financial_data_as_of": base["fin"].get("period_note"),
+                "quote_time": (base["fin"].get("market") or {}).get("quote_time"),
+            },
+        }
+        if base["route"]["topics"]:
+            yield {"event": "phase", "data": {"stage": "research", "label": "正在搜索正式披露和补充资料"}}
+        else:
+            yield {"event": "phase", "data": {"stage": "research", "label": "纯框架问题，跳过行情和联网搜索"}}
+        base = _complete_chat_context(base)
+        for source in base["sources"]:
+            yield {"event": "source", "data": {
+                "id": source.get("id"),
+                "title": source.get("title"),
+                "category": source.get("category"),
+                "source_tier": source.get("source_tier"),
+            }}
+        yield {"event": "phase", "data": {"stage": "model", "label": "正在生成回答"}}
+        response = _chat_model_client(base).chat.completions.create(
+            model=base["model"],
+            messages=[
+                {"role": "system", "content": CHAT_SYSTEM},
+                {"role": "user", "content": base["prompt"]},
+            ],
+            temperature=0.3,
+            max_tokens=1600,
+            stream=True,
+        )
+        parts = []
+        for chunk in response:
+            choices = _object_value(chunk, "choices", []) or []
+            delta = _object_value(choices[0], "delta", {}) if choices else {}
+            piece = _object_value(delta, "content", "") or ""
+            if piece:
+                parts.append(piece)
+                yield {"event": "delta", "data": {"text": piece}}
+        reply = "".join(parts).strip()
+        if not reply:
+            raise RuntimeError("DeepSeek 返回了空内容")
+        yield {"event": "phase", "data": {"stage": "saving", "label": "正在保存本轮对话"}}
+        result = _finalise_chat_reply(
+            base,
+            reply,
+            started,
+            persist_user=persist_user,
+            replace_existing=replace_existing,
+        )
+        yield {"event": "done", "data": result}
+    except _ChatContextError as exc:
+        yield {"event": "error", "data": _chat_error(exc.message, exc.status, detail=exc.detail)}
+    except Exception as exc:
+        logger.exception("Munger chat stream failed for %s", stock_code)
+        yield {"event": "error", "data": _chat_error("芒格智能体暂时不可用，请稍后重试。", 502, detail=str(exc))}
+
+
+def chat_regenerate(stock_code: str, turn_id: str) -> dict[str, Any]:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", str(turn_id or "")):
+        return _chat_error("无效的对话轮次。", 400)
+    try:
+        rows = execute_query(
+            "SELECT content FROM munger_chats WHERE stock_code=%s AND turn_id=%s AND role=%s "
+            "ORDER BY id ASC LIMIT 1",
+            (stock_code, turn_id, "user"),
+        )
+        if not rows:
+            return _chat_error("找不到要重新生成的问题。", 404)
+        result = chat_send(
+            stock_code,
+            rows[0]["content"],
+            turn_id=turn_id,
+            persist_user=False,
+            replace_existing=True,
+        )
+        if "meta" in result:
+            result["meta"]["regenerated"] = True
+        return result
+    except Exception as exc:
+        logger.exception("failed to regenerate Munger turn %s", turn_id)
+        return _chat_error("重新生成失败，请稍后重试。", 500, detail=str(exc))
+
+
+def refresh_chat_memory(stock_code: str) -> dict[str, Any]:
+    """Summarise the conversation on demand using a low-token model call."""
+    try:
+        rows = execute_query(
+            "SELECT role, content, turn_id FROM munger_chats WHERE stock_code=%s "
+            "ORDER BY id DESC LIMIT 40",
+            (stock_code,),
+        )
+        rows.reverse()
+        if not rows:
+            return _chat_error("还没有可摘要的对话。", 400)
+        key = get_deepseek_api_key()
+        if not key:
+            return _chat_error("请先在系统设置中配置 DeepSeek API Key。", 400)
+        model = get_deepseek_model()
+        transcript = "\n".join(
+            f"{'投资者' if row['role'] == 'user' else '助手'}: {row['content'][:700]}"
+            for row in rows
+        )
+        response = OpenAI(
+            api_key=key,
+            base_url="https://api.deepseek.com",
+            timeout=45,
+            max_retries=1,
+        ).chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你负责维护投资对话摘要。只总结投资者关注点、已形成的假设、未解决问题和持续跟踪指标。"
+                        "不要把助手推测写成事实，不要编造持仓或风险偏好。输出简洁中文 Markdown。"
+                    ),
+                },
+                {"role": "user", "content": f"请总结以下对话：\n\n{transcript}"},
+            ],
+            temperature=0.2,
+            max_tokens=700,
+        )
+        choices = _object_value(response, "choices", []) or []
+        summary = _object_value(_object_value(choices[0], "message", {}) if choices else {}, "content", "")
+        summary = (summary or "").strip()
+        if not summary:
+            return _chat_error("摘要模型返回了空内容。", 502)
+        source_turn_id = next((row.get("turn_id") for row in reversed(rows) if row.get("turn_id")), None)
+        memory = _save_chat_memory(stock_code, summary, model, source_turn_id)
+        return {"ok": True, "memory": memory}
+    except Exception as exc:
+        logger.exception("failed to refresh Munger memory for %s", stock_code)
+        return _chat_error("刷新对话摘要失败，请稍后重试。", 502, detail=str(exc))

@@ -1456,3 +1456,12 @@ git diff --check
 - DeepSeek 模型从 `system_config.deepseek_model` 读取，默认 `deepseek-v4-pro`；调用使用超时和有限重试，API Key 不写日志、不写聊天元数据。
 - API 失败返回 400/500/502 等真实 HTTP 状态和可读错误，不得把异常文本伪装成助手回复，也不得在失败时写入一条假的 `munger` 消息。
 - 前端 `static/js/notes_chat.js` 只渲染经过转义的 Markdown，来源链接只允许 `http://` 和 `https://`，来源和数据质量提示在回答下方折叠展示。
+
+### 15.13 第三轮对话体验
+
+- 对话芒格保留同步 `POST /api/stock/<code>/munger-chat`，新增 `POST /api/stock/<code>/munger-chat/stream`，通过 SSE 发送 `phase`、`source`、`delta`、`done` 和 `error` 事件；完整回答只在生成结束后持久化。
+- SSE 阶段会显示财务上下文、正式披露搜索、模型生成和保存状态；回答元数据记录 `financial_data_as_of`、`quote_time`、`source_collected_at`、模型和 Prompt 版本。
+- `munger_chats.turn_id` 关联一轮中的用户问题和助手回答。删除整轮使用 `?turn_id=`，重新生成使用 `/regenerate`，单条删除仍然必须带 `stock_code` 条件。
+- `munger_chat_memory` 按股票保存可手动刷新的对话摘要。摘要只用于理解投资者关注点和未解决问题，不能替代本轮财务事实或来源；清空对话时同步清除摘要。
+- 前端支持快捷问题、`textarea` 多行输入、Enter 发送/Shift+Enter 换行、复制、重试、重新生成和删除整轮，并继续使用请求序列保护避免股票切换后的异步污染。
+- `evals/munger_chat_questions.json` 和 `evals/run_munger_eval.py` 用固定问题集比较 Prompt/模型版本，记录意图准确率、四类信息区块、引用、正式来源、目标价编造、缺失数据表达和耗时。

@@ -29,7 +29,18 @@ from db import (
 )
 from config import DB_CONFIG
 from config_manager import get_all_config, set_config, get_deepseek_api_key
-from munger import get_chat_history, chat_send, clear_chat_history, delete_chat_msg
+from munger import (
+    get_chat_history,
+    chat_send,
+    chat_stream,
+    chat_regenerate,
+    clear_chat_history,
+    delete_chat_msg,
+    delete_chat_turn,
+    get_chat_memory,
+    clear_chat_memory,
+    refresh_chat_memory,
+)
 from migrations import run_migrations, migration_status
 from services.cloud_backup_service import (
     CLOUD_BACKUP_RETAIN_COUNT,
@@ -1175,8 +1186,14 @@ register_statement_routes(app, {
 register_notes_chat_routes(app, {
     "get_chat_history": get_chat_history,
     "chat_send": chat_send,
+    "chat_stream": chat_stream,
+    "chat_regenerate": chat_regenerate,
     "clear_chat_history": clear_chat_history,
     "delete_chat_msg": delete_chat_msg,
+    "delete_chat_turn": delete_chat_turn,
+    "get_chat_memory": get_chat_memory,
+    "clear_chat_memory": clear_chat_memory,
+    "refresh_chat_memory": refresh_chat_memory,
     "load_notes": _load_notes,
     "save_notes": _save_notes,
     "extract_images": _extract_images,

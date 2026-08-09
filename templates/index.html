@@ -479,14 +479,28 @@
       <div class="chat-panel">
         <div class="chat-header">
           <span style="font-weight:600;font-size:15px">🧠 对话芒格</span>
-          <button class="btn btn-sm" onclick="clearMungerChat()" style="font-size:11px;color:#999">🗑 清空全部</button>
+          <div class="chat-header-actions">
+            <button class="btn btn-sm" onclick="refreshChatMemory()" style="font-size:11px;color:#666">🧠 刷新摘要</button>
+            <button class="btn btn-sm" onclick="clearMungerChat()" style="font-size:11px;color:#999">🗑 清空全部</button>
+          </div>
         </div>
+        <div class="chat-quick-prompts" id="chatQuickPrompts">
+          <button type="button" onclick="useChatQuickQuestion(this)">先做一次逆向思考</button>
+          <button type="button" onclick="useChatQuickQuestion(this)">这家公司的护城河是什么？</button>
+          <button type="button" onclick="useChatQuickQuestion(this)">管理层激励是否和股东一致？</button>
+          <button type="button" onclick="useChatQuickQuestion(this)">最新业绩有什么异常？</button>
+          <button type="button" onclick="useChatQuickQuestion(this)">当前估值贵不贵？</button>
+          <button type="button" onclick="useChatQuickQuestion(this)">最大的永久性亏损风险是什么？</button>
+        </div>
+        <details class="chat-memory" id="chatMemoryPanel">
+          <summary>长期记忆 <span id="chatMemoryStatus">未生成</span></summary>
+          <div id="chatMemoryText">摘要只用于延续关注点，不会替代本轮财务数据和来源。</div>
+        </details>
         <div class="chat-messages" id="chatMessages">
           <div class="chat-empty" id="chatEmpty">向芒格提问，开始分析这只股票。</div>
         </div>
         <div class="chat-input-bar">
-          <input type="text" id="chatInput" maxlength="4000" placeholder="输入问题或粘贴链接，按 Enter 发送..."
-            onkeypress="if(event.key==='Enter')sendMungerChat()">
+          <textarea id="chatInput" maxlength="4000" rows="1" placeholder="输入问题或粘贴链接，Enter 发送，Shift + Enter 换行"></textarea>
           <button class="btn btn-primary" onclick="sendMungerChat()" id="chatSendBtn">发送</button>
         </div>
       </div>
