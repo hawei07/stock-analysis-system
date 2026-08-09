@@ -9,6 +9,8 @@ financial meaning of a number.
 from __future__ import annotations
 
 from datetime import datetime
+import time
+from threading import Lock
 from typing import Any
 
 from services.financial_metrics import (
@@ -29,6 +31,11 @@ from services.financial_periods import (
 from services.market_data import fetch_realtime_quotes
 from services.providers.tencent import quote_text
 from services.stock_identity import quote_symbol
+
+
+MARKET_CONTEXT_CACHE_TTL_SECONDS = 60
+_market_context_cache: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+_market_context_cache_lock = Lock()
 
 
 CUSTOM_FIELDS = (
@@ -190,6 +197,15 @@ def _parse_quote_fields(text: str) -> dict[str, Any]:
 def _load_market_context(stock: dict[str, Any]) -> dict[str, Any]:
     code = str(stock.get("code") or "")
     market = stock.get("market")
+    cache_key = (code, str(market or ""), str(stock.get("pe_ttm") or ""))
+    now = time.monotonic()
+    with _market_context_cache_lock:
+        cached = _market_context_cache.get(cache_key)
+        if cached and now - cached[0] < MARKET_CONTEXT_CACHE_TTL_SECONDS:
+            return dict(cached[1])
+        if cached:
+            _market_context_cache.pop(cache_key, None)
+
     result: dict[str, Any] = {
         "price": None,
         "day_change": None,
@@ -220,7 +236,12 @@ def _load_market_context(stock: dict[str, Any]) -> dict[str, Any]:
         if result.get(key) is not None:
             result[key] = round(float(result[key]), 4)
     result["quote_time"] = result.get("quote_time") or None
-    return result
+    with _market_context_cache_lock:
+        _market_context_cache[cache_key] = (time.monotonic(), dict(result))
+        if len(_market_context_cache) > 256:
+            oldest_key = min(_market_context_cache, key=lambda key: _market_context_cache[key][0])
+            _market_context_cache.pop(oldest_key, None)
+    return dict(result)
 
 
 def _load_graham_context(execute_query, stock_code: str, latest_annual: dict | None, latest_period: dict | None):
@@ -254,7 +275,12 @@ def _load_graham_context(execute_query, stock_code: str, latest_annual: dict | N
     }
 
 
-def build_financial_context(execute_query, stock_code: str) -> dict[str, Any]:
+def build_financial_context(
+    execute_query,
+    stock_code: str,
+    *,
+    include_market: bool = True,
+) -> dict[str, Any]:
     """Return a normalized, period-aware context for one stock."""
     stock_rows = execute_query(
         """SELECT code, name, market, industry, list_date, status, pe_ttm, dividend_yield
@@ -331,7 +357,10 @@ def build_financial_context(execute_query, stock_code: str) -> dict[str, Any]:
         span = int(latest_annual["fiscal_year"]) - int(first["fiscal_year"])
         cagr_value = financial_cagr(first.get("parent_profit"), latest_annual.get("parent_profit"), span)
 
-    market = _load_market_context(info)
+    market = _load_market_context(info) if include_market else {
+        "source": "纯框架问题，未加载实时行情",
+        "quote_time": None,
+    }
     graham = _load_graham_context(execute_query, stock_code, latest_annual, latest_period)
     market["graham"] = graham
 

@@ -1,4 +1,5 @@
 let chatLoaded = false;
+let mungerRequestSeq = 0;
 
 function chatEscape(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -111,11 +112,12 @@ function renderChatMeta(meta) {
 async function loadMungerChat() {
   const code = document.getElementById('detailCode').textContent.trim();
   if (!code) return;
+  const requestSeq = ++mungerRequestSeq;
   const container = document.getElementById('chatMessages');
 
   try {
     const msgs = await StockApi.getJson('/api/stock/' + code + '/munger-chat');
-    if (code !== document.getElementById('detailCode').textContent.trim()) return;
+    if (requestSeq !== mungerRequestSeq || code !== document.getElementById('detailCode').textContent.trim()) return;
     container.innerHTML = '';
     if (!msgs.length) {
       container.innerHTML = '<div class="chat-empty">向芒格提问，开始分析这只股票。</div>';
@@ -125,6 +127,7 @@ async function loadMungerChat() {
     chatLoaded = true;
     scrollChatBottom();
   } catch(e) {
+    if (requestSeq !== mungerRequestSeq || code !== document.getElementById('detailCode').textContent.trim()) return;
     container.innerHTML = `<div class="chat-empty chat-error">${chatEscape(e.message || '加载失败')}</div>`;
   }
 }
@@ -148,11 +151,16 @@ function appendMsg(role, content, msgId, meta) {
 }
 
 async function sendMungerChat() {
-  const code = document.getElementById('detailCode').textContent;
+  const code = document.getElementById('detailCode').textContent.trim();
   const input = document.getElementById('chatInput');
   const btn = document.getElementById('chatSendBtn');
   const msg = input.value.trim();
   if (!msg || !code) return;
+  const requestSeq = ++mungerRequestSeq;
+  const isCurrentRequest = () => (
+    requestSeq === mungerRequestSeq &&
+    code === document.getElementById('detailCode').textContent.trim()
+  );
 
   appendMsg('user', msg);
   input.value = '';
@@ -170,18 +178,20 @@ async function sendMungerChat() {
 
   try {
     const data = await StockApi.postJson('/api/stock/' + code + '/munger-chat', {message: msg});
-    const t = document.getElementById('chatTyping');
-    if (t) t.remove();
+    typing.remove();
+    if (!isCurrentRequest()) return;
     appendMsg('munger', data.reply || '智能体返回了空内容。', null, data.meta);
   } catch(e) {
-    const t = document.getElementById('chatTyping');
-    if (t) t.remove();
+    typing.remove();
+    if (!isCurrentRequest()) return;
     appendMsg('munger', `⚠️ ${e.message || '请求失败，请稍后重试。'}`, null, {error: true});
   } finally {
     input.disabled = false;
     btn.disabled = false;
-    input.focus();
-    scrollChatBottom();
+    if (isCurrentRequest()) {
+      input.focus();
+      scrollChatBottom();
+    }
   }
 }
 

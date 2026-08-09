@@ -16,6 +16,7 @@ import logging
 import re
 import time
 from datetime import datetime
+from threading import Lock
 from typing import Any
 import requests
 from openai import OpenAI
@@ -27,6 +28,20 @@ from services.munger_context import build_financial_context
 
 
 logger = logging.getLogger(__name__)
+
+
+# 对话请求的外部资料预算。网页源站不稳定时，必须让请求尽快降级到
+# 本地财务数据，而不是把多个供应商的超时全部串起来等待。
+CHAT_RESEARCH_TIMEOUT_SECONDS = 20.0
+CHAT_SEARCH_TIMEOUT_SECONDS = 5.0
+CHAT_PAGE_TIMEOUT_SECONDS = 8.0
+CHAT_MAX_MESSAGE_CHARS = 4000
+CHAT_MAX_URLS = 3
+CHAT_MAX_URL_LENGTH = 2048
+WEB_CONTENT_CACHE_TTL_SECONDS = 6 * 60 * 60
+
+_web_content_cache: dict[str, tuple[float, str]] = {}
+_web_content_cache_lock = Lock()
 
 # ── 完整芒格 System Prompt（基于 munger-perspective Skill） ──────────────────
 
@@ -112,13 +127,13 @@ def _search_dimensions(stock_name: str, stock_code: str, industry: str = "") -> 
     return results
 
 
-def _web_search(query: str, max_results: int = 5) -> str:
+def _web_search(query: str, max_results: int = 5, timeout: float = 12) -> str:
     """用 DuckDuckGo Lite 搜索，返回标题和摘要。"""
     try:
         url = "https://lite.duckduckgo.com/lite/"
         resp = requests.post(url, data={"q": query}, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }, timeout=12)
+        }, timeout=timeout)
         text = resp.text
 
         # 提取所有链接（适配新版 DuckDuckGo Lite HTML）
@@ -153,9 +168,9 @@ def _web_search(query: str, max_results: int = 5) -> str:
 
 # ── 财务数据深度打包 ─────────────────────────────────────────────────────────
 
-def _gather_financials(stock_code: str) -> dict[str, Any]:
+def _gather_financials(stock_code: str, *, include_market: bool = True) -> dict[str, Any]:
     """Load the same normalized, period-aware context used by chat."""
-    return build_financial_context(execute_query, stock_code)
+    return build_financial_context(execute_query, stock_code, include_market=include_market)
 
 
 # ── 评分逻辑 ─────────────────────────────────────────────────────────────────
@@ -388,47 +403,98 @@ CHAT_SYSTEM = """你是一个受查理·芒格公开投资思想启发的投资�
 如果有多空两种解释，同时给出 bull case 和 bear case。最后给出一个小而明确的行动规则，例如“等待某项数据确认”，而不是没有依据的价格指令。"""
 
 
-def _fetch_url_content(url: str) -> str:
-    """抓取 URL 内容，用 Jina Reader 提取纯净 Markdown。"""
+def _remaining_timeout(deadline: float | None, default: float) -> float:
+    """Return a per-request timeout bounded by the current research deadline."""
+    if deadline is None:
+        return default
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("chat research deadline exceeded")
+    return max(0.1, min(default, remaining))
+
+
+def _get_cached_web_content(url: str) -> str | None:
+    now = time.monotonic()
+    with _web_content_cache_lock:
+        item = _web_content_cache.get(url)
+        if not item:
+            return None
+        created_at, content = item
+        if now - created_at >= WEB_CONTENT_CACHE_TTL_SECONDS:
+            _web_content_cache.pop(url, None)
+            return None
+        return content
+
+
+def _set_cached_web_content(url: str, content: str) -> None:
+    with _web_content_cache_lock:
+        _web_content_cache[url] = (time.monotonic(), content)
+        # 这是进程内缓存，限制条目数避免长期运行时无限增长。
+        if len(_web_content_cache) > 256:
+            oldest_url = min(_web_content_cache, key=lambda key: _web_content_cache[key][0])
+            _web_content_cache.pop(oldest_url, None)
+
+
+def _fetch_url_content(url: str, deadline: float | None = None) -> str:
+    """抓取 URL 内容，并在聊天请求内复用短期缓存。"""
     if not re.match(r'^https?://[^\s]+', url):
         return "(无效链接)"
     forbidden = ('127.', 'localhost', '0.0.0.0', '10.', '172.16.', '192.168.')
     if any(url.lower().startswith(f'http://{p}') or f'://{p}' in url.lower() for p in forbidden):
         return "(不允许访问内网地址)"
+
+    cached = _get_cached_web_content(url)
+    if cached:
+        return cached
+
+    page_timeout = CHAT_PAGE_TIMEOUT_SECONDS if deadline is not None else 15
+    fallback_timeout = CHAT_PAGE_TIMEOUT_SECONDS if deadline is not None else 10
     try:
         resp = requests.get(f"https://r.jina.ai/{url}", headers={
             "Accept": "text/markdown",
             "User-Agent": "Mozilla/5.0 (compatible; stock-analysis/1.0)"
-        }, timeout=15)
+        }, timeout=_remaining_timeout(deadline, page_timeout))
         if resp.status_code == 200:
             text = resp.text.strip()
             if len(text) > 100:
-                return text[:6000]
+                content = text[:6000]
+                _set_cached_web_content(url, content)
+                return content
         # Jina Reader 失败 → 尝试 Google 缓存
         try:
             cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{url}"
             r3 = requests.get(cache_url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }, timeout=10)
+            }, timeout=_remaining_timeout(deadline, fallback_timeout))
             if r3.status_code == 200 and len(r3.text) > 500:
                 raw = re.sub(r'<script[^>]*>.*?</script>', '', r3.text, flags=re.DOTALL | re.IGNORECASE)
                 raw = re.sub(r'<style[^>]*>.*?</style>', '', raw, flags=re.DOTALL | re.IGNORECASE)
                 raw = re.sub(r'<[^>]+>', ' ', raw)
                 raw = re.sub(r'\s+', ' ', raw).strip()
                 if len(raw) > 200:
-                    return raw[:6000]
+                    content = raw[:6000]
+                    _set_cached_web_content(url, content)
+                    return content
+        except TimeoutError:
+            return "(抓取超时)"
         except Exception:
             pass
         # 全部失败 → 直接请求回退
         r2 = requests.get(url, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }, timeout=10)
+        }, timeout=_remaining_timeout(deadline, fallback_timeout))
         raw = r2.text
         raw = re.sub(r'<script[^>]*>.*?</script>', '', raw, flags=re.DOTALL | re.IGNORECASE)
         raw = re.sub(r'<style[^>]*>.*?</style>', '', raw, flags=re.DOTALL | re.IGNORECASE)
         raw = re.sub(r'<[^>]+>', ' ', raw)
         raw = re.sub(r'\s+', ' ', raw).strip()
-        return raw[:6000] if len(raw) > 100 else "(页面为空)"
+        if len(raw) <= 100:
+            return "(页面为空)"
+        content = raw[:6000]
+        _set_cached_web_content(url, content)
+        return content
+    except TimeoutError:
+        return "(抓取超时)"
     except Exception as e:
         return f"(抓取失败: {e})"
 
@@ -555,7 +621,8 @@ def _classify_chat_intent(message: str, stock_info: dict | None = None, urls: li
         text,
         (
             "这只", "该股", "股票", "公司", "当前", "最新", "近期", "公告", "业绩",
-            "买入", "卖出", "持有", "估值", "股价", "市值", "财报",
+            "买入", "卖出", "持有", "估值", "股价", "市值", "财报", "的护城河",
+            "的估值", "的风险", "的业绩", "的管理层", "的竞争",
         ),
     ) or any(identifier and identifier in text for identifier in identifiers)
 
@@ -716,15 +783,27 @@ def _chat_search_query(info: dict, topic: str) -> str:
     return queries.get(topic, f"{base} {topic} {year}")
 
 
+def _extract_chat_urls(message: str) -> list[str]:
+    urls = re.findall(r"https?://[^\s<>\"\u4e00-\u9fff]+", message or "")
+    return [url.rstrip(".,;，。；") for url in urls]
+
+
 def _collect_chat_sources(fin: dict, message: str) -> tuple[str, list[dict], bool, list[str]]:
     """Retrieve a small, labeled evidence set for fact-dependent questions."""
     info = fin.get("info") or {}
-    urls = re.findall(r"https?://[^\s<>\"\u4e00-\u9fff]+", message or "")
-    urls = [url.rstrip(".,;，。；") for url in urls[:2]]
+    urls = _extract_chat_urls(message)[:CHAT_MAX_URLS]
     topics = _search_topics_for_message(message, urls, info)
     sources = []
     warnings = []
     seen = set()
+    deadline = time.monotonic() + CHAT_RESEARCH_TIMEOUT_SECONDS
+
+    def within_budget() -> bool:
+        if time.monotonic() < deadline:
+            return True
+        if "外部资料搜索达到时间上限，以下回答可能只使用本地数据" not in warnings:
+            warnings.append("外部资料搜索达到时间上限，以下回答可能只使用本地数据")
+        return False
 
     def add_source(category, title, url, content=""):
         if not url or url in seen:
@@ -739,13 +818,29 @@ def _collect_chat_sources(fin: dict, message: str) -> tuple[str, list[dict], boo
         })
 
     for url in urls:
-        content = _fetch_url_content(url)
+        if not within_budget():
+            break
+        content = _fetch_url_content(url, deadline=deadline)
+        if content.startswith("(抓取超时"):
+            warnings.append("用户提供链接抓取超时")
+            content = ""
         add_source("用户提供链接", "用户提供的链接", url, content)
 
     for topic in topics:
         if topic == "用户提供链接":
             continue
-        raw = _web_search(_chat_search_query(info, topic), max_results=4)
+        if not within_budget():
+            break
+        try:
+            search_timeout = _remaining_timeout(deadline, CHAT_SEARCH_TIMEOUT_SECONDS)
+        except TimeoutError:
+            within_budget()
+            break
+        raw = _web_search(
+            _chat_search_query(info, topic),
+            max_results=4,
+            timeout=search_timeout,
+        )
         if raw.startswith("(搜索失败"):
             warnings.append(f"{topic}搜索失败")
             continue
@@ -753,8 +848,13 @@ def _collect_chat_sources(fin: dict, message: str) -> tuple[str, list[dict], boo
         if not candidates:
             warnings.append(f"{topic}没有可用搜索结果")
         for candidate in candidates[:2]:
-            content = _fetch_url_content(candidate["url"])
-            if content.startswith("(抓取失败") or content.startswith("(页面为空"):
+            if not within_budget():
+                break
+            content = _fetch_url_content(candidate["url"], deadline=deadline)
+            if content.startswith("(抓取超时"):
+                warnings.append(f"{topic}网页抓取超时")
+                content = ""
+            elif content.startswith("(抓取失败") or content.startswith("(页面为空"):
                 content = ""
             add_source(topic, candidate["title"], candidate["url"], content)
 
@@ -886,7 +986,7 @@ def get_chat_history(stock_code: str) -> list[dict]:
     try:
         rows = execute_query(
             "SELECT id, role, content, meta_json FROM munger_chats "
-            "WHERE stock_code=%s ORDER BY id ASC LIMIT 100",
+            "WHERE stock_code=%s ORDER BY id DESC LIMIT 100",
             (stock_code,),
         )
         has_meta = True
@@ -894,13 +994,14 @@ def get_chat_history(stock_code: str) -> list[dict]:
         # 老数据库还没有 009 迁移时，历史聊天仍然必须可读。
         rows = execute_query(
             "SELECT id, role, content FROM munger_chats "
-            "WHERE stock_code=%s ORDER BY id ASC LIMIT 100",
+            "WHERE stock_code=%s ORDER BY id DESC LIMIT 100",
             (stock_code,),
         )
         has_meta = False
 
     result = []
-    for row in rows:
+    # 数据库按倒序取最近消息，前端仍按时间正序渲染。
+    for row in reversed(rows):
         item = {"id": row["id"], "role": row["role"], "content": row["content"]}
         if has_meta and row.get("meta_json"):
             try:
@@ -917,9 +1018,12 @@ def get_chat_history(stock_code: str) -> list[dict]:
     return result
 
 
-def delete_chat_msg(msg_id: int) -> bool:
-    """删除单条消息。返回是否删除成功。"""
-    return execute_update("DELETE FROM munger_chats WHERE id=%s", (msg_id,)) > 0
+def delete_chat_msg(stock_code: str, msg_id: int) -> bool:
+    """删除指定股票下的单条消息，避免跨股票误删。"""
+    return execute_update(
+        "DELETE FROM munger_chats WHERE id=%s AND stock_code=%s",
+        (msg_id, stock_code),
+    ) > 0
 
 
 def clear_chat_history(stock_code: str) -> int:
@@ -1004,9 +1108,28 @@ def _chat_meta(
 def chat_send(stock_code: str, message: str) -> dict[str, Any]:
     """发送一轮基于股票事实、统一期间口径和可追溯来源的对话。"""
     started = time.perf_counter()
+    if not isinstance(message, str):
+        return _chat_error("问题必须是文本。", 400)
     message = (message or "").strip()
     if not message:
         return {"reply": "请先提出一个具体问题。", "role": "munger"}
+    urls = _extract_chat_urls(message)
+    if len(message) > CHAT_MAX_MESSAGE_CHARS:
+        return _chat_error(
+            f"问题过长，请控制在 {CHAT_MAX_MESSAGE_CHARS} 字以内。",
+            400,
+        )
+    if len(urls) > CHAT_MAX_URLS:
+        return _chat_error(
+            f"一次最多提供 {CHAT_MAX_URLS} 个链接。",
+            400,
+        )
+    if any(len(url) > CHAT_MAX_URL_LENGTH for url in urls):
+        return _chat_error(
+            f"单个链接不能超过 {CHAT_MAX_URL_LENGTH} 个字符。",
+            400,
+        )
+    intent_hint = _classify_chat_intent(message)
 
     try:
         key = get_deepseek_api_key()
@@ -1017,7 +1140,10 @@ def chat_send(stock_code: str, message: str) -> dict[str, Any]:
         return _chat_error("请先在系统设置中配置 DeepSeek API Key。", 400)
 
     try:
-        fin = _gather_financials(stock_code)
+        fin = _gather_financials(
+            stock_code,
+            include_market=intent_hint != "framework",
+        )
         hist_rows = execute_query(
             "SELECT role, content FROM munger_chats WHERE stock_code=%s "
             "ORDER BY id DESC LIMIT 10",

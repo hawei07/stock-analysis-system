@@ -485,7 +485,7 @@
           <div class="chat-empty" id="chatEmpty">向芒格提问，开始分析这只股票。</div>
         </div>
         <div class="chat-input-bar">
-          <input type="text" id="chatInput" placeholder="输入问题或粘贴链接，按 Enter 发送..."
+          <input type="text" id="chatInput" maxlength="4000" placeholder="输入问题或粘贴链接，按 Enter 发送..."
             onkeypress="if(event.key==='Enter')sendMungerChat()">
           <button class="btn btn-primary" onclick="sendMungerChat()" id="chatSendBtn">发送</button>
         </div>

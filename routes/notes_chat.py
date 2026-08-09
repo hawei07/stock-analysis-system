@@ -24,13 +24,18 @@ def register_notes_chat_routes(app, deps):
         if request.method == "DELETE":
             msg_id = request.args.get("msg_id", type=int)
             if msg_id:
-                ok = delete_chat_msg(msg_id)
+                ok = delete_chat_msg(code, msg_id)
                 return jsonify({"ok": ok})
             n = clear_chat_history(code)
             return jsonify({"ok": True, "deleted": n})
 
         data = request.get_json(silent=True) or {}
-        message = data.get("message", "").strip()
+        if not isinstance(data, dict):
+            return jsonify({"error": "request body must be an object"}), 400
+        raw_message = data.get("message", "")
+        if not isinstance(raw_message, str):
+            return jsonify({"error": "message must be text"}), 400
+        message = raw_message.strip()
         if not message:
             return jsonify({"error": "empty message"}), 400
         result = chat_send(code, message)

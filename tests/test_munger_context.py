@@ -68,6 +68,62 @@ class MungerContextTests(unittest.TestCase):
         topics = munger._search_topics_for_message("如何理解这只股票的护城河？", [])
         self.assertIn("行业与竞争", topics)
 
+    def test_chat_history_returns_latest_100_in_display_order(self):
+        rows = [
+            {"id": 12, "role": "munger", "content": "新回答", "meta_json": None},
+            {"id": 11, "role": "user", "content": "新问题", "meta_json": None},
+        ]
+        with patch.object(munger, "execute_query", return_value=rows) as query:
+            history = munger.get_chat_history("600000")
+
+        self.assertEqual([item["id"] for item in history], [11, 12])
+        self.assertIn("ORDER BY id DESC LIMIT 100", query.call_args.args[0])
+
+    def test_delete_chat_message_is_scoped_to_stock(self):
+        with patch.object(munger, "execute_update", return_value=1) as update:
+            self.assertTrue(munger.delete_chat_msg("600000", 12))
+
+        sql, params = update.call_args.args
+        self.assertIn("stock_code=%s", sql)
+        self.assertEqual(params, (12, "600000"))
+
+    def test_chat_rejects_oversized_message_and_too_many_urls(self):
+        too_long = munger.chat_send("600000", "x" * (munger.CHAT_MAX_MESSAGE_CHARS + 1))
+        self.assertEqual(too_long["_http_status"], 400)
+
+        urls = " ".join(
+            f"https://example.com/report-{index}"
+            for index in range(munger.CHAT_MAX_URLS + 1)
+        )
+        too_many_urls = munger.chat_send("600000", urls)
+        self.assertEqual(too_many_urls["_http_status"], 400)
+
+    def test_framework_context_can_skip_market_loading(self):
+        with patch.object(munger, "build_financial_context", return_value={}) as build:
+            munger._gather_financials("600000", include_market=False)
+
+        build.assert_called_once_with(
+            munger.execute_query,
+            "600000",
+            include_market=False,
+        )
+
+    def test_web_page_content_is_cached(self):
+        url = "https://example.com/report"
+        fake_response = type("Response", (), {"status_code": 200, "text": "x" * 250})()
+        with munger._web_content_cache_lock:
+            munger._web_content_cache.clear()
+        try:
+            with patch.object(munger.requests, "get", return_value=fake_response) as get:
+                first = munger._fetch_url_content(url)
+                second = munger._fetch_url_content(url)
+
+            self.assertEqual(first, second)
+            self.assertEqual(get.call_count, 1)
+        finally:
+            with munger._web_content_cache_lock:
+                munger._web_content_cache.clear()
+
     def test_prompt_contains_dynamic_output_guidance(self):
         current_year = datetime.now().year
         fin = {
