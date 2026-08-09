@@ -68,6 +68,79 @@ class MungerContextTests(unittest.TestCase):
         topics = munger._search_topics_for_message("如何理解这只股票的护城河？", [])
         self.assertIn("行业与竞争", topics)
 
+    def test_intent_route_selects_topics_without_keyword_topic_matching(self):
+        self.assertEqual(
+            munger._search_topics_for_message("这家公司管理层激励靠谱吗？", []),
+            ["管理层与激励", "最新财务与公告"],
+        )
+        self.assertEqual(
+            munger._search_topics_for_message("这只股票现在贵不贵？", []),
+            ["估值与市场", "最新财务与公告"],
+        )
+        self.assertIn(
+            "site:cninfo.com.cn",
+            munger._chat_search_query(
+                {"name": "测试股票", "code": "600000"},
+                "最新财务与公告",
+                "disclosure_first",
+            ),
+        )
+
+    def test_source_domain_matching_is_strict(self):
+        self.assertEqual(
+            munger._source_reliability("https://www.cninfo.com.cn/a"),
+            "披露/交易所来源",
+        )
+        self.assertEqual(
+            munger._source_reliability("https://sub.cninfo.com.cn/a"),
+            "披露/交易所来源",
+        )
+        self.assertEqual(
+            munger._source_reliability("https://cninfo.com.cn.fake.example/a"),
+            "公开网页，未核验",
+        )
+        self.assertEqual(
+            munger._source_reliability("https://eastmoney.com/a"),
+            "财经媒体/数据源",
+        )
+        self.assertEqual(
+            munger._source_reliability("https://www.csrc.gov.cn/a"),
+            "监管/官方来源",
+        )
+        self.assertFalse(munger._is_valid_source_url("https://user:pass@cninfo.com.cn/a"))
+
+    def test_sources_are_official_first_and_unique_per_turn(self):
+        raw = (
+            "- 财经媒体报道\n  https://eastmoney.com/a\n"
+            "- 正式公告\n  https://www.cninfo.com.cn/b\n"
+        )
+        fin = {"info": {"name": "测试股票", "code": "600000", "industry": "测试行业"}}
+        with patch.object(munger, "_web_search", return_value=raw), \
+                patch.object(munger, "_fetch_url_content", return_value="正文内容"), \
+                patch.object(munger, "time") as clock:
+            clock.monotonic.side_effect = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+            research, sources, search_used, warnings = munger._collect_chat_sources(
+                fin,
+                "这只股票最新业绩怎么样？",
+                "Ttest123456",
+            )
+
+        self.assertTrue(search_used)
+        self.assertFalse(warnings)
+        self.assertEqual([source["id"] for source in sources], ["Ttest123456-S1", "Ttest123456-S2"])
+        self.assertEqual(sources[0]["reliability"], "披露/交易所来源")
+        self.assertIn("[Ttest123456-S1]", research)
+
+    def test_citation_validation_upgrades_legacy_id_and_checks_blocks(self):
+        sources = [{"id": "Ttest123456-S1"}]
+        reply = "### 事实\n公告显示数据。引用 [S1]\n### 推断\n无\n### 判断\n谨慎。\n### 缺失数据\n无"
+        normalized = munger._normalise_chat_citations(reply, sources)
+        validation = munger._validate_chat_reply(normalized, sources, "financial")
+
+        self.assertIn("[Ttest123456-S1]", normalized)
+        self.assertEqual(validation["status"], "ok")
+        self.assertEqual(validation["invalid_ids"], [])
+
     def test_chat_history_returns_latest_100_in_display_order(self):
         rows = [
             {"id": 12, "role": "munger", "content": "新回答", "meta_json": None},
@@ -146,6 +219,10 @@ class MungerContextTests(unittest.TestCase):
         self.assertIn("本轮回答模式", prompt)
         self.assertIn("估值判断（valuation）", prompt)
         self.assertIn("### 估值结论", prompt)
+        self.assertIn("### 事实", prompt)
+        self.assertIn("### 推断", prompt)
+        self.assertIn("### 判断", prompt)
+        self.assertIn("### 缺失数据", prompt)
         self.assertNotIn("### 护城河与激励", prompt)
 
     def test_context_uses_current_quarter_and_same_period_last_year(self):

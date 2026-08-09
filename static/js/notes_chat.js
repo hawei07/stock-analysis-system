@@ -23,7 +23,7 @@ function renderChatMarkdown(content) {
     return chatEscape(text)
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\[S(\d+)\]/g, '<span class="chat-citation">[S$1]</span>');
+      .replace(/\[([A-Za-z0-9_-]*-S\d+|S\d+)\]/gi, '<span class="chat-citation">[$1]</span>');
   }
 
   lines.forEach(rawLine => {
@@ -94,8 +94,12 @@ function renderChatMeta(meta) {
   const period = meta.latest_period ? `最新 ${chatEscape(meta.latest_period)}` : '';
   const yoy = meta.yoy_base ? `同比基准 ${chatEscape(meta.yoy_base)}` : '';
   const sourceCount = Number(meta.source_count) || 0;
+  const citationStatus = meta.citation_validation?.status === 'ok'
+    ? '引用已校验'
+    : meta.citation_validation?.status === 'warning' ? '引用需复核' : '';
   const summary = [identity && chatEscape(identity), intent, period, yoy,
-    meta.search_used ? `已参考 ${sourceCount} 个来源` : '未联网搜索'].filter(Boolean).join(' · ');
+    meta.search_used ? `已参考 ${sourceCount} 个来源` : '未联网搜索', citationStatus]
+    .filter(Boolean).join(' · ');
   const warnings = (Array.isArray(meta.warnings) ? meta.warnings : [])
     .map(item => `<li>${chatEscape(item)}</li>`).join('');
   const sources = (Array.isArray(meta.sources) ? meta.sources : []).map(source => {

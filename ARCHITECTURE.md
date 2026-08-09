@@ -694,8 +694,9 @@ stock_code + fiscal_year + report_period + dimension_type + segment_name
 | `latest_annual` | 最新完整年报，和最新季度数据分开 |
 | `yoy_base` | 同周期同比基准报告期 |
 | `search_used` / `source_count` | 是否联网搜索、引用来源数量 |
-| `sources` | 来源编号、标题、URL、来源等级 |
-| `warnings` | 财务数据质量提示 |
+| `turn_id` / `sources` | 本轮唯一 ID；来源编号、标题、URL、来源等级和严格域名分类 |
+| `intent` / `source_policy` | 本轮问题意图和来源路由策略 |
+| `warnings` / `citation_validation` | 财务数据质量、引用编号和四类信息区块校验结果 |
 | `model` / `elapsed_ms` | 使用的模型和本次耗时 |
 
 对应迁移：
@@ -1448,8 +1449,10 @@ git diff --check
 - `services/munger_context.py` 是对话芒格的财务上下文入口，必须复用 `financial_periods.py` 和 `financial_metrics.py`，不能在提示词或路由里重新实现报告期和核心利润公式。
 - 最新有效报告期和最新完整年报必须分开：当前年度只有 Q1/Q2/Q3 时，当前年度疑似误标的 FY 行会被忽略；同比基准使用去年同报告期。
 - 对话上下文至少包含股票名称、代码、行业、最新有效报告期、最新完整年报、同比基准、近十年有效年报、核心利润/核心利润率、资产负债表、现金流、行情和用户估值配置；缺失项明确标为缺失。
-- 纯框架问题（例如“什么是护城河”）不联网搜索；涉及当前股票的最新业绩、行业、公告、风险、估值或用户提供链接时，才按主题搜索有限数量来源。
-- 外部网页正文必须放在 `<untrusted_source>` 标记中，仅作为未验证材料；提示词引用来源使用 `[S1]`、`[S2]` 编号，来源等级和链接写入 `munger_chats.meta_json`。
+- 纯框架问题（例如“什么是护城河”）不联网搜索；其他问题先经过意图路由，再按意图选择搜索主题和来源策略。
+- 搜索来源按交易所/披露、监管/官方、财经媒体、普通网页分级；域名必须严格匹配主域名或其子域名，正式披露优先，财经媒体作为补充。
+- 外部网页正文必须放在 `<untrusted_source>` 标记中，仅作为材料；每轮来源使用唯一 ID（例如 `[Tabc1234567-S1]`），来源等级和链接写入 `munger_chats.meta_json`。
+- 模型回答必须区分“事实、推断、判断、缺失数据”；返回前校验引用是否来自本轮来源，并把缺失区块、无效引用和无引用回答写入 `citation_validation`/`warnings`。
 - DeepSeek 模型从 `system_config.deepseek_model` 读取，默认 `deepseek-v4-pro`；调用使用超时和有限重试，API Key 不写日志、不写聊天元数据。
 - API 失败返回 400/500/502 等真实 HTTP 状态和可读错误，不得把异常文本伪装成助手回复，也不得在失败时写入一条假的 `munger` 消息。
 - 前端 `static/js/notes_chat.js` 只渲染经过转义的 Markdown，来源链接只允许 `http://` 和 `https://`，来源和数据质量提示在回答下方折叠展示。
