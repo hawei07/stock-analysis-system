@@ -1787,6 +1787,7 @@ def _load_chat_base(
         "fin": fin,
         "route": route,
         "requested_skill_id": requested_skill_id,
+        "requested_model_id": requested_model_id or selected_model_id,
         "skill_id": selected_skill_id,
         "helper_skill_id": helper_skill_id,
         "skill_spec": spec,
@@ -1844,6 +1845,7 @@ def _complete_chat_context(base: dict[str, Any]) -> dict[str, Any]:
         base["forecast_scenario"],
         base["helper_skill_id"],
     )
+    base["meta"]["requested_model_id"] = base.get("requested_model_id") or base["model"]
     return base
 
 
@@ -1906,6 +1908,75 @@ def _chat_model_options(base: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _chat_model_messages(base: dict[str, Any]) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": _chat_system_message(base)},
+        {"role": "user", "content": base["prompt"]},
+    ]
+
+
+def _chat_model_attempt_specs(base: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the selected model followed by enabled same-provider fallbacks."""
+    selected_id = canonical_model_id(base.get("model"))
+    selected_spec = dict(base.get("model_spec") or {})
+    if selected_id:
+        selected_spec["id"] = selected_id
+
+    attempts: list[dict[str, Any]] = []
+    if selected_spec.get("id"):
+        attempts.append(selected_spec)
+    try:
+        configured_specs = get_model_specs()
+    except Exception:
+        configured_specs = []
+    for raw_spec in configured_specs:
+        if not isinstance(raw_spec, dict) or not raw_spec.get("enabled", True):
+            continue
+        spec = dict(raw_spec)
+        model_id = canonical_model_id(spec.get("id"))
+        if not model_id or model_id == selected_id:
+            continue
+        spec["id"] = model_id
+        attempts.append(spec)
+    return attempts
+
+
+def _chat_apply_model_spec(
+    base: dict[str, Any],
+    model_spec: dict[str, Any],
+    *,
+    failed_model: str | None = None,
+    failure: str | None = None,
+) -> None:
+    """Switch the active model and make the fallback visible in persisted meta."""
+    model_id = canonical_model_id(model_spec.get("id"))
+    if not model_id:
+        return
+    previous_model = base.get("model")
+    base["model"] = model_id
+    base["model_spec"] = model_spec
+    if previous_model == model_id:
+        return
+
+    base.setdefault("model_fallbacks", []).append({
+        "from": failed_model or previous_model,
+        "to": model_id,
+        "reason": (failure or "model response unavailable")[:240],
+    })
+    meta = base.get("meta")
+    if not isinstance(meta, dict):
+        return
+    meta["model"] = model_id
+    meta["model_id"] = model_id
+    meta["model_label"] = model_spec.get("label") or model_id
+    meta["requested_model_id"] = base.get("requested_model_id") or previous_model
+    warning = (
+        f"首选模型 {failed_model or previous_model} 未能返回完整回答，"
+        f"已切换到 {model_spec.get('label') or model_id}。"
+    )
+    meta["warnings"] = list(dict.fromkeys((meta.get("warnings") or []) + [warning]))
+
+
 def _chat_empty_reply_retry_options(base: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
     """Give reasoning-heavy models more room when streaming produced no answer."""
     retry_options = dict(options)
@@ -1919,21 +1990,36 @@ def _chat_empty_reply_retry_options(base: dict[str, Any], options: dict[str, Any
 
 
 def _chat_model_reply(base: dict[str, Any]) -> str:
-    options = _chat_model_options(base)
-    response = _chat_model_client(base).chat.completions.create(
-        model=base["model"],
-        messages=[
-            {"role": "system", "content": _chat_system_message(base)},
-            {"role": "user", "content": base["prompt"]},
-        ],
-        **options,
-    )
-    choices = _object_value(response, "choices", []) or []
-    message = _object_value(choices[0], "message", {}) if choices else {}
-    reply = _model_content(_object_value(message, "content", "")).strip()
-    if not reply:
-        raise RuntimeError("DeepSeek 返回了空内容")
-    return reply
+    client = _chat_model_client(base)
+    failures: list[str] = []
+    attempts = _chat_model_attempt_specs(base)
+    for index, model_spec in enumerate(attempts):
+        model_id = model_spec["id"]
+        if index:
+            _chat_apply_model_spec(
+                base,
+                model_spec,
+                failed_model=attempts[index - 1].get("id"),
+                failure=failures[-1] if failures else None,
+            )
+        options = _chat_model_options(base)
+        try:
+            response = client.chat.completions.create(
+                model=model_id,
+                messages=_chat_model_messages(base),
+                **options,
+            )
+            choices = _object_value(response, "choices", []) or []
+            message = _object_value(choices[0], "message", {}) if choices else {}
+            reply = _model_content(_object_value(message, "content", "")).strip()
+            if reply:
+                return reply
+            failures.append(f"{model_id}: empty content")
+        except Exception as exc:
+            failures.append(f"{model_id}: {exc}")
+            logger.warning("chat model attempt failed stock=%s model=%s error=%s", base.get("stock_code"), model_id, exc)
+    detail = "; ".join(failures) or "no enabled DeepSeek model available"
+    raise RuntimeError(f"DeepSeek model attempts failed: {detail}")
 
 
 def _finalise_chat_reply(
@@ -2111,66 +2197,121 @@ def chat_stream(
                 "source_tier": source.get("source_tier"),
             }}
         yield {"event": "phase", "data": {"stage": "model", "label": "正在生成回答"}}
-        options = _chat_model_options(base)
         client = _chat_model_client(base)
-        response = client.chat.completions.create(
-            model=base["model"],
-            messages=[
-                {"role": "system", "content": _chat_system_message(base)},
-                {"role": "user", "content": base["prompt"]},
-            ],
-            **options,
-            stream=True,
-        )
-        parts = []
-        reasoning_chars = 0
-        finish_reasons = []
-        for chunk in response:
-            choices = _object_value(chunk, "choices", []) or []
-            delta = _object_value(choices[0], "delta", {}) if choices else {}
-            piece = _model_content(_object_value(delta, "content", ""))
-            reasoning_piece = _model_content(
-                _object_value(delta, "reasoning_content", "")
-            )
-            if reasoning_piece:
-                reasoning_chars += len(reasoning_piece)
-            finish_reason = _object_value(choices[0], "finish_reason") if choices else None
-            if finish_reason:
-                finish_reasons.append(str(finish_reason))
-            if piece:
-                parts.append(piece)
-                yield {"event": "delta", "data": {"text": piece}}
-        reply = "".join(parts).strip()
+        attempts = _chat_model_attempt_specs(base)
+        if not attempts:
+            raise RuntimeError("no enabled DeepSeek model available")
+        reply = ""
+        last_error: Exception | None = None
+        partial_was_emitted = False
+        failures: list[str] = []
+        for attempt_index, model_spec in enumerate(attempts):
+            model_name = model_spec["id"]
+            if attempt_index:
+                _chat_apply_model_spec(
+                    base,
+                    model_spec,
+                    failed_model=attempts[attempt_index - 1].get("id"),
+                    failure=str(last_error) if last_error else None,
+                )
+                yield {"event": "phase", "data": {
+                    "stage": "model_fallback",
+                    "label": f"首选模型未返回完整内容，正在尝试 {model_spec.get('label') or model_name}",
+                    "model_id": model_name,
+                }}
+
+            options = _chat_model_options(base)
+            parts: list[str] = []
+            stream_emitted = False
+            reasoning_chars = 0
+            finish_reasons: list[str] = []
+            try:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=_chat_model_messages(base),
+                    **options,
+                    stream=True,
+                )
+                for chunk in response:
+                    choices = _object_value(chunk, "choices", []) or []
+                    delta = _object_value(choices[0], "delta", {}) if choices else {}
+                    piece = _model_content(_object_value(delta, "content", ""))
+                    reasoning_piece = _model_content(
+                        _object_value(delta, "reasoning_content", "")
+                    )
+                    if reasoning_piece:
+                        reasoning_chars += len(reasoning_piece)
+                    finish_reason = _object_value(choices[0], "finish_reason") if choices else None
+                    if finish_reason:
+                        finish_reasons.append(str(finish_reason))
+                    if piece:
+                        parts.append(piece)
+                        if attempt_index == 0 and not partial_was_emitted:
+                            stream_emitted = True
+                            yield {"event": "delta", "data": {"text": piece}}
+                reply = "".join(parts).strip()
+            except Exception as exc:
+                last_error = exc
+                failures.append(f"{model_name}: {exc}")
+                logger.warning(
+                    "streaming chat model attempt failed stock=%s skill=%s model=%s error=%s",
+                    stock_code,
+                    base.get("skill_id"),
+                    model_name,
+                    exc,
+                )
+                if stream_emitted:
+                    partial_was_emitted = True
+
+            if not reply:
+                logger.warning(
+                    "empty streamed content for stock=%s skill=%s model=%s "
+                    "reasoning_chars=%s finish_reasons=%s; retrying non-stream",
+                    stock_code,
+                    base.get("skill_id"),
+                    model_name,
+                    reasoning_chars,
+                    finish_reasons,
+                )
+                try:
+                    retry_options = _chat_empty_reply_retry_options(base, options)
+                    fallback = client.chat.completions.create(
+                        model=model_name,
+                        messages=_chat_model_messages(base),
+                        **retry_options,
+                    )
+                    fallback_choices = _object_value(fallback, "choices", []) or []
+                    fallback_message = (
+                        _object_value(fallback_choices[0], "message", {})
+                        if fallback_choices
+                        else {}
+                    )
+                    reply = _model_content(
+                        _object_value(fallback_message, "content", "")
+                    ).strip()
+                    if not reply:
+                        failures.append(f"{model_name}: empty content after non-stream retry")
+                except Exception as exc:
+                    last_error = exc
+                    failures.append(f"{model_name} non-stream retry: {exc}")
+                    logger.warning(
+                        "non-stream chat retry failed stock=%s model=%s error=%s",
+                        stock_code,
+                        model_name,
+                        exc,
+                    )
+
+            if reply:
+                if partial_was_emitted:
+                    yield {"event": "replace", "data": {"text": reply}}
+                elif not stream_emitted:
+                    yield {"event": "delta", "data": {"text": reply}}
+                break
+
+            last_error = last_error or RuntimeError(f"{model_name} returned empty content")
         if not reply:
-            logger.warning(
-                "empty streamed content for stock=%s skill=%s model=%s "
-                "reasoning_chars=%s finish_reasons=%s; retrying non-stream",
-                stock_code,
-                base.get("skill_id"),
-                base.get("model"),
-                reasoning_chars,
-                finish_reasons,
-            )
-            retry_options = _chat_empty_reply_retry_options(base, options)
-            fallback = client.chat.completions.create(
-                model=base["model"],
-                messages=[
-                    {"role": "system", "content": _chat_system_message(base)},
-                    {"role": "user", "content": base["prompt"]},
-                ],
-                **retry_options,
-            )
-            fallback_choices = _object_value(fallback, "choices", []) or []
-            fallback_message = (
-                _object_value(fallback_choices[0], "message", {})
-                if fallback_choices
-                else {}
-            )
-            reply = _model_content(
-                _object_value(fallback_message, "content", "")
-            ).strip()
-        if not reply:
-            raise RuntimeError("DeepSeek 返回了空内容")
+            detail = "; ".join(failures) or str(last_error or "all model attempts failed")
+            raise RuntimeError(f"DeepSeek model attempts failed: {detail}")
         yield {"event": "phase", "data": {"stage": "saving", "label": "正在保存本轮对话"}}
         result = _finalise_chat_reply(
             base,

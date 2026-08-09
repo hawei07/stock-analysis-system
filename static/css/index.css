@@ -460,6 +460,8 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .sticky-actions{opacity:0;transition:opacity .2s}
 .sticky-card:hover .sticky-actions{opacity:1}
 .sticky-markdown{font-size:14px;line-height:1.7;word-break:break-word}
+.markdown-math{margin:10px 0;max-width:100%;overflow-x:auto;overflow-y:hidden;text-align:center}
+.chat-bubble .markdown-math{margin:10px 0}.sticky-markdown .markdown-math{margin:12px 0}
 .sticky-markdown h1,.sticky-markdown h2,.sticky-markdown h3,.sticky-markdown h4,.sticky-markdown h5,.sticky-markdown h6{margin:12px 0 6px;color:#1a1a2e;line-height:1.35}
 .sticky-markdown h1{font-size:21px}.sticky-markdown h2{font-size:19px}.sticky-markdown h3{font-size:17px}.sticky-markdown h4,.sticky-markdown h5,.sticky-markdown h6{font-size:15px}
 .sticky-markdown ul,.sticky-markdown ol{margin:5px 0 10px;padding-left:24px}

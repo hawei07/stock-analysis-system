@@ -8,7 +8,22 @@
 <script src="/static/js/theme.js"></script>
 <link rel="stylesheet" href="/static/css/cloud_backup.css">
 <link rel="stylesheet" href="/static/css/background_jobs.css">
-<link rel="stylesheet" href="/static/css/index.css?v=20260809b">
+<link rel="stylesheet" href="/static/css/index.css?v=20260809d">
+<script>
+  window.MathJax = {
+    tex: {
+      inlineMath: [['\\(', '\\)'], ['$', '$']],
+      displayMath: [['\\[', '\\]'], ['$$', '$$']],
+      packages: {'[+]': ['ams']},
+      processEscapes: true,
+      processEnvironments: true
+    },
+    options: {
+      skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+    }
+  };
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 </head>
 <body>
 
@@ -952,7 +967,7 @@ async function saveSettings() {
 
 <!-- List, notes, settings and background jobs -->
 <script src="/static/js/stock_list.js"></script>
-<script src="/static/js/notes_chat.js?v=20260809b"></script>
+<script src="/static/js/notes_chat.js?v=20260809d"></script>
 <script src="/static/js/cloud_backup.js"></script>
 <script src="/static/js/local_settings.js"></script>
 <script src="/static/js/background_jobs.js"></script>

@@ -161,6 +161,25 @@ function renderMarkdown(content, options = {}) {
       output.push('<br>');
       continue;
     }
+    const displayMathStart = line.trim();
+    const singleLineMath = displayMathStart.match(/^(\\\[|\$\$)(.+?)(\\\]|\$\$)\s*$/);
+    if (singleLineMath) {
+      closeList();
+      output.push(`<div class="markdown-math">${chatEscape(displayMathStart)}</div>`);
+      continue;
+    }
+    if (displayMathStart === '\\[' || displayMathStart === '$$') {
+      const closeMarker = displayMathStart === '\\[' ? '\\]' : '$$';
+      let endIndex = index + 1;
+      while (endIndex < lines.length && lines[endIndex].trim() !== closeMarker) endIndex += 1;
+      if (endIndex < lines.length) {
+        closeList();
+        const mathBlock = lines.slice(index, endIndex + 1).join('\n');
+        output.push(`<div class="markdown-math">${chatEscape(mathBlock)}</div>`);
+        index = endIndex;
+        continue;
+      }
+    }
     if (line.includes('|') && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] || '')) {
       closeList();
       output.push(`<table class="markdown-table"><thead>${renderTableRow(line, 'th')}</thead><tbody>`);
@@ -222,6 +241,28 @@ function renderChatMarkdown(content) {
 
 function renderStickyMarkdown(content) {
   return renderMarkdown(content, {allowImages: true});
+}
+
+function typesetMarkdown(root) {
+  if (!root || !root.querySelector || !root.querySelector('.markdown-math')) return;
+  if (typeof window === 'undefined') return;
+  const mathJax = window.MathJax;
+  if (!mathJax || typeof mathJax.typesetPromise !== 'function') {
+    if (!root.dataset.mathTypesetPending) {
+      root.dataset.mathTypesetPending = '1';
+      setTimeout(() => {
+        delete root.dataset.mathTypesetPending;
+        typesetMarkdown(root);
+      }, 300);
+    }
+    return;
+  }
+  try {
+    if (typeof mathJax.typesetClear === 'function') mathJax.typesetClear([root]);
+    mathJax.typesetPromise([root]).catch(() => {});
+  } catch (e) {
+    // Keep the original TeX visible if the optional renderer cannot load.
+  }
 }
 
 function safeChatUrl(url) {
@@ -293,6 +334,7 @@ function appendMsg(role, content, msgId, meta) {
     <div class="chat-avatar">${avatar}</div>
     <div class="chat-bubble">${html}${renderChatMeta(meta)}${delBtn}</div>`;
   container.appendChild(div);
+  typesetMarkdown(div);
 }
 
 async function sendMungerChat() {
@@ -518,6 +560,7 @@ function updateChatMessage(div, content, meta, options = {}) {
   if (oldMeta) oldMeta.remove();
   if (meta && !meta.error) div.querySelector('.chat-bubble')?.insertAdjacentHTML('beforeend', renderChatMeta(meta));
   div.classList.toggle('chat-streaming', Boolean(options.streaming));
+  if (!options.streaming) typesetMarkdown(div);
   if (!options.streaming && meta?.turn_id) refreshChatMessageActions(div, meta.turn_id, content);
 }
 
@@ -532,6 +575,7 @@ function appendMsg(role, content, msgId, meta, turnId, options = {}) {
   if (turnId) div.dataset.turnId = turnId;
   div.innerHTML = `<div class="chat-avatar">${role === 'munger' ? '🧠' : '👤'}</div><div class="chat-bubble"><div class="chat-content">${renderChatMarkdown(content || '')}</div>${meta ? renderChatMeta(meta) : ''}</div>`;
   container.appendChild(div);
+  if (!options.streaming) typesetMarkdown(div);
   if (role === 'munger' && !options.streaming && turnId && !meta?.error) refreshChatMessageActions(div, turnId, content);
   return div;
 }
@@ -635,6 +679,10 @@ async function sendMungerChat() {
         setChatPhase(`已找到来源：${data.title || data.id || ''}`);
       } else if (event === 'delta') {
         reply += data.text || '';
+        updateChatMessage(assistantDiv, reply, null, {streaming: true});
+        scrollChatBottom();
+      } else if (event === 'replace') {
+        reply = data.text || '';
         updateChatMessage(assistantDiv, reply, null, {streaming: true});
         scrollChatBottom();
       } else if (event === 'done') {
@@ -801,6 +849,7 @@ async function loadStickyNotes() {
         <div class="sticky-markdown">${body}</div>
       </div>`;
     }).join('');
+    typesetMarkdown(list);
   } catch(e) {
     document.getElementById('stickyList').innerHTML = '<div style="text-align:center;color:#e74c3c;padding:40px">加载失败</div>';
   }
