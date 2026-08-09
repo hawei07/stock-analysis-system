@@ -1430,6 +1430,16 @@ def _chat_error(message: str, status: int, *, detail: str | None = None) -> dict
     return result
 
 
+def _chat_unavailable_error(
+    skill_id: str | None = None,
+    *,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    """Return a model error that names the Skill actually being used."""
+    label = skill_spec(resolve_skill_id(skill_id)).get("label") or "股票分析"
+    return _chat_error(f"{label}暂时不可用，请稍后重试。", 502, detail=detail)
+
+
 def _chat_meta(
     fin: dict,
     sources: list[dict],
@@ -1603,7 +1613,7 @@ def _chat_send_pre_round3(stock_code: str, message: str) -> dict[str, Any]:
             raise RuntimeError("DeepSeek 返回了空内容")
     except Exception as exc:
         logger.exception("Munger chat model call failed for %s (model=%s)", stock_code, model)
-        return _chat_error("芒格智能体暂时不可用，请稍后重试。", 502, detail=str(exc))
+        return _chat_unavailable_error(detail=str(exc))
 
     reply = _normalise_chat_citations(reply, sources)
     citation_validation = _validate_chat_reply(reply, sources, intent)
@@ -1852,6 +1862,23 @@ def _object_value(value: Any, key: str, default: Any = None) -> Any:
     return getattr(value, key, default)
 
 
+def _model_content(value: Any) -> str:
+    """Normalise text returned by Chat Completions message/delta objects."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            text = _object_value(item, "text", "") or ""
+            if text:
+                parts.append(str(text))
+        return "".join(parts)
+    return ""
+
+
 CHAT_SKILL_COMMON_SYSTEM = """
 你必须遵守以下共同规则：
 1. 只把本地数据库事实和本轮带编号的来源当作证据；每个数字保留报告期和单位。
@@ -1879,6 +1906,18 @@ def _chat_model_options(base: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _chat_empty_reply_retry_options(base: dict[str, Any], options: dict[str, Any]) -> dict[str, Any]:
+    """Give reasoning-heavy models more room when streaming produced no answer."""
+    retry_options = dict(options)
+    if base.get("model") == "deepseek-v4-flash":
+        try:
+            current_max_tokens = int(retry_options.get("max_tokens", 1600))
+        except (TypeError, ValueError):
+            current_max_tokens = 1600
+        retry_options["max_tokens"] = max(current_max_tokens, 3200)
+    return retry_options
+
+
 def _chat_model_reply(base: dict[str, Any]) -> str:
     options = _chat_model_options(base)
     response = _chat_model_client(base).chat.completions.create(
@@ -1891,8 +1930,7 @@ def _chat_model_reply(base: dict[str, Any]) -> str:
     )
     choices = _object_value(response, "choices", []) or []
     message = _object_value(choices[0], "message", {}) if choices else {}
-    reply = _object_value(message, "content", "") or ""
-    reply = reply.strip()
+    reply = _model_content(_object_value(message, "content", "")).strip()
     if not reply:
         raise RuntimeError("DeepSeek 返回了空内容")
     return reply
@@ -1975,6 +2013,7 @@ def chat_send(
 ) -> dict[str, Any]:
     """Synchronous compatibility endpoint backed by the third-round pipeline."""
     started = time.perf_counter()
+    base: dict[str, Any] | None = None
     message = message.strip() if isinstance(message, str) else message
     validation = _validate_chat_message(message)
     if validation:
@@ -2001,7 +2040,10 @@ def chat_send(
         return _chat_error(exc.message, exc.status, detail=exc.detail)
     except Exception as exc:
         logger.exception("Munger chat model call failed for %s", stock_code)
-        return _chat_error("芒格智能体暂时不可用，请稍后重试。", 502, detail=str(exc))
+        return _chat_unavailable_error(
+            (base or {}).get("skill_id") or skill_id,
+            detail=str(exc),
+        )
 
 
 def chat_stream(
@@ -2018,6 +2060,7 @@ def chat_stream(
 ):
     """Yield structured events consumed by the Flask SSE route."""
     started = time.perf_counter()
+    base: dict[str, Any] | None = None
     message = message.strip() if isinstance(message, str) else message
     validation = _validate_chat_message(message)
     if validation:
@@ -2069,7 +2112,8 @@ def chat_stream(
             }}
         yield {"event": "phase", "data": {"stage": "model", "label": "正在生成回答"}}
         options = _chat_model_options(base)
-        response = _chat_model_client(base).chat.completions.create(
+        client = _chat_model_client(base)
+        response = client.chat.completions.create(
             model=base["model"],
             messages=[
                 {"role": "system", "content": _chat_system_message(base)},
@@ -2079,14 +2123,52 @@ def chat_stream(
             stream=True,
         )
         parts = []
+        reasoning_chars = 0
+        finish_reasons = []
         for chunk in response:
             choices = _object_value(chunk, "choices", []) or []
             delta = _object_value(choices[0], "delta", {}) if choices else {}
-            piece = _object_value(delta, "content", "") or ""
+            piece = _model_content(_object_value(delta, "content", ""))
+            reasoning_piece = _model_content(
+                _object_value(delta, "reasoning_content", "")
+            )
+            if reasoning_piece:
+                reasoning_chars += len(reasoning_piece)
+            finish_reason = _object_value(choices[0], "finish_reason") if choices else None
+            if finish_reason:
+                finish_reasons.append(str(finish_reason))
             if piece:
                 parts.append(piece)
                 yield {"event": "delta", "data": {"text": piece}}
         reply = "".join(parts).strip()
+        if not reply:
+            logger.warning(
+                "empty streamed content for stock=%s skill=%s model=%s "
+                "reasoning_chars=%s finish_reasons=%s; retrying non-stream",
+                stock_code,
+                base.get("skill_id"),
+                base.get("model"),
+                reasoning_chars,
+                finish_reasons,
+            )
+            retry_options = _chat_empty_reply_retry_options(base, options)
+            fallback = client.chat.completions.create(
+                model=base["model"],
+                messages=[
+                    {"role": "system", "content": _chat_system_message(base)},
+                    {"role": "user", "content": base["prompt"]},
+                ],
+                **retry_options,
+            )
+            fallback_choices = _object_value(fallback, "choices", []) or []
+            fallback_message = (
+                _object_value(fallback_choices[0], "message", {})
+                if fallback_choices
+                else {}
+            )
+            reply = _model_content(
+                _object_value(fallback_message, "content", "")
+            ).strip()
         if not reply:
             raise RuntimeError("DeepSeek 返回了空内容")
         yield {"event": "phase", "data": {"stage": "saving", "label": "正在保存本轮对话"}}
@@ -2102,7 +2184,13 @@ def chat_stream(
         yield {"event": "error", "data": _chat_error(exc.message, exc.status, detail=exc.detail)}
     except Exception as exc:
         logger.exception("Munger chat stream failed for %s", stock_code)
-        yield {"event": "error", "data": _chat_error("芒格智能体暂时不可用，请稍后重试。", 502, detail=str(exc))}
+        yield {
+            "event": "error",
+            "data": _chat_unavailable_error(
+                (base or {}).get("skill_id") or skill_id,
+                detail=str(exc),
+            ),
+        }
 
 
 def chat_regenerate(stock_code: str, turn_id: str) -> dict[str, Any]:

@@ -125,7 +125,10 @@ DEFAULT_MODELS = [
         "purpose": "低延迟股票问答和快速迭代",
         "enabled": True,
         "supports_stream": True,
-        "max_tokens": 1800,
+        # V4 Flash may emit reasoning_content before the user-visible answer.
+        # Keep enough output budget for the final answer on multi-section stock
+        # analysis requests instead of ending with an empty content field.
+        "max_tokens": 3200,
         "temperature": 0.3,
     },
 ]

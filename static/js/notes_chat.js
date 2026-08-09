@@ -43,7 +43,85 @@ function chatEscape(value) {
   }[ch]));
 }
 
-function renderChatMarkdown(content) {
+function safeMarkdownUrl(value, allowImage = false) {
+  const url = String(value ?? '').trim();
+  if (/^https?:\/\//i.test(url)) return url;
+  if (!allowImage) return /^mailto:/i.test(url) ? url : '';
+  if (/^\/data\/images\/[A-Za-z0-9._~!$&'()*+,;=@%/-]+$/i.test(url)) return url;
+  if (/^data:image\/(?:png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/i.test(url)) return url;
+  return '';
+}
+
+function isMarkdownImageUrl(url) {
+  return /\.(?:png|jpe?g|gif|webp|svg)(?:[?#].*)?$/i.test(url)
+    || /^\/data\/images\//i.test(url)
+    || /^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(url);
+}
+
+function renderMarkdownImage(url, alt = '') {
+  const safeUrl = safeMarkdownUrl(url, true);
+  if (!safeUrl) return '';
+  const escapedUrl = chatEscape(safeUrl);
+  return `<img src="${escapedUrl}" alt="${chatEscape(alt || '图片')}" loading="lazy" class="markdown-image" onclick="viewImage(this.src)" onerror="this.style.display='none'">`;
+}
+
+function renderMarkdownLink(url, label, title = '') {
+  const safeUrl = safeMarkdownUrl(url);
+  if (!safeUrl) return '';
+  const titleAttr = title ? ` title="${chatEscape(title)}"` : '';
+  return `<a href="${chatEscape(safeUrl)}" target="_blank" rel="noopener noreferrer"${titleAttr}>${renderMarkdownInline(label)}</a>`;
+}
+
+function renderMarkdownInline(text, options = {}) {
+  const source = String(text ?? '');
+  const allowImages = options.allowImages !== false;
+  const tokenPattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+["']([^"']*)["'])?\)|\[([^\]]+)\]\(([^)\s]+)(?:\s+["']([^"']*)["'])?\)|`([^`]+)`|(https?:\/\/[^\s<>]+|\/data\/images\/[^\s<>]+|data:image\/(?:png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+)/gi;
+  const output = [];
+  let cursor = 0;
+
+  function appendText(value) {
+    return chatEscape(value)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+      .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+      .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+      .replace(/\[([A-Za-z0-9_-]*-S\d+|S\d+)\]/gi, '<span class="chat-citation">[$1]</span>');
+  }
+
+  function appendRawUrl(rawUrl) {
+    const trimmedUrl = rawUrl.replace(/[.,!?;:，。！？；：]+$/g, '');
+    const trailing = rawUrl.slice(trimmedUrl.length);
+    if (allowImages && isMarkdownImageUrl(trimmedUrl)) {
+      output.push(renderMarkdownImage(trimmedUrl));
+    } else {
+      const link = renderMarkdownLink(trimmedUrl, trimmedUrl);
+      output.push(link || appendText(trimmedUrl));
+    }
+    if (trailing) output.push(appendText(trailing));
+  }
+
+  let match;
+  while ((match = tokenPattern.exec(source))) {
+    if (match.index > cursor) output.push(appendText(source.slice(cursor, match.index)));
+    if (match[1] !== undefined) {
+      const image = allowImages ? renderMarkdownImage(match[2], match[1]) : '';
+      output.push(image || appendText(match[0]));
+    } else if (match[4] !== undefined) {
+      const link = renderMarkdownLink(match[5], match[4], match[6]);
+      output.push(link || appendText(match[0]));
+    } else if (match[7] !== undefined) {
+      output.push(`<code>${chatEscape(match[7])}</code>`);
+    } else if (match[8] !== undefined) {
+      appendRawUrl(match[8]);
+    }
+    cursor = tokenPattern.lastIndex;
+  }
+  if (cursor < source.length) output.push(appendText(source.slice(cursor)));
+  return output.join('');
+}
+
+function renderMarkdown(content, options = {}) {
   const lines = String(content ?? '').replace(/\r/g, '').split('\n');
   const output = [];
   let listType = null;
@@ -55,14 +133,13 @@ function renderChatMarkdown(content) {
     listType = null;
   }
 
-  function inline(text) {
-    return chatEscape(text)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\[([A-Za-z0-9_-]*-S\d+|S\d+)\]/gi, '<span class="chat-citation">[$1]</span>');
+  function renderTableRow(line, tag) {
+    const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|');
+    return `<tr>${cells.map(cell => `<${tag}>${renderMarkdownInline(cell.trim(), options)}</${tag}>`).join('')}</tr>`;
   }
 
-  lines.forEach(rawLine => {
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index];
     if (/^\s*```/.test(rawLine)) {
       if (inCode) {
         output.push(`<pre><code>${chatEscape(codeLines.join('\n'))}</code></pre>`);
@@ -72,33 +149,51 @@ function renderChatMarkdown(content) {
         closeList();
         inCode = true;
       }
-      return;
+      continue;
     }
     if (inCode) {
       codeLines.push(rawLine);
-      return;
+      continue;
     }
     const line = rawLine.trimEnd();
     if (!line.trim()) {
       closeList();
       output.push('<br>');
-      return;
+      continue;
     }
-    const heading = line.match(/^#{2,4}\s+(.+)$/);
+    if (line.includes('|') && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] || '')) {
+      closeList();
+      output.push(`<table class="markdown-table"><thead>${renderTableRow(line, 'th')}</thead><tbody>`);
+      index += 2;
+      while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+        output.push(renderTableRow(lines[index], 'td'));
+        index += 1;
+      }
+      output.push('</tbody></table>');
+      index -= 1;
+      continue;
+    }
+    const heading = line.match(/^\s*(#{1,6})\s+(.+)$/);
     if (heading) {
       closeList();
-      output.push(`<h3>${inline(heading[1])}</h3>`);
-      return;
+      const level = heading[1].length;
+      output.push(`<h${level}>${renderMarkdownInline(heading[2], options)}</h${level}>`);
+      continue;
     }
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+      closeList();
+      output.push('<hr>');
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*+]\s+(.+)$/);
     if (bullet) {
       if (listType !== 'ul') {
         closeList();
         output.push('<ul>');
         listType = 'ul';
       }
-      output.push(`<li>${inline(bullet[1])}</li>`);
-      return;
+      output.push(`<li>${renderMarkdownInline(bullet[1], options)}</li>`);
+      continue;
     }
     const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
     if (ordered) {
@@ -107,16 +202,26 @@ function renderChatMarkdown(content) {
         output.push('<ol>');
         listType = 'ol';
       }
-      output.push(`<li>${inline(ordered[1])}</li>`);
-      return;
+      output.push(`<li>${renderMarkdownInline(ordered[1], options)}</li>`);
+      continue;
     }
     closeList();
     const quote = line.match(/^>\s?(.*)$/);
-    output.push(quote ? `<blockquote>${inline(quote[1])}</blockquote>` : `${inline(line)}<br>`);
-  });
+    output.push(quote
+      ? `<blockquote>${renderMarkdownInline(quote[1], options)}</blockquote>`
+      : `${renderMarkdownInline(line, options)}<br>`);
+  }
   if (inCode) output.push(`<pre><code>${chatEscape(codeLines.join('\n'))}</code></pre>`);
   closeList();
   return output.join('').replace(/(<br>){2,}/g, '<br>');
+}
+
+function renderChatMarkdown(content) {
+  return renderMarkdown(content, {allowImages: true});
+}
+
+function renderStickyMarkdown(content) {
+  return renderMarkdown(content, {allowImages: true});
 }
 
 function safeChatUrl(url) {
@@ -681,21 +786,7 @@ async function loadStickyNotes() {
       const time = (n.created_at || '').replace('T',' ').substring(0,16);
       const stockTag = n.stock_code ? `<span style="font-size:11px;color:#4a6cf7;background:#f0f5ff;padding:2px 8px;border-radius:10px">${esc(n.stock_code)}</span>` : '';
       const titleHtml = n.title ? `<div style="font-weight:600;font-size:15px;margin-bottom:8px">${esc(n.title)}</div>` : '';
-      // Auto-detect images and links in content
-      let body = esc(n.content);
-      // data:image → img tags
-      body = body.replace(/(data:image\/[^;]+;base64,[a-zA-Z0-9+/=]+)/gi,
-        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block;cursor:pointer" onclick="viewImage(this.src)" onerror="this.style.display=none">');
-      // Image URLs → img tags
-      body = body.replace(/(https?:\/\/\S+\.(?:png|jpg|jpeg|gif|webp|svg)(?:\?\S*)?)/gi,
-        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block;cursor:pointer" onclick="viewImage(this.src)" onerror="this.style.display=\'none\'">');
-      // Local image paths → img tags
-      body = body.replace(/(\/data\/images\/\S+\.(?:png|jpg|jpeg|gif|webp|svg))/gi,
-        '<img src="$1" style="max-width:100%;max-height:300px;border-radius:8px;margin:4px 0;display:block;cursor:pointer" onclick="viewImage(this.src)" onerror="this.style.display=\'none\'">');
-      // Other URLs → clickable links
-      body = body.replace(/(https?:\/\/[^\s<>]+)/g,
-        '<a href="$1" target="_blank" style="color:#4a6cf7">$1</a>');
-      body = body.replace(/\n/g, '<br>');
+      const body = renderStickyMarkdown(n.content);
 
       return `<div class="sticky-card" style="background:#fffbe6">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
@@ -707,7 +798,7 @@ async function loadStickyNotes() {
         </div>
         ${titleHtml}
         ${stockTag ? `<div style="margin-bottom:8px">${stockTag}</div>` : ''}
-        <div style="font-size:14px;line-height:1.7;word-break:break-word">${body}</div>
+        <div class="sticky-markdown">${body}</div>
       </div>`;
     }).join('');
   } catch(e) {

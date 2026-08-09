@@ -433,9 +433,10 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .chat-bubble{max-width:100%;padding:10px 16px;border-radius:14px;font-size:14px;line-height:1.6;position:relative;word-break:break-word}
 .munger .chat-bubble{background:#f5f5f5;color:#333;border-bottom-left-radius:4px}
 .user .chat-bubble{background:#4a6cf7;color:#fff;border-bottom-right-radius:4px}
-.chat-bubble h3{font-size:15px;margin:8px 0 4px;color:#1a1a2e}.user .chat-bubble h3{color:#fff}
+.chat-bubble h1,.chat-bubble h2,.chat-bubble h3,.chat-bubble h4,.chat-bubble h5,.chat-bubble h6{margin:8px 0 4px;color:#1a1a2e;line-height:1.35}.chat-bubble h1{font-size:20px}.chat-bubble h2{font-size:18px}.chat-bubble h3{font-size:15px}.chat-bubble h4,.chat-bubble h5,.chat-bubble h6{font-size:14px}.user .chat-bubble h1,.user .chat-bubble h2,.user .chat-bubble h3,.user .chat-bubble h4,.user .chat-bubble h5,.user .chat-bubble h6{color:#fff}
 .chat-bubble strong{font-weight:600;color:#1a1a2e}.user .chat-bubble strong{color:#fff}
 .chat-bubble li{margin:4px 0 4px 16px}.chat-bubble ul,.chat-bubble ol{padding-left:18px;margin:6px 0}.chat-bubble pre{overflow:auto;background:#252525;color:#f8f8f2;border-radius:8px;padding:10px 12px;font-size:12px}.chat-bubble code{font-family:Consolas,monospace;background:rgba(0,0,0,.06);border-radius:4px;padding:1px 4px}.chat-bubble pre code{background:none;padding:0}.chat-bubble blockquote{margin:8px 0;padding:6px 10px;border-left:3px solid #c7d2fe;color:#667085;background:rgba(74,108,247,.04)}
+.chat-bubble a{color:#4a6cf7;text-decoration:none}.chat-bubble a:hover{text-decoration:underline}.user .chat-bubble a{color:#fff;text-decoration:underline}.chat-bubble .markdown-image{display:block;max-width:100%;max-height:320px;margin:7px 0;border-radius:8px;cursor:pointer;object-fit:contain}.chat-bubble hr{border:0;border-top:1px solid rgba(0,0,0,.12);margin:10px 0}.chat-bubble .markdown-table{width:100%;margin:8px 0;border-collapse:collapse;font-size:12px}.chat-bubble .markdown-table th,.chat-bubble .markdown-table td{padding:5px 7px;border:1px solid rgba(0,0,0,.14);text-align:left;vertical-align:top}.chat-bubble .markdown-table th{background:rgba(74,108,247,.08);font-weight:600}.user .chat-bubble .markdown-table th,.user .chat-bubble .markdown-table td{border-color:rgba(255,255,255,.45)}.user .chat-bubble .markdown-table th{background:rgba(255,255,255,.14)}
 .chat-meta{margin-top:10px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08);font-size:11px;line-height:1.55;color:#7b8494}
 .chat-source-list{margin-top:5px}.chat-source-list summary{cursor:pointer;color:#4a6cf7;user-select:none}.chat-source-list ul{margin:4px 0;padding-left:18px}.chat-source-list li{margin:2px 0}.chat-source-id{font-weight:600;color:#4a6cf7}.chat-source-link{color:#4a6cf7;text-decoration:none}.chat-source-link:hover{text-decoration:underline}.chat-warning-title{margin-top:6px;color:#d48806;font-weight:600}.chat-warnings{color:#ad6800}.chat-error{color:#e74c3c!important}.chat-citation{font-size:.9em;color:#4a6cf7;font-weight:600}
 .chat-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:7px;border-top:1px solid rgba(0,0,0,.08)}
@@ -458,6 +459,21 @@ body.reorder-active{user-select:none!important;-webkit-user-select:none!importan
 .sticky-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.08);transform:translateY(-2px)}
 .sticky-actions{opacity:0;transition:opacity .2s}
 .sticky-card:hover .sticky-actions{opacity:1}
+.sticky-markdown{font-size:14px;line-height:1.7;word-break:break-word}
+.sticky-markdown h1,.sticky-markdown h2,.sticky-markdown h3,.sticky-markdown h4,.sticky-markdown h5,.sticky-markdown h6{margin:12px 0 6px;color:#1a1a2e;line-height:1.35}
+.sticky-markdown h1{font-size:21px}.sticky-markdown h2{font-size:19px}.sticky-markdown h3{font-size:17px}.sticky-markdown h4,.sticky-markdown h5,.sticky-markdown h6{font-size:15px}
+.sticky-markdown ul,.sticky-markdown ol{margin:5px 0 10px;padding-left:24px}
+.sticky-markdown li{margin:2px 0}
+.sticky-markdown blockquote{margin:8px 0;padding:6px 12px;border-left:3px solid #d9c66b;color:#776b3b;background:rgba(255,255,255,.45)}
+.sticky-markdown code{padding:1px 4px;border-radius:4px;background:rgba(0,0,0,.06);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em}
+.sticky-markdown pre{margin:8px 0;padding:10px 12px;overflow:auto;border-radius:6px;background:#332f20;color:#fffbe6;line-height:1.5}
+.sticky-markdown pre code{padding:0;background:transparent;color:inherit}
+.sticky-markdown a{color:#4a6cf7;text-decoration:none}.sticky-markdown a:hover{text-decoration:underline}
+.sticky-markdown .markdown-image{display:block;max-width:100%;max-height:300px;margin:6px 0;border-radius:8px;cursor:pointer;object-fit:contain}
+.sticky-markdown hr{border:0;border-top:1px solid #e5dcae;margin:12px 0}
+.sticky-markdown .markdown-table{width:100%;margin:8px 0;border-collapse:collapse;background:rgba(255,255,255,.35);font-size:13px}
+.sticky-markdown .markdown-table th,.sticky-markdown .markdown-table td{padding:5px 8px;border:1px solid #e5dcae;text-align:left;vertical-align:top}
+.sticky-markdown .markdown-table th{background:rgba(240,232,192,.7);font-weight:600}
 
 @media (max-width:768px){
   .fund-score-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -622,7 +638,12 @@ html[data-theme="dark"] .segment-summary-card .value,
 html[data-theme="dark"] .segment-chart-title,
 html[data-theme="dark"] .modal-header h3,
 html[data-theme="dark"] .chart-modal-header h3,
+html[data-theme="dark"] .chat-bubble h1,
+html[data-theme="dark"] .chat-bubble h2,
 html[data-theme="dark"] .chat-bubble h3,
+html[data-theme="dark"] .chat-bubble h4,
+html[data-theme="dark"] .chat-bubble h5,
+html[data-theme="dark"] .chat-bubble h6,
 html[data-theme="dark"] .chat-bubble strong{color:var(--text-strong)!important}
 html[data-theme="dark"] .chat-meta{border-color:var(--border)!important;color:var(--text-muted)!important}
 html[data-theme="dark"] .chat-quick-prompts{background:var(--surface)!important}
@@ -636,6 +657,10 @@ html[data-theme="dark"] .chat-citation{color:#9aadff!important}
 html[data-theme="dark"] .chat-warning-title,
 html[data-theme="dark"] .chat-warnings{color:#ffd666!important}
 html[data-theme="dark"] .chat-bubble blockquote{color:var(--text-muted)!important;border-color:#6f86e8!important;background:rgba(111,134,232,.1)!important}
+html[data-theme="dark"] .chat-bubble a{color:#9aadff!important}
+html[data-theme="dark"] .chat-bubble .markdown-table th,
+html[data-theme="dark"] .chat-bubble .markdown-table td{border-color:var(--border)!important}
+html[data-theme="dark"] .chat-bubble .markdown-table th{background:rgba(111,134,232,.12)!important}
 html[data-theme="dark"] .label,
 html[data-theme="dark"] .sub,
 html[data-theme="dark"] .stock-meta,
@@ -652,6 +677,17 @@ html[data-theme="dark"] .chart-modal-controls .period-btn:disabled{background:va
 html[data-theme="dark"] .munger .chat-bubble{background:var(--surface-soft)!important;color:var(--text)!important}
 html[data-theme="dark"] .chat-delete{background:var(--surface)!important;border-color:var(--border)!important}
 html[data-theme="dark"] .sticky-card{background:#2b2614!important;border-color:#51451f!important;color:var(--text)!important}
+html[data-theme="dark"] .sticky-markdown h1,
+html[data-theme="dark"] .sticky-markdown h2,
+html[data-theme="dark"] .sticky-markdown h3,
+html[data-theme="dark"] .sticky-markdown h4,
+html[data-theme="dark"] .sticky-markdown h5,
+html[data-theme="dark"] .sticky-markdown h6{color:var(--text-strong)!important}
+html[data-theme="dark"] .sticky-markdown blockquote{color:var(--text-muted);border-color:#6f86e8;background:rgba(111,134,232,.1)}
+html[data-theme="dark"] .sticky-markdown .markdown-table{background:rgba(255,255,255,.04)}
+html[data-theme="dark"] .sticky-markdown .markdown-table th,
+html[data-theme="dark"] .sticky-markdown .markdown-table td{border-color:#51451f}
+html[data-theme="dark"] .sticky-markdown .markdown-table th{background:rgba(240,232,192,.12)}
 html[data-theme="dark"] #grahamPreview{background:var(--surface-soft)!important;color:var(--text)!important}
 html[data-theme="dark"] .fund-head,
 html[data-theme="dark"] .fund-score-card,

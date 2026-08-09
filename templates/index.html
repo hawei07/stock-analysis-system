@@ -8,7 +8,7 @@
 <script src="/static/js/theme.js"></script>
 <link rel="stylesheet" href="/static/css/cloud_backup.css">
 <link rel="stylesheet" href="/static/css/background_jobs.css">
-<link rel="stylesheet" href="/static/css/index.css">
+<link rel="stylesheet" href="/static/css/index.css?v=20260809b">
 </head>
 <body>
 
@@ -555,7 +555,7 @@
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:13px;font-weight:600">内容</label>
-        <textarea id="stickyContent" rows="5" style="width:100%;padding:10px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;resize:vertical;font-family:inherit;margin-top:4px" placeholder="支持文字、链接 https://... 和图片 URL（.png/.jpg 等），混排输入"></textarea>
+        <textarea id="stickyContent" rows="5" style="width:100%;padding:10px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;resize:vertical;font-family:inherit;margin-top:4px" placeholder="支持 Markdown：# 标题、**粗体**、- 列表、[链接](URL)、![图片](URL) 和代码块"></textarea>
       </div>
       <div style="margin-bottom:16px">
         <label style="font-size:13px;font-weight:600">关联股票（可选）</label>
@@ -952,7 +952,7 @@ async function saveSettings() {
 
 <!-- List, notes, settings and background jobs -->
 <script src="/static/js/stock_list.js"></script>
-<script src="/static/js/notes_chat.js"></script>
+<script src="/static/js/notes_chat.js?v=20260809b"></script>
 <script src="/static/js/cloud_backup.js"></script>
 <script src="/static/js/local_settings.js"></script>
 <script src="/static/js/background_jobs.js"></script>
