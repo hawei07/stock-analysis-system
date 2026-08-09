@@ -813,6 +813,31 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 let stickyEditId = null;
+let stickyNotesCache = [];
+const STICKY_DEFAULT_FONT_SIZE = 14;
+
+function clampStickyFontSize(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return STICKY_DEFAULT_FONT_SIZE;
+  return Math.min(28, Math.max(10, Math.round(parsed)));
+}
+
+function updateStickyFontSizePreview(value) {
+  const size = clampStickyFontSize(value);
+  const input = document.getElementById('stickyFontSize');
+  const label = document.getElementById('stickyFontSizeValue');
+  if (input && String(input.value) !== String(size)) input.value = size;
+  if (label) label.textContent = `${size}px`;
+}
+
+function stepStickyFontSize(delta) {
+  const input = document.getElementById('stickyFontSize');
+  updateStickyFontSizePreview(clampStickyFontSize(input?.value) + Number(delta || 0));
+}
+
+function resetStickyFontSize() {
+  updateStickyFontSizePreview(STICKY_DEFAULT_FONT_SIZE);
+}
 
 function goSticky() {
   // Legacy - kept for potential reference but no longer used standalone
@@ -825,6 +850,7 @@ async function loadStickyNotes() {
   try {
     const notes = await StockApi.getJson('/api/sticky-notes?stock_code=' + code);
     if (code !== (document.getElementById('detailCode')?.textContent.trim() || '')) return;
+    stickyNotesCache = Array.isArray(notes) ? notes : [];
     const list = document.getElementById('stickyList');
     if (!notes.length) {
       list.innerHTML = '<div style="text-align:center;color:#bbb;padding:60px">还没有便利贴，点击「+ 新建」开始</div>';
@@ -832,16 +858,25 @@ async function loadStickyNotes() {
     }
     list.innerHTML = notes.map(n => {
       const time = (n.created_at || '').replace('T',' ').substring(0,16);
+      const fontSize = clampStickyFontSize(n.font_size);
       const stockTag = n.stock_code ? `<span style="font-size:11px;color:#4a6cf7;background:#f0f5ff;padding:2px 8px;border-radius:10px">${esc(n.stock_code)}</span>` : '';
       const titleHtml = n.title ? `<div style="font-weight:600;font-size:15px;margin-bottom:8px">${esc(n.title)}</div>` : '';
       const body = renderStickyMarkdown(n.content);
 
-      return `<div class="sticky-card" style="background:#fffbe6">
+      return `<div class="sticky-card" style="--sticky-font-size:${fontSize}px;background:#fffbe6">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
           <span style="font-size:13px;color:#999">${time}</span>
-          <div class="sticky-actions">
+          <div class="sticky-card-tools">
+            <div class="sticky-font-controls" title="调整正文大小" onclick="event.stopPropagation()">
+              <button type="button" onclick="changeStickyFontSize(${n.id}, -1, event)" title="缩小字号">A−</button>
+              <span>${fontSize}px</span>
+              <button type="button" onclick="changeStickyFontSize(${n.id}, 1, event)" title="放大字号">A+</button>
+              <button type="button" onclick="changeStickyFontSize(${n.id}, 0, event)" title="恢复默认字号">默认</button>
+            </div>
+            <div class="sticky-actions">
             <button onclick="editSticky(${n.id},this)" title="编辑" style="background:none;border:none;cursor:pointer;color:#bbb;font-size:14px;padding:2px 6px">✎</button>
             <button onclick="deleteSticky(${n.id},this)" title="删除" style="background:none;border:none;cursor:pointer;color:#bbb;font-size:14px;padding:2px 6px">✕</button>
+            </div>
           </div>
         </div>
         ${titleHtml}
@@ -855,11 +890,12 @@ async function loadStickyNotes() {
   }
 }
 
-function openStickyModal(id, title, content) {
+function openStickyModal(id, title, content, fontSize) {
   stickyEditId = id || null;
   document.getElementById('stickyModalTitle').textContent = id ? '编辑便利贴' : '新建便利贴';
   document.getElementById('stickyTitle').value = title || '';
   document.getElementById('stickyContent').value = content || '';
+  updateStickyFontSizePreview(fontSize ?? STICKY_DEFAULT_FONT_SIZE);
   // 填充股票下拉 + 选中当前股票
   const sel = document.getElementById('stickyStock');
   const curCode = document.getElementById('detailCode') ? document.getElementById('detailCode').textContent : '';
@@ -878,7 +914,7 @@ async function editSticky(id, btn) {
   // Fetch notes to find this one
   const notes = await StockApi.getJson('/api/sticky-notes?stock_code=' + (document.getElementById('detailCode')?.textContent || ''));
   const n = notes.find(x => x.id === id);
-  if (n) openStickyModal(n.id, n.title, n.content);
+  if (n) openStickyModal(n.id, n.title, n.content, n.font_size);
 }
 
 function closeStickyModal() { document.getElementById('stickyModalOverlay').classList.remove('active'); stickyEditId = null; }
@@ -887,10 +923,11 @@ async function saveSticky() {
   const title = document.getElementById('stickyTitle').value.trim();
   const content = document.getElementById('stickyContent').value.trim();
   const stock = document.getElementById('stickyStock').value.trim();
+  const fontSize = clampStickyFontSize(document.getElementById('stickyFontSize')?.value);
   // 兜底：如果下拉未填充（仅"不关联"一项），自动用当前股票代码
   const finalStock = stock || (document.getElementById('stickyStock').options.length <= 1 ? (document.getElementById('detailCode')?.textContent || '') : stock);
   if (!content && !title) { alert('请输入内容'); return; }
-  const body = { note_type: 'text', title, content, stock_code: finalStock };
+  const body = { note_type: 'text', title, content, stock_code: finalStock, font_size: fontSize };
   const method = stickyEditId ? 'PUT' : 'POST';
   const url = '/api/sticky-notes' + (stickyEditId ? '/' + stickyEditId : '');
   try {
@@ -902,6 +939,28 @@ async function saveSticky() {
     closeStickyModal();
     loadStickyNotes();
   } catch(e) {}
+}
+
+async function changeStickyFontSize(id, delta, event) {
+  event?.stopPropagation();
+  const note = stickyNotesCache.find(item => Number(item.id) === Number(id));
+  if (!note) return;
+  const current = clampStickyFontSize(note.font_size);
+  const next = Number(delta) === 0
+    ? STICKY_DEFAULT_FONT_SIZE
+    : clampStickyFontSize(current + Number(delta || 0));
+  if (next === current) return;
+  try {
+    await StockApi.request('/api/sticky-notes/' + id, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({font_size: next})
+    });
+    note.font_size = next;
+    await loadStickyNotes();
+  } catch (e) {
+    showToast(e.message || '字号保存失败', 'error');
+  }
 }
 
 async function deleteSticky(id, btn) {

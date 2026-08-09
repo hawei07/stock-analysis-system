@@ -6,6 +6,14 @@ from datetime import datetime
 from flask import Response, jsonify, request, send_from_directory, stream_with_context
 
 
+def _sticky_font_size(value, default=14):
+    try:
+        size = int(float(value))
+    except (TypeError, ValueError):
+        size = default
+    return min(28, max(10, size))
+
+
 def register_notes_chat_routes(app, deps):
     get_chat_history = deps["get_chat_history"]
     chat_send = deps["chat_send"]
@@ -167,6 +175,7 @@ def register_notes_chat_routes(app, deps):
             "title": data.get("title", ""),
             "content": content,
             "stock_code": data.get("stock_code", "") or "",
+            "font_size": _sticky_font_size(data.get("font_size", 14)),
             "created_at": now,
             "updated_at": now,
         }
@@ -174,8 +183,21 @@ def register_notes_chat_routes(app, deps):
         save_notes(notes)
         return jsonify({"ok": True, "id": new_id})
 
-    @app.route("/api/sticky-notes/<int:note_id>", methods=["PUT", "DELETE"])
+    @app.route("/api/sticky-notes/<int:note_id>", methods=["PUT", "PATCH", "DELETE"])
     def api_sticky_note(note_id):
+        if request.method == "PATCH":
+            data = request.get_json(force=True) or {}
+            notes = load_notes()
+            for n in notes:
+                if n.get("id") == note_id:
+                    n["font_size"] = _sticky_font_size(
+                        data.get("font_size"), n.get("font_size", 14)
+                    )
+                    n["updated_at"] = datetime.now().isoformat()
+                    save_notes(notes)
+                    return jsonify({"ok": True, "font_size": n["font_size"]})
+            return jsonify({"error": "not found"}), 404
+
         if request.method == "PUT":
             data = request.get_json(force=True)
             notes = load_notes()
@@ -185,6 +207,9 @@ def register_notes_chat_routes(app, deps):
                     n["title"] = data.get("title", "")
                     n["content"] = extract_images(data.get("content", ""), note_id)
                     n["stock_code"] = data.get("stock_code", "") or ""
+                    n["font_size"] = _sticky_font_size(
+                        data.get("font_size"), n.get("font_size", 14)
+                    )
                     n["updated_at"] = datetime.now().isoformat()
                     save_notes(notes)
                     return jsonify({"ok": True})
