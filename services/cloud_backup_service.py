@@ -6,12 +6,16 @@ import re
 CLOUD_BACKUP_RETAIN_COUNT = 5
 TIMED_BACKUP_RE = re.compile(r"^stock_analysis_\d{8}_\d{6}\.sql$", re.IGNORECASE)
 PRE_RESTORE_BACKUP_RE = re.compile(r"^pre_restore_\d{8}_\d{6}\.sql$", re.IGNORECASE)
+TIMED_FILES_BACKUP_RE = re.compile(r"^stock_analysis_\d{8}_\d{6}\.files\.zip$", re.IGNORECASE)
+PRE_RESTORE_FILES_BACKUP_RE = re.compile(r"^pre_restore_\d{8}_\d{6}\.files\.zip$", re.IGNORECASE)
 
 
 def backup_file_groups():
     return {
         "stock_analysis": TIMED_BACKUP_RE,
         "pre_restore": PRE_RESTORE_BACKUP_RE,
+        "stock_analysis_files": TIMED_FILES_BACKUP_RE,
+        "pre_restore_files": PRE_RESTORE_FILES_BACKUP_RE,
     }
 
 

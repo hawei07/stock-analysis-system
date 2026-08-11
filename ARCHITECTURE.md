@@ -1,7 +1,7 @@
 # stock - 架构与业务说明
 
-> 当前版本：v3.4
-> 更新日期：2026-08-08
+> 当前版本：v3.5
+> 更新日期：2026-08-11
 > 技术栈：Python Flask + MySQL + 原生 HTML/CSS/JavaScript  
 > 默认访问地址：`http://127.0.0.1:5002`
 
@@ -62,6 +62,7 @@ services/
   |-- market_data.py           行情数据
   |-- portfolio_*.py           持仓、交易、现金、净值、费用
   |-- cloud_backup_*.py        云备份存储与策略
+  |-- sticky_notes_backup.py   便利贴 JSON 与图片附件备份/恢复
   |-- providers/               东方财富、新浪、腾讯等数据源适配
   |
   | db.py 门面 -> mysql-connector-python
@@ -87,6 +88,7 @@ MySQL stock_analysis
   |-- stock_analysis_latest.sql
   |-- stock_analysis_YYYYMMDD_HHMMSS.sql
   |-- pre_restore_YYYYMMDD_HHMMSS.sql
+  |-- *.files.zip                对应 SQL 的便利贴与图片附件
   |-- sync_state.json
 ```
 
@@ -238,14 +240,27 @@ D:\Dropbox\stock-cloud-sync
 | `stock_analysis_latest.sql` | 最新备份，`云恢复` 默认恢复这个文件 |
 | `stock_analysis_YYYYMMDD_HHMMSS.sql` | 普通历史备份 |
 | `pre_restore_YYYYMMDD_HHMMSS.sql` | 恢复前自动保护备份 |
+| `stock_analysis_latest.files.zip` | 最新备份对应的便利贴 JSON 和图片附件 |
+| `stock_analysis_YYYYMMDD_HHMMSS.files.zip` | 普通备份对应的便利贴 JSON 和图片附件 |
+| `pre_restore_YYYYMMDD_HHMMSS.files.zip` | 恢复前保护备份对应的便利贴 JSON 和图片附件 |
 | `sync_state.json` | 云端备份状态 |
+
+每个 SQL 备份都通过同名 `.files.zip` 伴随包保存便利贴完整内容。伴随包包含：
+
+- `sticky_notes.json`：便利贴标题、正文、关联股票、创建时间和更新时间；
+- `images/`：便利贴中使用的全部图片附件；
+- `manifest.json`：备份格式和附件数量信息。
+
+备份流程会先完成伴随包，再更新 `stock_analysis_latest.sql`。系统用 latest SQL 的修改时间作为同步标记，因此检测到 latest 更新时，便利贴伴随包也已经生成。
 
 ### 5.2 手动云备份
 
 点击页面 `云备份` 会立即执行数据库导出：
 
 - 生成一份 `stock_analysis_YYYYMMDD_HHMMSS.sql`
+- 同时生成 `stock_analysis_YYYYMMDD_HHMMSS.files.zip`，保存便利贴及图片附件
 - 同步更新 `stock_analysis_latest.sql`
+- 同步更新 `stock_analysis_latest.files.zip`
 - 写入 `sync_state.json`
 - 更新本机 `data/cloud_sync_state.json`
 - 清理旧备份
@@ -272,7 +287,9 @@ POST /api/cloud-backup/backup
 
 ```text
 stock_analysis_YYYYMMDD_HHMMSS.sql
+stock_analysis_YYYYMMDD_HHMMSS.files.zip
 stock_analysis_latest.sql
+stock_analysis_latest.files.zip
 ```
 
 自动备份日志：
@@ -299,6 +316,8 @@ auto_cloud_backup.log
 | 更新利润表 | `api_update_income` |
 | 更新现金流量表 | `api_update_cashflow` |
 | 修改系统配置 | `api_config_put` |
+| 新增便利贴 | `api_sticky_notes` |
+| 修改/删除便利贴 | `api_sticky_note` |
 | 新增/修改持仓 | `api_portfolio_save_position` |
 | 删除持仓 | `api_portfolio_delete_position` |
 | 修改持仓每股分红 | `api_portfolio_update_dividend` |
@@ -338,9 +357,12 @@ stock_analysis_latest.sql
 
 ```text
 pre_restore_YYYYMMDD_HHMMSS.sql
+pre_restore_YYYYMMDD_HHMMSS.files.zip
 ```
 
 这样即使恢复错了，也可以从 `备份管理` 中选择恢复前版本回滚。
+
+恢复新格式备份时，数据库和便利贴文件会一起恢复；如果选择旧版只有 SQL 的历史备份，数据库照常恢复，但本机便利贴文件保持不变。
 
 后端接口：
 
@@ -378,7 +400,9 @@ POST /api/cloud-backup/restore-file
 
 - `stock_analysis_YYYYMMDD_HHMMSS.sql` 只保留最新 5 份
 - `pre_restore_YYYYMMDD_HHMMSS.sql` 只保留最新 5 份
+- 对应的 `.files.zip` 伴随包按相同规则各保留最新 5 份
 - `stock_analysis_latest.sql` 永远保留，不计入 5 份
+- `stock_analysis_latest.files.zip` 永远保留
 
 清理时机：
 
@@ -718,6 +742,8 @@ data/images/
 
 保存时会把 base64 图片提取为文件，正文中保留本地图片路径。
 
+云备份不会把便利贴写入 MySQL，而是为每个 SQL 备份生成同名 `.files.zip` 伴随包。伴随包包含 `sticky_notes.json`、`data/images/` 下的图片附件和 `manifest.json`；恢复新格式备份时会同时恢复数据库、便利贴和图片。旧版只有 SQL 的备份恢复时保留本机便利贴。
+
 ### 7.15 schema_migrations
 
 数据库迁移记录表，由 `migrations.py` 自动创建和维护。
@@ -915,6 +941,8 @@ GET /api/db/migrations
 | `POST` | `/api/cloud-backup/backup` | 手动云备份 |
 | `POST` | `/api/cloud-backup/restore` | 恢复 latest |
 | `POST` | `/api/cloud-backup/restore-file` | 恢复指定历史版本 |
+
+`status` 会额外返回 latest 是否存在便利贴伴随包；备份和恢复响应中的 `sticky_backup` 会返回是否包含附件、便利贴数量和图片数量。
 
 ### 8.6 后台任务
 
@@ -1272,6 +1300,7 @@ migrations/006_add_income_operating_cost_detail_fields.sql
 - `services/market_data.py`：腾讯实时行情、实时价格、年初至今涨跌幅。
 - `services/stock_metrics_service.py`：首页股票列表指标增强、Graham 合理估值、合理股价、PB 扣商誉等。
 - `services/sticky_notes_service.py`：便利贴 JSON 存储和图片附件处理。
+- `services/sticky_notes_backup.py`：便利贴 JSON 与图片附件的压缩备份、校验和安全恢复。
 - `services/shareholder_schema.py`：股东缓存表结构确保。
 - `services/background_jobs.py`：后台任务表、任务创建、状态/进度更新、批量股票后台执行器。
 

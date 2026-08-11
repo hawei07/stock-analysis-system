@@ -52,6 +52,7 @@ from services.cloud_backup_service import (
 from services import app_settings
 from services import cloud_backup_storage
 from services import mysql_tools
+from services import sticky_notes_backup
 from services.stock_identity import (
     eastmoney_secu_code as _eastmoney_secu_code,
     eastmoney_web_code as _eastmoney_web_code,
@@ -143,6 +144,7 @@ CLOUD_SYNC_DIR = _setting("cloud_sync_dir", "STOCK_CLOUD_SYNC_DIR", r"D:\stock-c
 MYSQL_BIN_DIR = _setting("mysql_bin_dir", "MYSQL_BIN_DIR", "")
 APP_PORT = int(_setting("app_port", "STOCK_APP_PORT", 5002))
 CLOUD_LATEST_SQL = "stock_analysis_latest.sql"
+CLOUD_LATEST_FILES = sticky_notes_backup.archive_name_for_sql(CLOUD_LATEST_SQL)
 CLOUD_STATE_JSON = "sync_state.json"
 LOCAL_CLOUD_STATE_JSON = os.path.join(APP_DIR, "data", "cloud_sync_state.json")
 AUTO_CLOUD_BACKUP_DELAY_SECONDS = int(_setting("auto_cloud_backup_delay_seconds", "STOCK_AUTO_CLOUD_BACKUP_DELAY_SECONDS", 180))
@@ -215,12 +217,21 @@ def _cloud_latest_path():
     return cloud_backup_storage.latest_path(CLOUD_SYNC_DIR, CLOUD_LATEST_SQL)
 
 
+def _cloud_latest_files_path():
+    return cloud_backup_storage.latest_path(CLOUD_SYNC_DIR, CLOUD_LATEST_FILES)
+
+
 def _cloud_backup_files():
-    return cloud_backup_storage.backup_files(
+    files = cloud_backup_storage.backup_files(
         CLOUD_SYNC_DIR,
         backup_file_groups,
         CLOUD_BACKUP_RETAIN_COUNT,
     )
+    for item in files:
+        sticky_path = _sticky_files_path_for_sql(item["path"])
+        item["sticky_backup_exists"] = os.path.exists(sticky_path)
+        item["sticky_backup_size"] = os.path.getsize(sticky_path) if os.path.exists(sticky_path) else 0
+    return files
 
 
 def _cleanup_cloud_backup_files(backup_dir=None, retain_count=CLOUD_BACKUP_RETAIN_COUNT):
@@ -245,6 +256,27 @@ def _write_local_cloud_state(payload):
 
 def _cloud_latest_mtime():
     return cloud_backup_storage.latest_mtime(CLOUD_SYNC_DIR, CLOUD_LATEST_SQL)
+
+
+def _sticky_files_path_for_sql(sql_path):
+    return os.path.join(
+        os.path.dirname(os.path.abspath(sql_path)),
+        sticky_notes_backup.archive_name_for_sql(os.path.basename(sql_path)),
+    )
+
+
+def _copy_file_atomic(source_path, target_path):
+    target_path = os.path.abspath(target_path)
+    target_dir = os.path.dirname(target_path)
+    os.makedirs(target_dir, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(prefix=".cloud_copy_", dir=target_dir)
+    os.close(fd)
+    try:
+        shutil.copyfile(source_path, temporary_path)
+        os.replace(temporary_path, target_path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
 
 
 def _to_float(value):
@@ -430,6 +462,8 @@ AUTO_CLOUD_BACKUP_ENDPOINTS = {
     "api_portfolio_snapshot": "portfolio-snapshot",
     "api_config_put": "config-update",
     "api_financial_indicator_preferences_put": "financial-indicator-preferences-update",
+    "api_sticky_notes": "sticky-note-create",
+    "api_sticky_note": "sticky-note-change",
 }
 
 
@@ -467,6 +501,8 @@ def _dump_database(prefix="stock_analysis", update_latest=True):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{prefix}_{ts}.sql"
     path = os.path.join(backup_dir, filename)
+    files_filename = sticky_notes_backup.archive_name_for_sql(filename)
+    files_path = os.path.join(backup_dir, files_filename)
     cmd = [
         _mysql_tool_path("mysqldump"),
         "--host", DB_CONFIG.get("host", "127.0.0.1"),
@@ -481,22 +517,48 @@ def _dump_database(prefix="stock_analysis", update_latest=True):
         "--add-drop-table",
         DB_CONFIG.get("database", "stock_analysis"),
     ]
-    with open(path, "wb") as f:
-        result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, cwd=os.path.dirname(os.path.abspath(__file__)), timeout=120)
-    if result.returncode != 0:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysqldump failed")
-    latest_path = _cloud_latest_path()
-    if update_latest:
-        shutil.copyfile(path, latest_path)
+    try:
+        with open(path, "wb") as f:
+            result = subprocess.run(
+                cmd,
+                stdout=f,
+                stderr=subprocess.PIPE,
+                cwd=os.path.dirname(os.path.abspath(__file__)),
+                timeout=120,
+            )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.decode("utf-8", errors="ignore") or "mysqldump failed")
+
+        sticky_info = sticky_notes_backup.create_archive(JSON_PATH, IMAGES_DIR, files_path)
+        latest_path = _cloud_latest_path()
+        latest_files_path = _cloud_latest_files_path()
+        if update_latest:
+            # Publish the attachment archive before the SQL file. The SQL mtime
+            # is the sync marker, so a newly observed latest SQL has its files.
+            _copy_file_atomic(files_path, latest_files_path)
+            _copy_file_atomic(path, latest_path)
+    except Exception:
+        for cleanup_path in (path, files_path):
+            try:
+                os.remove(cleanup_path)
+            except OSError:
+                pass
+        raise
+
     deleted = _cleanup_cloud_backup_files(backup_dir)
     state = {
         "backup_dir": backup_dir,
         "latest_file": CLOUD_LATEST_SQL if update_latest else None,
+        "latest_files_file": CLOUD_LATEST_FILES if update_latest else None,
         "latest_backup": filename,
+        "files_backup": files_filename,
+        "sticky_backup": {
+            "included": True,
+            "file": files_filename,
+            "notes_count": sticky_info.get("notes_count", 0),
+            "images_count": sticky_info.get("images_count", 0),
+            "size": sticky_info.get("size", 0),
+        },
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "database": DB_CONFIG.get("database", "stock_analysis"),
         "size": os.path.getsize(latest_path) if update_latest and os.path.exists(latest_path) else os.path.getsize(path),
@@ -543,7 +605,17 @@ def _restore_database(sql_path):
         validation = _validate_database_after_restore()
         if not validation["ok"]:
             raise RuntimeError("restore validation failed: " + "; ".join(validation["errors"]))
-        return True
+        sticky_archive_path = _sticky_files_path_for_sql(sql_path)
+        sticky_restore = sticky_notes_backup.restore_archive(
+            sticky_archive_path,
+            JSON_PATH,
+            IMAGES_DIR,
+        )
+        return {
+            "database": True,
+            "sticky_backup": sticky_restore,
+            "sticky_archive": sticky_archive_path if sticky_restore.get("available") else None,
+        }
     finally:
         if prepared_path:
             try:
@@ -978,6 +1050,7 @@ register_system_routes(app, {
     "database_stats": database_stats,
     "reset_database_stats": reset_database_stats,
     "cloud_latest_path": _cloud_latest_path,
+    "cloud_latest_files_path": _cloud_latest_files_path,
     "read_cloud_state": _read_cloud_state,
     "read_local_cloud_state": _read_local_cloud_state,
     "cloud_latest_mtime": _cloud_latest_mtime,

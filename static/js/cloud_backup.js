@@ -97,6 +97,9 @@ function showBackupManagerModal(status, files) {
   let selectedIndex = 0;
   const auto = status.auto_backup || {};
   const latestSize = status.latest_exists ? formatBackupSize(status.latest_size) : '不存在';
+  const stickyBackupText = status.sticky_backup_exists
+    ? `已包含（${formatBackupSize(status.sticky_backup_size)}）`
+    : '旧备份未包含';
   const local = status.local_state || {};
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
@@ -113,6 +116,7 @@ function showBackupManagerModal(status, files) {
           <div class="backup-manager-card"><div class="label">云同步目录</div><div class="value">${escapeHtml(status.backup_dir || '')}</div></div>
           <div class="backup-manager-card"><div class="label">latest 时间</div><div class="value">${escapeHtml(status.latest_mtime || '未检测到')}</div></div>
           <div class="backup-manager-card"><div class="label">latest 大小</div><div class="value">${latestSize}</div></div>
+          <div class="backup-manager-card"><div class="label">便利贴与图片</div><div class="value">${stickyBackupText}</div></div>
           <div class="backup-manager-card"><div class="label">本机最后应用</div><div class="value">${escapeHtml(local.latest_mtime_iso || local.updated_at || '暂无记录')}</div></div>
           <div class="backup-manager-card"><div class="label">自动备份</div><div class="value">${auto.running ? '正在备份' : auto.pending ? secondsText(auto.seconds_remaining) + '后执行' : (auto.last_result?.message || '空闲')}</div></div>
           <div class="backup-manager-card"><div class="label">触发原因</div><div class="value">${escapeHtml((auto.reasons || auto.last_result?.reasons || []).join(', ') || '无')}</div></div>
@@ -123,7 +127,7 @@ function showBackupManagerModal(status, files) {
             <tbody>${backupManagerRows(files)}</tbody>
           </table>
         </div>
-        <div class="backup-restore-hint">普通备份和恢复前备份各保留最新 5 份。恢复前系统仍会自动生成 pre_restore 保护备份。</div>
+        <div class="backup-restore-hint">普通备份和恢复前备份各保留最新 5 份。新备份会同时保存便利贴文字、关联股票、时间信息和图片附件；恢复前系统仍会自动生成 pre_restore 保护备份。</div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" type="button" data-action="refresh">刷新</button>
@@ -157,7 +161,11 @@ async function backupCloud() {
   showToast('正在备份到云同步目录...', 'success');
   try {
     const data = await StockApi.postJson('/api/cloud-backup/backup');
-    showToast(`云备份完成: ${data.latest_backup}`, 'success');
+    const sticky = data.sticky_backup || {};
+    const stickyText = sticky.included
+      ? `，含便利贴 ${sticky.notes_count || 0} 条、图片 ${sticky.images_count || 0} 张`
+      : '';
+    showToast(`云备份完成: ${data.latest_backup}${stickyText}`, 'success');
     refreshCloudBackupStatus();
   } catch (e) {
     showToast('云备份失败', 'error');
@@ -180,8 +188,8 @@ async function restoreCloud() {
   if (!confirm('从云端备份恢复会覆盖本地数据库。系统会先自动备份当前本地数据。确认恢复？' + statusText)) return;
   showToast('正在从云端恢复，请稍候...', 'success');
   try {
-    await StockApi.postJson('/api/cloud-backup/restore');
-    showToast('云恢复完成，正在刷新页面...', 'success');
+    const result = await StockApi.postJson('/api/cloud-backup/restore');
+    showToast(`云恢复完成${stickyRestoreText(result)}，正在刷新页面...`, 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (e) {
     showToast('云恢复失败', 'error');
@@ -208,6 +216,13 @@ function formatBackupSize(bytes) {
   return `${((Number(bytes) || 0) / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function stickyRestoreText(result) {
+  const sticky = result?.sticky_backup;
+  if (!sticky) return '';
+  if (!sticky.available) return '；该历史备份没有便利贴附件，本机便利贴未改变';
+  return `，已恢复便利贴 ${sticky.notes_count || 0} 条、图片 ${sticky.images_count || 0} 张`;
+}
+
 async function restoreSelectedBackupFile(filename, btn) {
   if (!filename || (btn && btn.disabled)) return;
   if (btn) {
@@ -216,8 +231,8 @@ async function restoreSelectedBackupFile(filename, btn) {
   }
   showToast('正在恢复历史备份，请稍候...', 'success');
   try {
-    await StockApi.postJson('/api/cloud-backup/restore-file', { filename });
-    showToast('历史恢复完成，正在刷新页面...', 'success');
+    const result = await StockApi.postJson('/api/cloud-backup/restore-file', { filename });
+    showToast(`历史恢复完成${stickyRestoreText(result)}，正在刷新页面...`, 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (e) {
     showToast('历史恢复失败', 'error');
@@ -274,8 +289,8 @@ async function restoreCloudFromStartup(overlay) {
   btn.textContent = '更新中...';
   showToast('正在从云端更新本地数据，请稍候...', 'success');
   try {
-    await StockApi.postJson('/api/cloud-backup/restore');
-    showToast('云端更新完成，正在刷新页面...', 'success');
+    const result = await StockApi.postJson('/api/cloud-backup/restore');
+    showToast(`云端更新完成${stickyRestoreText(result)}，正在刷新页面...`, 'success');
     setTimeout(() => location.reload(), 1200);
   } catch (e) {
     showToast('云端更新失败', 'error');

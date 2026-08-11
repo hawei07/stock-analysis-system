@@ -28,6 +28,7 @@ def register_system_routes(app, deps):
     database_stats = deps["database_stats"]
     reset_database_stats = deps["reset_database_stats"]
     cloud_latest_path = deps["cloud_latest_path"]
+    cloud_latest_files_path = deps["cloud_latest_files_path"]
     read_cloud_state = deps["read_cloud_state"]
     read_local_cloud_state = deps["read_local_cloud_state"]
     cloud_latest_mtime = deps["cloud_latest_mtime"]
@@ -273,6 +274,7 @@ def register_system_routes(app, deps):
     @app.route("/api/cloud-backup/status")
     def api_cloud_backup_status():
         latest_path = cloud_latest_path()
+        latest_files_path = cloud_latest_files_path()
         state = read_cloud_state()
         local_state = read_local_cloud_state()
         latest_mtime = cloud_latest_mtime()
@@ -285,6 +287,9 @@ def register_system_routes(app, deps):
             "latest_exists": os.path.exists(latest_path),
             "latest_size": os.path.getsize(latest_path) if os.path.exists(latest_path) else 0,
             "latest_mtime": datetime.fromtimestamp(os.path.getmtime(latest_path)).isoformat(timespec="seconds") if os.path.exists(latest_path) else None,
+            "sticky_backup_exists": os.path.exists(latest_files_path),
+            "sticky_backup_size": os.path.getsize(latest_files_path) if os.path.exists(latest_files_path) else 0,
+            "sticky_backup_file": os.path.basename(latest_files_path),
             "cloud_newer": cloud_newer,
             "local_dirty": local_dirty,
             "possible_conflict": bool(cloud_newer and local_dirty),
@@ -328,12 +333,13 @@ def register_system_routes(app, deps):
             filename = data.get("filename", "")
             backup_path = resolve_backup_file(filename)
             pre_restore_state = dump_database(prefix="pre_restore", update_latest=False)
-            restore_database(backup_path)
+            restore_result = restore_database(backup_path)
             mark_cloud_applied("restore-file", {"restored_from": backup_path})
             return jsonify({
                 "ok": True,
                 "restored_from": backup_path,
                 "pre_restore_backup": pre_restore_state.get("latest_backup"),
+                "sticky_backup": restore_result.get("sticky_backup") if isinstance(restore_result, dict) else None,
             })
         except FileNotFoundError:
             return jsonify({"error": "Backup file not found"}), 404
@@ -349,12 +355,13 @@ def register_system_routes(app, deps):
             if not os.path.exists(latest_path):
                 return jsonify({"error": "云端 latest 备份不存在"}), 404
             pre_restore_state = dump_database(prefix="pre_restore", update_latest=False)
-            restore_database(latest_path)
+            restore_result = restore_database(latest_path)
             mark_cloud_applied("restore", {"restored_from": latest_path})
             return jsonify({
                 "ok": True,
                 "restored_from": latest_path,
                 "pre_restore_backup": pre_restore_state.get("latest_backup"),
+                "sticky_backup": restore_result.get("sticky_backup") if isinstance(restore_result, dict) else None,
             })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
