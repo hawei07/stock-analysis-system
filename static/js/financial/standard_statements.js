@@ -70,6 +70,7 @@ function renderFinanceTable(wrap, data, cmpData, cmpCode, cmpName, t) {
 
   const keys = data.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
   if (!isQuarterly) keys.sort((a, b) => parseInt(b) - parseInt(a));
+  else keys.sort(sortFiscalKeysDesc);
   const dataMap = {}; for (const d of data) dataMap[makeKey(d)] = d;
   const years = [...new Set(data.map(d => d.fiscal_year))].sort((a, b) => b - a);
 

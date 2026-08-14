@@ -22,6 +22,13 @@ function sortFiscalKeysAsc(a, b) {
   return left.period - right.period;
 }
 
+function sortFiscalKeysDesc(a, b) {
+  const left = fiscalPeriodOrder(a);
+  const right = fiscalPeriodOrder(b);
+  if (left.year !== right.year) return right.year - left.year;
+  return right.period - left.period;
+}
+
 function formatFiscalKeyLabel(key) {
   if (key.indexOf('|') === -1) return key;
   const [year, period] = key.split('|');
@@ -135,6 +142,8 @@ function renderFinancialsTable(data, cmpData, cmpCode, cmpName) {
   const keys = data.map(makeKey).filter((v, i, a) => a.indexOf(v) === i);
   if (!isQuarterly) {
     keys.sort((a, b) => parseInt(b) - parseInt(a));
+  } else {
+    keys.sort(sortFiscalKeysDesc);
   }
   const dataMap = {};
   for (const d of data) dataMap[makeKey(d)] = d;
