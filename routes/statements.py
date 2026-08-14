@@ -299,24 +299,56 @@ def register_statement_routes(app, deps):
         from_year = request.args.get("from_year", 2000, type=int)
         to_year = request.args.get("to_year", 2030, type=int)
 
-        where_period = "AND report_period = %s"
-        if period == "all":
-            where_period = ""
-        elif period != "FY":
+        need_single = (view == "single" and period != "FY")
+        query_period = None if need_single else (None if period == "all" else period)
+
+        if query_period:
             where_period = "AND report_period = %s"
+            params = [code, query_period, from_year, to_year]
+        else:
+            where_period = ""
+            params = [code, from_year, to_year]
 
         rows = execute_query(
             f"""SELECT * FROM income_statements
                WHERE stock_code=%s AND fiscal_year BETWEEN %s AND %s {where_period}
                ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC""",
-            (code, from_year, to_year, period) if where_period else (code, from_year, to_year)
+            tuple(params)
         )
-        result = []
-        for r in rows:
+
+        def _build(r):
             item = {"fiscal_year": r["fiscal_year"], "report_period": r["report_period"]}
             for col in INCOME_COLUMNS:
                 item[col] = float(r[col]) if r.get(col) is not None else None
-            result.append(item)
+            return item
+
+        # 单季度模式：本期累计 - 上期累计（Q1 保持原值，FY 为 Q4 单季）
+        if need_single:
+            data_by_key = {}
+            for r in rows:
+                fy, rp = r["fiscal_year"], r["report_period"]
+                data_by_key[(fy, rp)] = _build(r)
+
+            periods_order = ["Q1", "Q2", "Q3", "FY"]
+            prev_map = {"Q1": None, "Q2": "Q1", "Q3": "Q2", "FY": "Q3"}
+            result = []
+            for (fy, rp), item in sorted(data_by_key.items(), key=lambda x: (-x[0][0], periods_order.index(x[0][1]))):
+                prev_key = (fy, prev_map[rp]) if prev_map[rp] else None
+                prev_item = data_by_key.get(prev_key) if prev_key else None
+                single = {"fiscal_year": fy, "report_period": rp}
+                for col in INCOME_COLUMNS:
+                    cur = item.get(col)
+                    if cur is None:
+                        single[col] = None
+                    elif prev_item is None or prev_item.get(col) is None:
+                        single[col] = cur if rp == "Q1" else None
+                    else:
+                        single[col] = round(cur - prev_item[col], 4)
+                result.append(single)
+            if period != "all":
+                result = [r for r in result if r["report_period"] == period]
+        else:
+            result = [_build(r) for r in rows]
         return jsonify(result)
 
 
@@ -380,24 +412,56 @@ def register_statement_routes(app, deps):
         from_year = request.args.get("from_year", 2000, type=int)
         to_year = request.args.get("to_year", 2030, type=int)
 
-        where_period = "AND report_period = %s"
-        if period == "all":
-            where_period = ""
-        elif period != "FY":
+        need_single = (view == "single" and period != "FY")
+        query_period = None if need_single else (None if period == "all" else period)
+
+        if query_period:
             where_period = "AND report_period = %s"
+            params = [code, query_period, from_year, to_year]
+        else:
+            where_period = ""
+            params = [code, from_year, to_year]
 
         rows = execute_query(
             f"""SELECT * FROM cash_flows
                WHERE stock_code=%s AND fiscal_year BETWEEN %s AND %s {where_period}
                ORDER BY fiscal_year DESC, FIELD(report_period,'FY','Q3','Q2','Q1') DESC""",
-            (code, from_year, to_year, period) if where_period else (code, from_year, to_year)
+            tuple(params)
         )
-        result = []
-        for r in rows:
+
+        def _build(r):
             item = {"fiscal_year": r["fiscal_year"], "report_period": r["report_period"]}
             for col in CASHFLOW_COLUMNS:
                 item[col] = float(r[col]) if r.get(col) is not None else None
-            result.append(item)
+            return item
+
+        # 单季度模式：本期累计 - 上期累计（Q1 保持原值，FY 为 Q4 单季）
+        if need_single:
+            data_by_key = {}
+            for r in rows:
+                fy, rp = r["fiscal_year"], r["report_period"]
+                data_by_key[(fy, rp)] = _build(r)
+
+            periods_order = ["Q1", "Q2", "Q3", "FY"]
+            prev_map = {"Q1": None, "Q2": "Q1", "Q3": "Q2", "FY": "Q3"}
+            result = []
+            for (fy, rp), item in sorted(data_by_key.items(), key=lambda x: (-x[0][0], periods_order.index(x[0][1]))):
+                prev_key = (fy, prev_map[rp]) if prev_map[rp] else None
+                prev_item = data_by_key.get(prev_key) if prev_key else None
+                single = {"fiscal_year": fy, "report_period": rp}
+                for col in CASHFLOW_COLUMNS:
+                    cur = item.get(col)
+                    if cur is None:
+                        single[col] = None
+                    elif prev_item is None or prev_item.get(col) is None:
+                        single[col] = cur if rp == "Q1" else None
+                    else:
+                        single[col] = round(cur - prev_item[col], 4)
+                result.append(single)
+            if period != "all":
+                result = [r for r in result if r["report_period"] == period]
+        else:
+            result = [_build(r) for r in rows]
         return jsonify(result)
 
 
