@@ -72,7 +72,7 @@ def register_custom_financial_routes(app, deps):
                     data = finance_web_report(
                         "RPT_F10_FINANCE_MAINFINADATA",
                         params={
-                            "filter": f"(SECURITY_CODE=%22{code}%22)",
+                            "filter": f'(SECURITY_CODE="{code}")',
                             "pageSize": 200,
                             "sortColumns": "REPORT_DATE",
                             "sortTypes": -1,
