@@ -304,7 +304,7 @@ def register_statement_routes(app, deps):
 
         if query_period:
             where_period = "AND report_period = %s"
-            params = [code, query_period, from_year, to_year]
+            params = [code, from_year, to_year, query_period]
         else:
             where_period = ""
             params = [code, from_year, to_year]
@@ -417,7 +417,7 @@ def register_statement_routes(app, deps):
 
         if query_period:
             where_period = "AND report_period = %s"
-            params = [code, query_period, from_year, to_year]
+            params = [code, from_year, to_year, query_period]
         else:
             where_period = ""
             params = [code, from_year, to_year]
